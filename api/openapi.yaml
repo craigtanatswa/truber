@@ -1,0 +1,3981 @@
+openapi: 3.0.3
+info:
+  title: Truber API
+  version: 0.2.0
+  description: |
+    Truber API v0.2.0 — **authoritative** contract (published 2026-11-07 Africa/Harare).
+    User approval: publish card reply `Publish v0.2.0 as is` (Charlie transcript).
+    Scope includes MVP core plus password-reset, optional city (QA-026), and the Charlie
+    provisional package **as encoded in the approved draft** (now published with this version).
+    Historical approved draft snapshot: `api/releases/openapi-v0.2.0-draft-approved-snapshot.yaml`.
+    Previous v0.1.0 backup: `api/releases/openapi-v0.1.0.yaml`.
+    **Not implemented:** no NestJS runtime, no live Paynow/EcoCash/InnBucks/BuySafe integrations,
+    fee payer unresolved, repository access unresolved.
+
+    Hard rules retained/strengthened from v0.1.0:
+    - Public signup never grants `admin`.
+    - Booking confirm requires server-confirmed payment arrangement for the same booking;
+      escrow requires `protectionStatus=protected` with independent-provider evidence.
+      **Shipper** is the primary booking confirmer; **admin** may act with an audit record but
+      **never bypasses** the payment-arrangement / protection gate.
+    - Clients cannot self-confirm payment or protection.
+    - Cash never protected. No Truber wallet/float. No live Paynow/EcoCash/InnBucks APIs.
+    - Release is a manually recorded ops audit only; recording never claims funds moved.
+    - Commission 5% half-up to minor unit; processing fees separate (fee payer unresolved).
+    - Deposit splits are configurable (example 50/50); no fixed rate in the contract.
+    - POD and shipper delivery confirmation are distinct; trip completion ≠ release.
+
+  contact:
+    name: Truber Backend
+  license:
+    name: Proprietary
+    url: https://truber.example/license
+
+servers:
+  - url: https://api.truber.example/v0
+    description: Placeholder base URL (not deployed)
+
+tags:
+  - name: Auth
+    description: |
+      Registration, email+password login, token refresh, password reset, OTP verification,
+      current user. MVP authentication is email+password only — OTP is never passwordless login.
+  - name: Users
+    description: User profiles and admin user management
+  - name: Companies
+    description: Shipper and transporter company profiles
+  - name: Trucks
+    description: Transporter fleet registration
+  - name: Loads
+    description: Shipper load posting and lifecycle
+  - name: Quotations
+    description: Transporter quotations against loads
+  - name: Bookings
+    description: Booking pending then confirm with payment arrangement
+  - name: Payments
+    description: Payment arrangements and records (MVP records only)
+  - name: ProofOfDelivery
+    description: Transporter POD uploads
+  - name: DeliveryConfirmation
+    description: Shipper delivery acceptance (distinct from POD)
+  - name: Ratings
+    description: Post-completion ratings
+  - name: Admin
+    description: Restricted admin provisioning and ops release recording
+
+paths:
+
+  /auth/register:
+    post:
+      operationId: registerUser
+      tags: [Auth]
+      summary: Public registration (shipper or transporter only)
+      description: |
+        Creates a user with role `shipper` or `transporter` only.
+        Requests that specify `admin` (or any other role) are rejected with 400.
+        Does not authenticate as admin under any circumstance.
+        New users start as `pending_verification` and must complete OTP + docs before
+        company verification unlocks posting/quoting (QA-010 / QA-006). Tokens may still
+        be issued for onboarding flows.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokenResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
+  /auth/login:
+    post:
+      operationId: login
+      tags: [Auth]
+      summary: Email+password login (MVP sole login method)
+      description: |
+        MVP login is **email + password** only. OTP endpoints are for phone/account
+        verification after registration — they are **never** a passwordless login path.
+        Invalid credentials return a generic 401 (do not reveal whether the email exists).
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokenResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/refresh:
+    post:
+      operationId: refreshToken
+      tags: [Auth]
+      summary: Rotate access token using a refresh token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshTokenRequest'
+      responses:
+        '200':
+          description: New tokens issued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokenResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/me:
+    get:
+      operationId: getCurrentUser
+      tags: [Auth]
+      summary: Return the authenticated user
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/password-reset/request:
+    post:
+      operationId: requestPasswordReset
+      tags: [Auth]
+      summary: Request password-reset email (public; anti-enumeration)
+      description: |
+        Public endpoint (`security: []`); no preexisting login required.
+
+        Accepts an email address. Always returns the **same** generic `202` body whether or
+        not an account exists, whether or not email is deliverable, and whether account-level
+        internal throttling suppresses a send. Response **never** includes a reset token,
+        user id, or account-existence hint. Observable timing/body/status must not enumerate
+        accounts.
+
+        **Delivery:** If a reset is warranted, the opaque single-use token is delivered only
+        through the **configured email channel**. This contract does **not** perform a real
+        send; implementations stub/queue accordingly. Deliverability failures (bounce, missing
+        mailbox, provider outage) are handled **uniformly** with the same `202` — clients
+        cannot distinguish them from "no account" or "throttled for this account".
+
+        **Throttling:** Account-specific send suppression (if any) must preserve the generic
+        `202` (no distinct status). A legitimate **per-source** abuse guard may return generic
+        `429` with the shared `Error` shape when the caller/IP/device exceeds limits — that
+        `429` must not encode whether the email belongs to an account.
+
+        Reset tokens have a **finite configured TTL**. Tokens are single-use and consumed
+        atomically on successful confirm.
+
+        **Approved with API v0.2.0 publish (2026-11-07; originated as Charlie provisional):**
+        TTL = **30 minutes**. See AUTH-NOTES / release notes. Fee payer / live payment APIs remain unresolved.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordResetRequest'
+      responses:
+        '202':
+          description: |
+            Generic acceptance. Identical for existing/unknown emails, deliverability
+            failures, and account-level send suppression. Never returns a token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PasswordResetRequestAccepted'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '429':
+          description: |
+            Per-source abuse rate limit (generic). Must not reveal account existence.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/password-reset/confirm:
+    post:
+      operationId: confirmPasswordReset
+      tags: [Auth]
+      summary: Confirm password reset with opaque token (public)
+      description: |
+        Public endpoint (`security: []`); no preexisting login required.
+
+        Body: opaque reset `token` (from email channel only) + `newPassword` (shared
+        `Password` policy). On success: password is changed **once**; the token is marked
+        consumed **atomically** (concurrent confirms: at most one succeeds); **all existing
+        refresh sessions** for that user are invalidated immediately.
+
+        **Session semantics (approved with API v0.2.0 publish, 2026-11-07; originated as
+        Charlie provisional):**
+        - All **refresh sessions** for the user are revoked immediately on success.
+        - **Access JWTs** are **not** immediately denylisted; they remain usable until
+          natural expiry (`AuthTokenResponse.expiresIn`). **Residual access exposure**
+          therefore lasts until that access token expires (15 minutes — see `expiresIn`).
+          Clients must not treat reset as instant access kill.
+        - This endpoint still does not issue new session tokens; client must `/auth/login`
+          afterward with the new password.
+
+        Token failures (unknown, expired, already consumed, malformed) return the **same**
+        pinned `401` body (`PasswordResetConfirmTokenError`) — clients must not distinguish
+        causes. Do not log or echo tokens or passwords.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordResetConfirmRequest'
+      responses:
+        '200':
+          description: Password changed; refresh sessions invalidated; token consumed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PasswordResetConfirmResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: |
+            Generic token failure for invalid, expired, consumed, or malformed tokens.
+            Body MUST match `PasswordResetConfirmTokenError` exactly (one pinned code and
+            message). Implementations must not vary code/message by token state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PasswordResetConfirmTokenError'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '429':
+          description: Per-source abuse rate limit (generic)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /admin/users:
+    post:
+      operationId: provisionAdminUser
+      tags: [Admin, Users]
+      summary: Provision an admin user (admin-only)
+      description: |
+        The only path in this contract that creates a user with role `admin`.
+        Callers must already hold `admin`. Public signup must never reach this endpoint.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProvisionAdminRequest'
+      responses:
+        '201':
+          description: Admin user created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /users/{userId}:
+    get:
+      operationId: getUser
+      tags: [Users]
+      summary: Get a user by id
+      description: |
+        Self, same-company member, or admin. Non-admins cannot read arbitrary users.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          description: User
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      operationId: updateUser
+      tags: [Users]
+      summary: Update a user profile
+      description: Self may update display fields; admin may also change `accountStatus`. Role cannot be escalated to admin via this endpoint.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserRequest'
+      responses:
+        '200':
+          description: Updated user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /companies:
+    get:
+      operationId: listCompanies
+      tags: [Companies]
+      summary: List companies visible to the caller
+      description: |
+        Shippers/transporters see their own companies. Admins may filter all companies.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - name: type
+          in: query
+          schema:
+            $ref: '#/components/schemas/CompanyType'
+        - name: verificationStatus
+          in: query
+          schema:
+            $ref: '#/components/schemas/VerificationStatus'
+      responses:
+        '200':
+          description: Paginated companies
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompanyListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      operationId: createCompany
+      tags: [Companies]
+      summary: Create a company for the authenticated shipper or transporter
+      description: Caller becomes an owner member. Admin may create on behalf of a user via `ownerUserId`.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCompanyRequest'
+      responses:
+        '201':
+          description: Company created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Company'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /companies/{companyId}:
+    get:
+      operationId: getCompany
+      tags: [Companies]
+      summary: Get a company
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+      responses:
+        '200':
+          description: Company
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Company'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      operationId: updateCompany
+      tags: [Companies]
+      summary: Update a company
+      description: Company owner/admin member, or platform admin. Verification status changes are admin-only.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCompanyRequest'
+      responses:
+        '200':
+          description: Updated company
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Company'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /trucks:
+    get:
+      operationId: listTrucks
+      tags: [Trucks]
+      summary: List trucks
+      description: Transporters see own fleet; shippers may search available verified trucks; admins see all.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - name: companyId
+          in: query
+          schema:
+            $ref: '#/components/schemas/Uuid'
+        - name: truckType
+          in: query
+          schema:
+            $ref: '#/components/schemas/TruckType'
+        - name: verificationStatus
+          in: query
+          schema:
+            $ref: '#/components/schemas/VerificationStatus'
+        - name: availableOn
+          in: query
+          description: Filter trucks marked available on this date (YYYY-MM-DD)
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Paginated trucks
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TruckListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      operationId: createTruck
+      tags: [Trucks]
+      summary: Register a truck under a transporter company
+      description: Caller must be a member of the transporter company (or admin).
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTruckRequest'
+      responses:
+        '201':
+          description: Truck created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Truck'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /trucks/{truckId}:
+    get:
+      operationId: getTruck
+      tags: [Trucks]
+      summary: Get a truck
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TruckId'
+      responses:
+        '200':
+          description: Truck
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Truck'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      operationId: updateTruck
+      tags: [Trucks]
+      summary: Update a truck
+      description: Owning transporter company member or admin. Verification status is admin-only.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TruckId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTruckRequest'
+      responses:
+        '200':
+          description: Updated truck
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Truck'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /loads:
+    get:
+      operationId: listLoads
+      tags: [Loads]
+      summary: List loads
+      description: |
+        Shippers see own loads. Transporters see posted (and later) loads for quoting.
+        Admins see all. Optional filters support transporter matching by truck type,
+        weight/capacity band, pickup/destination text, and loading date range (QA-009).
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/LoadStatus'
+        - name: companyId
+          in: query
+          schema:
+            $ref: '#/components/schemas/Uuid'
+        - name: pickupDateFrom
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: pickupDateTo
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: truckTypeRequired
+          in: query
+          description: Filter by required truck type (QA-009)
+          schema:
+            $ref: '#/components/schemas/TruckType'
+        - name: minWeightKg
+          in: query
+          description: Minimum load weightKg inclusive (capacity/matching filter, QA-009)
+          schema:
+            type: integer
+            minimum: 1
+        - name: maxWeightKg
+          in: query
+          description: Maximum load weightKg inclusive (QA-009)
+          schema:
+            type: integer
+            minimum: 1
+        - name: pickupText
+          in: query
+          description: Case-insensitive substring match on pickupAddress (route filter, QA-009)
+          schema:
+            type: string
+            maxLength: 200
+        - name: destinationText
+          in: query
+          description: Case-insensitive substring match on destinationAddress (QA-009)
+          schema:
+            type: string
+            maxLength: 200
+      responses:
+        '200':
+          description: Paginated loads
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoadListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      operationId: createLoad
+      tags: [Loads]
+      summary: Create a load in draft (shipper)
+      description: |
+        Creates `draft` only. Posting requires verified shipper company (see `postLoad`, QA-006).
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateLoadRequest'
+      responses:
+        '201':
+          description: Load created as draft
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Load'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /loads/{loadId}:
+    get:
+      operationId: getLoad
+      tags: [Loads]
+      summary: Get a load
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/LoadId'
+      responses:
+        '200':
+          description: Load
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Load'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      operationId: updateLoad
+      tags: [Loads]
+      summary: Update a draft or posted load (shipper owner)
+      description: |
+        Shipper owning company may edit while status is `draft` or `posted` (before a booking
+        is pending/confirmed). Admins may edit for operational fixes. Status transitions that
+        post/cancel/close use dedicated action endpoints where defined.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/LoadId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateLoadRequest'
+      responses:
+        '200':
+          description: Updated load
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Load'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /loads/{loadId}/post:
+    post:
+      operationId: postLoad
+      tags: [Loads]
+      summary: Transition load from draft to posted
+      description: |
+        Makes the load visible for transporter quotations.
+        **Verification gate (QA-006):** shipper company `verificationStatus` must be `verified`
+        and calling user's `accountStatus` must be `active`; otherwise 403 with verify-needed semantics.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/LoadId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Load posted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Load'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /loads/{loadId}/cancel:
+    post:
+      operationId: cancelLoad
+      tags: [Loads]
+      summary: Cancel a load
+      description: |
+        Allowed for shipper owner while no confirmed booking exists.
+        After booking confirmation, use admin `POST /bookings/{bookingId}/cancel` to record
+        cancellation (QA-004 provisional Charlie policy — not user-approved). This load
+        endpoint returns 409 when a confirmed booking exists.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/LoadId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelReasonRequest'
+      responses:
+        '200':
+          description: Load cancelled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Load'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /loads/{loadId}/quotations:
+    get:
+      operationId: listQuotationsForLoad
+      tags: [Quotations]
+      summary: List quotations for a load
+      description: Shipper owner and admin see all; transporters see only their own quotations.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/LoadId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Paginated quotations
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuotationListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      operationId: createQuotation
+      tags: [Quotations]
+      summary: Submit a quotation (transporter)
+      description: |
+        Load must be `posted` or `quoting`. One open (`submitted`) quotation per transporter
+        company per load (409 on duplicate — amendments via withdraw+resubmit still open).
+        **Verification gate (QA-006):** transporter company must be `verified`, caller account
+        `active`, and if `truckId` is supplied that truck must be `verified`; otherwise 403/409.
+        Quotation `amount` must be strictly positive (QA-007).
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/LoadId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateQuotationRequest'
+      responses:
+        '201':
+          description: Quotation created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Quotation'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /quotations/{quotationId}:
+    get:
+      operationId: getQuotation
+      tags: [Quotations]
+      summary: Get a quotation
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/QuotationId'
+      responses:
+        '200':
+          description: Quotation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Quotation'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /quotations/{quotationId}/withdraw:
+    post:
+      operationId: withdrawQuotation
+      tags: [Quotations]
+      summary: Withdraw a quotation (transporter)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/QuotationId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Quotation withdrawn
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Quotation'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /quotations/{quotationId}/accept:
+    post:
+      operationId: acceptQuotation
+      tags: [Quotations, Bookings]
+      summary: Accept a quotation and create a pending booking
+      description: |
+        Shipper owning the load accepts a `submitted` quotation. Server:
+        1. Marks quotation `accepted` and sibling open quotations `not_selected`
+           (**provisional** Charlie policy / QA-002 — not user-approved). `not_selected`
+           quotes are recoverable if the pending booking fails before confirmation
+           (see `POST /loads/{loadId}/quotations/restore-not-selected`).
+        2. Creates a booking in status `pending_payment_arrangement`.
+        3. Moves load to `booking_pending`.
+        Booking is **not** confirmed by this call. Confirmation requires a confirmed payment
+        arrangement via `/bookings/{bookingId}/confirm`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/QuotationId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AcceptQuotationRequest'
+      responses:
+        '201':
+          description: Pending booking created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AcceptQuotationResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /bookings:
+    get:
+      operationId: listBookings
+      tags: [Bookings]
+      summary: List bookings for the caller
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/BookingStatus'
+        - name: companyId
+          in: query
+          schema:
+            $ref: '#/components/schemas/Uuid'
+      responses:
+        '200':
+          description: Paginated bookings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /bookings/{bookingId}:
+    get:
+      operationId: getBooking
+      tags: [Bookings]
+      summary: Get a booking
+      description: Visible to shipper company, transporter company, or admin on the booking.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/BookingId'
+      responses:
+        '200':
+          description: Booking
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /bookings/{bookingId}/trip-status:
+    post:
+      operationId: updateBookingTripStatus
+      tags: [Bookings]
+      summary: Advance trip operational status (transporter)
+      description: |
+        Transporter updates operational progress after booking is `confirmed`.
+        Allowed transitions (MVP): confirmed → truck_dispatched → goods_collected →
+        in_transit → delivered. `delivered` means transporter asserts delivery and may
+        attach POD separately; it does **not** complete the trip or release payment.
+        Shipper acceptance is a separate endpoint.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/BookingId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTripStatusRequest'
+      responses:
+        '200':
+          description: Booking trip status updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /bookings/{bookingId}/confirm:
+    post:
+      operationId: confirmBooking
+      tags: [Bookings]
+      summary: Confirm booking after payment arrangement is server-confirmed
+      description: |
+        Transitions booking from `pending_payment_arrangement` to `confirmed` **only if**
+        there exists a payment arrangement for this booking with `arrangementStatus=confirmed`
+        and method-specific protection rules satisfied. **Payment gate is absolute.**
+
+        **Actor authority (fixes unsafe v0.1.0 ambiguity):**
+        - Primary actor: shipper company member on the booking.
+        - Admin may call with `auditOverride` reason in the body for operational assistance,
+          but admin **never bypasses** the arrangement-confirmed / escrow-protected gates
+          (provisional Charlie policy §3 — not user-approved). Override creates an audit record.
+
+        Method rules:
+        - `cash`: arrangement confirmed; `protectionStatus` stays `none`.
+        - `prepay`: arrangement confirmed; deposit receipt N/A.
+        - `deposit_balance`: arrangement confirmed only after deposit **receipt** recorded
+          (provisional §4); split amounts configurable (no fixed 50/50).
+        - `corporate_credit`: arrangement confirmed only if credit account approved and
+          atomic capacity reservation succeeds (QA-011 / provisional §4).
+        - `escrow`: arrangement confirmed **and** `protectionStatus=protected` with
+          independent-provider evidence (admin/ops recorded — not client claim).
+
+        Clients cannot set payment/protection flags. Race-safe via Idempotency-Key.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/BookingId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfirmBookingRequest'
+      responses:
+        '200':
+          description: Booking confirmed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Missing confirmed arrangement, escrow not protected, or invalid state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /bookings/{bookingId}/payment-arrangements:
+    get:
+      operationId: listPaymentArrangements
+      tags: [Payments]
+      summary: List payment arrangements for a booking
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/BookingId'
+      responses:
+        '200':
+          description: Arrangements
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentArrangementListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      operationId: createPaymentArrangement
+      tags: [Payments]
+      summary: Propose a payment arrangement for a booking
+      description: |
+        Shipper (or admin) proposes method and amounts. Creates arrangement in
+        `proposed` status. Does not confirm payment, protection, or booking.
+        MVP: records only — no live provider charge/hold calls.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/BookingId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePaymentArrangementRequest'
+      responses:
+        '201':
+          description: Arrangement proposed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentArrangement'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /payment-arrangements/{arrangementId}:
+    get:
+      operationId: getPaymentArrangement
+      tags: [Payments]
+      summary: Get a payment arrangement
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ArrangementId'
+      responses:
+        '200':
+          description: Arrangement
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentArrangement'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /payment-arrangements/{arrangementId}/confirm:
+    post:
+      operationId: confirmPaymentArrangement
+      tags: [Payments]
+      summary: Server-side confirm a payment arrangement (admin/ops for MVP)
+      description: |
+        Confirms the arrangement after Truber has verified the plan. **MVP: admin/ops only.**
+        Clients cannot self-confirm payment or protection.
+
+        Method preconditions (409 otherwise):
+        - `deposit_balance`: a deposit **receipt** must already be recorded
+          (`POST .../deposit-receipt`) — provisional policy §4.
+        - `corporate_credit`: shipper company credit account must be `approved` and an
+          **atomic** capacity reservation for `totalAmount` must succeed (QA-011).
+        - `escrow`: `protectionStatus=protected` with independent-provider evidence
+          (attachable here by admin only).
+        - `cash`: `protectionStatus` remains `none`.
+        - `prepay`: arrangement plan verified; transaction records remain separate.
+
+        On success: `arrangementStatus=confirmed`. Does not confirm the booking.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ArrangementId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfirmPaymentArrangementRequest'
+      responses:
+        '200':
+          description: Arrangement confirmed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentArrangement'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /payment-arrangements/{arrangementId}/protection-evidence:
+    post:
+      operationId: recordProtectionEvidence
+      tags: [Payments, Admin]
+      summary: Record independent-provider secured-funds evidence (admin/ops)
+      description: |
+        Attaches evidence that an authorised independent provider is holding funds for
+        an escrow (or similar protected) arrangement. Sets `protectionStatus=protected`
+        only when evidence is accepted by server rules.
+
+        Never available to shipper/transporter as a self-asserted protection claim.
+        Does not integrate live Paynow/EcoCash/InnBucks APIs in MVP — stores references
+        and notes only. Cash arrangements reject this call (400/409).
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ArrangementId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProtectionEvidenceRequest'
+      responses:
+        '200':
+          description: Evidence recorded; protection status updated when rules pass
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentArrangement'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /payment-arrangements/{arrangementId}/transactions:
+    get:
+      operationId: listPaymentTransactions
+      tags: [Payments]
+      summary: List payment transaction records under an arrangement
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ArrangementId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Paginated transactions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentTransactionListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      operationId: recordPaymentTransaction
+      tags: [Payments, Admin]
+      summary: Record a payment transaction (admin/ops; MVP records only)
+      description: |
+        Records that money moved (or failed) according to external proof. Updates
+        transaction `paymentStatus` only — does not by itself confirm arrangement,
+        protection, booking, or release. Clients cannot mark themselves paid.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ArrangementId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecordPaymentTransactionRequest'
+      responses:
+        '201':
+          description: Transaction recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentTransaction'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /payment-arrangements/{arrangementId}/release:
+    post:
+      operationId: recordPaymentRelease
+      tags: [Payments, Admin]
+      summary: Record a payment release (manual ops or future API capability)
+      description: |
+        Admin/ops manually records a release audit entry (QA-001). **Preconditions (409 else):**
+        - Booking `completionStatus` must be `completed` (shipper delivery acceptance with
+          POD present, **or** admin dispute resolution that completes the trip with audit).
+        - Must **not** be in `disputed` (QA-005 holds release while disputed).
+        - Arrangement must exist; for protected/escrow methods, protection evidence on file.
+
+        `releaseChannel`: `manual_ops` (MVP only path that may succeed) or `provider_api`
+        (future capability flag — recording still does not claim live integration or funds movement).
+
+        **Never claims Truber moved funds. No float. No live provider API.** Commission 5%
+        half-up on positive `tripAmount`; processing fees separate (payer unresolved).
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ArrangementId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecordPaymentReleaseRequest'
+      responses:
+        '201':
+          description: Release record created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentReleaseRecord'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /bookings/{bookingId}/pod:
+    get:
+      operationId: listProofOfDelivery
+      tags: [ProofOfDelivery]
+      summary: List POD artifacts for a booking
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/BookingId'
+      responses:
+        '200':
+          description: POD list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProofOfDeliveryListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      operationId: uploadProofOfDelivery
+      tags: [ProofOfDelivery]
+      summary: Upload POD (transporter)
+      description: |
+        Transporter attaches delivery evidence (note reference, photo URIs, recipient name).
+        Does not mark trip complete and does not release payment. Shipper must still confirm
+        delivery via `/bookings/{bookingId}/delivery-confirmation`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/BookingId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProofOfDeliveryRequest'
+      responses:
+        '201':
+          description: POD recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProofOfDelivery'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /bookings/{bookingId}/delivery-confirmation:
+    get:
+      operationId: getDeliveryConfirmation
+      tags: [DeliveryConfirmation]
+      summary: Get shipper delivery confirmation state
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/BookingId'
+      responses:
+        '200':
+          description: Confirmation state (may be null body fields if not yet confirmed)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeliveryConfirmation'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      operationId: confirmDelivery
+      tags: [DeliveryConfirmation]
+      summary: Shipper confirms delivery acceptance
+      description: |
+        Shipper delivery acceptance/dispute (QA-008/QA-003/QA-005). Distinct from transporter
+        POD and from `tripStatus=delivered`.
+
+        **Preconditions:** at least one POD artifact must exist for the booking (409 otherwise).
+        On `accepted`: `completionStatus` → `completed` (**provisional** Charlie policy —
+        completion is separate from release). Does not move funds and does not record release.
+        On `disputed`: `completionStatus` → `disputed`; release endpoints return 409 until
+        admin resolves the dispute via `POST /bookings/{bookingId}/disputes/resolve`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/BookingId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfirmDeliveryRequest'
+      responses:
+        '200':
+          description: Delivery confirmation recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeliveryConfirmation'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /bookings/{bookingId}/ratings:
+    get:
+      operationId: listRatingsForBooking
+      tags: [Ratings]
+      summary: List ratings for a booking
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/BookingId'
+      responses:
+        '200':
+          description: Ratings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RatingListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      operationId: createRating
+      tags: [Ratings]
+      summary: Rate the counterparty after shipper delivery acceptance
+      description: |
+        Allowed once shipper delivery confirmation is `accepted`. Shipper rates transporter
+        (and optionally vice versa). One rating per direction per booking.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/BookingId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRatingRequest'
+      responses:
+        '201':
+          description: Rating created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Rating'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /auth/otp/request:
+    post:
+      operationId: requestRegistrationOtp
+      tags: [Auth]
+      summary: Request OTP for phone/account verification (QA-010)
+      description: |
+        Sends or re-sends a one-time code for the authenticated or just-registered user for
+        **phone/account verification only**. This is **not** passwordless login and does not
+        issue session tokens. Does not activate posting privileges by itself. Rate-limited;
+        MVP records intent even if SMS/email provider is stubbed (contract does not perform
+        a real send).
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                channel:
+                  type: string
+                  enum: [sms, email]
+                  default: sms
+      responses:
+        '202':
+          description: OTP dispatch accepted (or stubbed in non-prod)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OtpRequestResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/otp/verify:
+    post:
+      operationId: verifyRegistrationOtp
+      tags: [Auth]
+      summary: Verify OTP for account verification (QA-010)
+      description: |
+        Verifies the OTP for **account/phone verification only** — not a login substitute.
+        On success moves `accountStatus` from `pending_verification` toward allowing
+        document upload; full load-posting still requires company `verified` (QA-006).
+        Does not rotate or issue password-reset tokens.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyOtpRequest'
+      responses:
+        '200':
+          description: OTP accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /verification-documents:
+    get:
+      operationId: listVerificationDocuments
+      tags: [Users, Admin]
+      summary: List verification documents for the caller or a company (QA-010)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - name: companyId
+          in: query
+          schema:
+            $ref: '#/components/schemas/Uuid'
+      responses:
+        '200':
+          description: Document list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerificationDocumentListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      operationId: uploadVerificationDocument
+      tags: [Users]
+      summary: Register a verification document URI (QA-010)
+      description: |
+        MVP stores metadata + URI reference (no binary multipart in this draft). Admin
+        reviews via `POST /admin/verification-documents/{documentId}/review`.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateVerificationDocumentRequest'
+      responses:
+        '201':
+          description: Document registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerificationDocument'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /admin/verification-documents/{documentId}/review:
+    post:
+      operationId: reviewVerificationDocument
+      tags: [Admin]
+      summary: Admin approve/reject a verification document (QA-010)
+      description: |
+        May set company/truck `verificationStatus` as a side effect when review policy
+        is satisfied. Exact multi-doc completion rules remain an open question.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: documentId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Uuid'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewVerificationDocumentRequest'
+      responses:
+        '200':
+          description: Review recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerificationDocument'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /loads/{loadId}/quotations/restore-not-selected:
+    post:
+      operationId: restoreNotSelectedQuotations
+      tags: [Quotations]
+      summary: Restore not_selected quotations after pending booking failure (QA-002 provisional)
+      description: |
+        **Provisional Charlie policy — not user-approved.** When a booking in
+        `pending_payment_arrangement` is cancelled/expired without confirmation, admin or
+        shipper may restore sibling quotations from `not_selected` back to `submitted`
+        (eligibility/trigger details still partially open — see unresolved decisions).
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/LoadId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  maxLength: 1000
+      responses:
+        '200':
+          description: Restored quotations
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuotationListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+
+
+  /bookings/{bookingId}/cancel:
+    post:
+      operationId: cancelBooking
+      tags: [Bookings, Admin]
+      summary: Record post-confirm booking cancellation (QA-004 provisional)
+      description: |
+        **Provisional Charlie policy — not user-approved.** Admin records cancellation of a
+        `confirmed` booking before collection (or per later terms). Creates an audit trail.
+        Does not automate refunds or move funds. Commission is not charged when cancelled
+        before completion. Pair with `POST /payment-arrangements/{id}/refunds` when a refund
+        audit record is required. Shipper load `cancel` remains 409 once booking is confirmed.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/BookingId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelBookingRequest'
+      responses:
+        '200':
+          description: Cancellation recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /bookings/{bookingId}/disputes/resolve:
+    post:
+      operationId: resolveBookingDispute
+      tags: [Admin, DeliveryConfirmation]
+      summary: Admin resolve delivery dispute with audit (QA-005)
+      description: |
+        When `completionStatus=disputed`, admin resolves to `completed` or `cancelled`.
+        Resolution is audited. Completing unlocks release recording eligibility; cancelling
+        keeps release blocked. Does not move funds.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/BookingId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResolveDisputeRequest'
+      responses:
+        '200':
+          description: Dispute resolved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DisputeResolutionRecord'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /payment-arrangements/{arrangementId}/deposit-receipt:
+    post:
+      operationId: recordDepositReceipt
+      tags: [Payments, Admin]
+      summary: Record deposit receipt evidence (required before deposit_balance confirm)
+      description: |
+        Admin/ops records that a deposit payment was receipted externally. Required before
+        confirming a `deposit_balance` arrangement (provisional policy §4). Not a live charge API.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ArrangementId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DepositReceiptRequest'
+      responses:
+        '200':
+          description: Receipt recorded on arrangement
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentArrangement'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /payment-arrangements/{arrangementId}/refunds:
+    post:
+      operationId: recordPaymentRefund
+      tags: [Payments, Admin]
+      summary: Record a refund audit entry (QA-004 provisional)
+      description: |
+        **Provisional Charlie policy — not user-approved.** Admin records a refund against
+        an arrangement/transactions. Sets/creates transaction with `paymentStatus=refunded`
+        as appropriate. **Recording a refund is not moving funds.** No automated provider refund API.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ArrangementId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecordRefundRequest'
+      responses:
+        '201':
+          description: Refund record created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentRefundRecord'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /companies/{companyId}/credit-account:
+    get:
+      operationId: getCompanyCreditAccount
+      tags: [Companies, Payments]
+      summary: Get corporate credit account (QA-011)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+      responses:
+        '200':
+          description: Credit account (or empty unapproved shell)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreditAccount'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/companies/{companyId}/credit-account:
+    put:
+      operationId: upsertCompanyCreditAccount
+      tags: [Admin, Payments]
+      summary: Create/update corporate credit approval and limit (QA-011)
+      description: |
+        Admin sets approval status, limit, and terms. Arrangements with method
+        `corporate_credit` cannot confirm without an `approved` account and successful
+        atomic capacity reservation at confirm time.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertCreditAccountRequest'
+      responses:
+        '200':
+          description: Credit account upserted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreditAccount'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        JWT access token. Claims must include at least `sub` (user id) and `role`
+        (`shipper` | `transporter` | `admin`). Refresh tokens are opaque and used only
+        with `/auth/refresh`.
+
+  parameters:
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Uuid'
+    CompanyId:
+      name: companyId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Uuid'
+    TruckId:
+      name: truckId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Uuid'
+    LoadId:
+      name: loadId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Uuid'
+    QuotationId:
+      name: quotationId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Uuid'
+    BookingId:
+      name: bookingId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Uuid'
+    ArrangementId:
+      name: arrangementId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Uuid'
+    Page:
+      name: page
+      in: query
+      description: 1-based page index
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PageSize:
+      name: pageSize
+      in: query
+      description: Page size (max 100)
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: |
+        Optional on reads; **strongly recommended** (and may be required by server) on
+        confirmation and create-once writes. Replays with the same key and equivalent body
+        return the original result without re-applying side effects.
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 128
+
+  responses:
+    BadRequest:
+      description: Malformed request or failed validation
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Missing or invalid authentication
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: Authenticated but not permitted
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Resource not found (or not visible)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Conflict:
+      description: State conflict, duplicate, or failed precondition
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    UnprocessableEntity:
+      description: Semantically invalid request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  schemas:
+    Uuid:
+      type: string
+      format: uuid
+
+    DateTime:
+      type: string
+      format: date-time
+
+    CurrencyCode:
+      type: string
+      description: ISO 4217 currency code (e.g. USD, ZWG)
+      pattern: '^[A-Z]{3}$'
+      example: USD
+
+    MoneyAmount:
+      type: object
+      description: |
+        Integer minor units plus ISO 4217 currency. Never floating-point.
+        Prefer PositiveMoneyAmount / NonNegativeMoneyAmount on write paths.
+        Commission: half-up to minor unit at 500 bps (5%). Fees are separate fields
+        (fee payer unresolved — open question).
+      required: [amountMinor, currency]
+      properties:
+        amountMinor:
+          type: integer
+          description: Minor units; sign/zero rules depend on the referencing schema
+        currency:
+          $ref: '#/components/schemas/CurrencyCode'
+
+    PositiveMoneyAmount:
+      type: object
+      description: |
+        Strictly positive money (QA-007). Use for quotation amounts, arrangement totals,
+        deposits, balances, trip amounts used as commission base.
+      required: [amountMinor, currency]
+      properties:
+        amountMinor:
+          type: integer
+          minimum: 1
+          description: Must be >= 1 minor unit
+        currency:
+          $ref: '#/components/schemas/CurrencyCode'
+
+    NonNegativeMoneyAmount:
+      type: object
+      description: |
+        Zero or positive money (QA-007). Legitimate zeros allowed for processing fees or
+        computed commission only where the trip amount rounds to a representable 5% of 0
+        (trip amount itself must still be positive). Never negative.
+      required: [amountMinor, currency]
+      properties:
+        amountMinor:
+          type: integer
+          minimum: 0
+          description: Must be >= 0; zero is meaningful for fees/commission edge cases only
+        currency:
+          $ref: '#/components/schemas/CurrencyCode'
+
+
+    PaginationMeta:
+      type: object
+      required: [page, pageSize, totalItems, totalPages]
+      properties:
+        page:
+          type: integer
+          minimum: 1
+        pageSize:
+          type: integer
+          minimum: 1
+        totalItems:
+          type: integer
+          minimum: 0
+        totalPages:
+          type: integer
+          minimum: 0
+
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: Machine-stable error code (e.g. BOOKING_CONFIRM_REQUIRES_ARRANGEMENT)
+        message:
+          type: string
+          description: Human-readable summary
+        details:
+          type: object
+          additionalProperties: true
+          description: Optional structured detail
+        requestId:
+          type: string
+
+    UserRole:
+      type: string
+      enum: [shipper, transporter, admin]
+      description: Public signup allows only shipper or transporter.
+
+    PublicSignupRole:
+      type: string
+      enum: [shipper, transporter]
+      description: Roles permitted on public registration.
+
+    AccountStatus:
+      type: string
+      enum: [pending_verification, active, suspended, disabled]
+
+    VerificationStatus:
+      type: string
+      enum: [unverified, pending, verified, rejected]
+
+    Password:
+      type: string
+      format: password
+      minLength: 8
+      description: |
+        Shared MVP password policy (register, admin provision, password-reset confirm):
+        minimum 8 characters. Additional complexity/max-length rules are an open product
+        question and must not be invented here. Never log or return password values.
+
+    RegisterRequest:
+      type: object
+      required: [email, password, fullName, role]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          $ref: '#/components/schemas/Password'
+        fullName:
+          type: string
+          minLength: 1
+          maxLength: 200
+        phone:
+          type: string
+          maxLength: 32
+        city:
+          type: string
+          minLength: 1
+          maxLength: 120
+          description: |
+            Optional primary city (QA-026). Omit when unknown — absence is valid.
+            No fabricated default; not required for registration.
+        role:
+          $ref: '#/components/schemas/PublicSignupRole'
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+          description: Submitted password (not validated for minLength on login to avoid policy leakage via length probes).
+
+    RefreshTokenRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken:
+          type: string
+          description: Opaque refresh token; never log in full.
+
+    ProvisionAdminRequest:
+      type: object
+      required: [email, password, fullName]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          $ref: '#/components/schemas/Password'
+        fullName:
+          type: string
+          minLength: 1
+          maxLength: 200
+        phone:
+          type: string
+          maxLength: 32
+
+    PasswordResetRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+          minLength: 3
+          maxLength: 320
+          pattern: '^[^@\s]+@[^@\s]+\.[^@\s]+$'
+          description: |
+            Target address; existence is never revealed by the response.
+            Pattern supplements `format: email` so empty/malformed values fail schema
+            validation under OAS instance validators that soft-handle format alone.
+
+    PasswordResetRequestAccepted:
+      type: object
+      additionalProperties: false
+      description: |
+        Uniform acceptance payload (QA-027). Only `status` + pinned `message` are allowed —
+        undeclared keys (token, userId, accessToken, etc.) are schema-invalid.
+        Identical for all account/deliverability outcomes (anti-enumeration).
+      required: [status, message]
+      properties:
+        status:
+          type: string
+          enum: [accepted]
+        message:
+          type: string
+          enum:
+            - If an account exists for this email, password reset instructions will be sent when permitted.
+
+    PasswordResetToken:
+      type: string
+      minLength: 32
+      maxLength: 512
+      pattern: '^\S+$'
+      description: |
+        Opaque single-use reset token delivered only via configured email. Never returned by
+        request endpoint; never log plaintext.
+        **Approved with API v0.2.0 publish (2026-11-07):** TTL 30 minutes.
+
+    PasswordResetConfirmRequest:
+      type: object
+      required: [token, newPassword]
+      properties:
+        token:
+          $ref: '#/components/schemas/PasswordResetToken'
+        newPassword:
+          $ref: '#/components/schemas/Password'
+
+    PasswordResetConfirmResponse:
+      type: object
+      additionalProperties: false
+      description: |
+        Confirm success payload (QA-027). Only documented fields; undeclared keys
+        (accessToken, refreshToken, token, etc.) are schema-invalid. Does not issue sessions.
+      required: [status, refreshSessionsInvalidated]
+      properties:
+        status:
+          type: string
+          enum: [password_changed]
+        refreshSessionsInvalidated:
+          type: boolean
+          enum: [true]
+          description: Always true on success — all refresh sessions for the user are revoked.
+
+    PasswordResetConfirmTokenError:
+      type: object
+      additionalProperties: false
+      description: |
+        Dedicated confirm-401 body (QA-028). Explicit schema — not a composition with
+        generic `Error` — so `details` / free-form codes cannot leak token state.
+        Unknown, expired, consumed, and malformed tokens MUST use this exact `code` and
+        `message` (OpenAPI 3.0 singleton enums). Generic `Error` elsewhere is unchanged.
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          enum: [PASSWORD_RESET_TOKEN_INVALID]
+        message:
+          type: string
+          enum:
+            - Password reset token is invalid or no longer usable.
+
+    AuthTokenResponse:
+      type: object
+      required: [accessToken, refreshToken, tokenType, expiresIn, user]
+      properties:
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+        tokenType:
+          type: string
+          enum: [Bearer]
+        expiresIn:
+          type: integer
+          minimum: 1
+          description: |
+            Access token lifetime in seconds from issuance.
+            **Approved with API v0.2.0 publish (2026-11-07; originated as Charlie provisional):**
+            **900** (15 minutes). After password reset, refresh is revoked but access JWTs
+            issued earlier remain valid until this natural expiry (residual exposure window).
+            Do not treat other text as implying immediate access revocation.
+        user:
+          $ref: '#/components/schemas/User'
+
+    User:
+      type: object
+      required: [id, email, fullName, role, accountStatus, createdAt, updatedAt]
+      properties:
+        id:
+          $ref: '#/components/schemas/Uuid'
+        email:
+          type: string
+          format: email
+        fullName:
+          type: string
+        phone:
+          type: string
+          nullable: true
+        role:
+          $ref: '#/components/schemas/UserRole'
+        accountStatus:
+          $ref: '#/components/schemas/AccountStatus'
+        createdAt:
+          $ref: '#/components/schemas/DateTime'
+        updatedAt:
+          $ref: '#/components/schemas/DateTime'
+
+    UpdateUserRequest:
+      type: object
+      properties:
+        fullName:
+          type: string
+          minLength: 1
+          maxLength: 200
+        phone:
+          type: string
+          maxLength: 32
+          nullable: true
+        accountStatus:
+          allOf:
+            - $ref: '#/components/schemas/AccountStatus'
+          description: Admin-only when changing another user.
+
+    CompanyType:
+      type: string
+      enum: [shipper, transporter]
+
+    Company:
+      type: object
+      required:
+        - id
+        - type
+        - legalName
+        - verificationStatus
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          $ref: '#/components/schemas/Uuid'
+        type:
+          $ref: '#/components/schemas/CompanyType'
+        legalName:
+          type: string
+        tradingName:
+          type: string
+          nullable: true
+        registrationNumber:
+          type: string
+          nullable: true
+        taxNumber:
+          type: string
+          nullable: true
+        countryCode:
+          type: string
+          description: ISO 3166-1 alpha-2
+          example: ZW
+        city:
+          type: string
+          nullable: true
+          minLength: 1
+          maxLength: 120
+          description: |
+            Optional primary city (QA-026). Null/omitted when unknown — no fabricated default.
+        verificationStatus:
+          $ref: '#/components/schemas/VerificationStatus'
+        createdAt:
+          $ref: '#/components/schemas/DateTime'
+        updatedAt:
+          $ref: '#/components/schemas/DateTime'
+
+    CreateCompanyRequest:
+      type: object
+      required: [type, legalName]
+      properties:
+        type:
+          $ref: '#/components/schemas/CompanyType'
+        legalName:
+          type: string
+          minLength: 1
+          maxLength: 200
+        tradingName:
+          type: string
+          maxLength: 200
+        registrationNumber:
+          type: string
+          maxLength: 100
+        taxNumber:
+          type: string
+          maxLength: 100
+        countryCode:
+          type: string
+          default: ZW
+        city:
+          type: string
+          minLength: 1
+          maxLength: 120
+          description: |
+            Optional primary city (QA-026). Omit when unknown; absence is valid.
+        ownerUserId:
+          allOf:
+            - $ref: '#/components/schemas/Uuid'
+          description: Admin-only override; default is the authenticated user.
+
+    UpdateCompanyRequest:
+      type: object
+      properties:
+        legalName:
+          type: string
+          minLength: 1
+          maxLength: 200
+        tradingName:
+          type: string
+          maxLength: 200
+          nullable: true
+        registrationNumber:
+          type: string
+          maxLength: 100
+          nullable: true
+        taxNumber:
+          type: string
+          maxLength: 100
+          nullable: true
+        city:
+          type: string
+          nullable: true
+          minLength: 1
+          maxLength: 120
+          description: |
+            Optional primary city (QA-026). Set null to clear; omit to leave unchanged.
+            No fabricated default when omitted.
+        verificationStatus:
+          allOf:
+            - $ref: '#/components/schemas/VerificationStatus'
+          description: Admin-only.
+
+    CompanyListResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Company'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    TruckType:
+      type: string
+      enum:
+        - flatbed
+        - box
+        - refrigerated
+        - tanker
+        - tipper
+        - side_loader
+        - other
+
+    Truck:
+      type: object
+      required:
+        - id
+        - companyId
+        - registrationNumber
+        - truckType
+        - capacityKg
+        - verificationStatus
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          $ref: '#/components/schemas/Uuid'
+        companyId:
+          $ref: '#/components/schemas/Uuid'
+        registrationNumber:
+          type: string
+        truckType:
+          $ref: '#/components/schemas/TruckType'
+        capacityKg:
+          type: integer
+          minimum: 1
+        trailerSpecs:
+          type: string
+          nullable: true
+        insuranceReference:
+          type: string
+          nullable: true
+        currentLocationText:
+          type: string
+          nullable: true
+        verificationStatus:
+          $ref: '#/components/schemas/VerificationStatus'
+        createdAt:
+          $ref: '#/components/schemas/DateTime'
+        updatedAt:
+          $ref: '#/components/schemas/DateTime'
+
+    CreateTruckRequest:
+      type: object
+      required: [companyId, registrationNumber, truckType, capacityKg]
+      properties:
+        companyId:
+          $ref: '#/components/schemas/Uuid'
+        registrationNumber:
+          type: string
+          minLength: 1
+          maxLength: 64
+        truckType:
+          $ref: '#/components/schemas/TruckType'
+        capacityKg:
+          type: integer
+          minimum: 1
+        trailerSpecs:
+          type: string
+          maxLength: 500
+        insuranceReference:
+          type: string
+          maxLength: 200
+        currentLocationText:
+          type: string
+          maxLength: 200
+
+    UpdateTruckRequest:
+      type: object
+      properties:
+        truckType:
+          $ref: '#/components/schemas/TruckType'
+        capacityKg:
+          type: integer
+          minimum: 1
+        trailerSpecs:
+          type: string
+          maxLength: 500
+          nullable: true
+        insuranceReference:
+          type: string
+          maxLength: 200
+          nullable: true
+        currentLocationText:
+          type: string
+          maxLength: 200
+          nullable: true
+        verificationStatus:
+          allOf:
+            - $ref: '#/components/schemas/VerificationStatus'
+          description: Admin-only.
+
+    TruckListResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Truck'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    LoadStatus:
+      type: string
+      enum:
+        - draft
+        - posted
+        - quoting
+        - booking_pending
+        - booked
+        - in_progress
+        - awaiting_shipper_acceptance
+        - completed
+        - cancelled
+      description: |
+        Lifecycle (MVP): draft → posted → quoting (on first quote) → booking_pending
+        (quotation accepted) → booked (booking confirmed) → in_progress (trip underway) →
+        awaiting_shipper_acceptance (transporter marked delivered) → completed (shipper
+        accepted, or admin resolution). cancelled from eligible states.
+
+    RateType:
+      type: string
+      enum: [fixed, negotiable]
+
+    GeoPoint:
+      type: object
+      description: Optional WGS84 point for PostGIS later; text address remains required.
+      required: [latitude, longitude]
+      properties:
+        latitude:
+          type: number
+          format: double
+          minimum: -90
+          maximum: 90
+        longitude:
+          type: number
+          format: double
+          minimum: -180
+          maximum: 180
+
+    Load:
+      type: object
+      required:
+        - id
+        - companyId
+        - status
+        - goodsType
+        - weightKg
+        - truckTypeRequired
+        - pickupAddress
+        - destinationAddress
+        - loadingDate
+        - rateType
+        - currency
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          $ref: '#/components/schemas/Uuid'
+        companyId:
+          $ref: '#/components/schemas/Uuid'
+        status:
+          $ref: '#/components/schemas/LoadStatus'
+        goodsType:
+          type: string
+        weightKg:
+          type: integer
+          minimum: 1
+        truckTypeRequired:
+          $ref: '#/components/schemas/TruckType'
+        pickupAddress:
+          type: string
+        pickupPoint:
+          allOf:
+            - $ref: '#/components/schemas/GeoPoint'
+          type: object
+          nullable: true
+        destinationAddress:
+          type: string
+        destinationPoint:
+          allOf:
+            - $ref: '#/components/schemas/GeoPoint'
+          type: object
+          nullable: true
+        loadingDate:
+          type: string
+          format: date
+        deliveryDeadline:
+          type: string
+          format: date
+          nullable: true
+        specialRequirements:
+          type: string
+          nullable: true
+        rateType:
+          $ref: '#/components/schemas/RateType'
+        offeredRate:
+          allOf:
+            - $ref: '#/components/schemas/MoneyAmount'
+          type: object
+          nullable: true
+        currency:
+          $ref: '#/components/schemas/CurrencyCode'
+        createdAt:
+          $ref: '#/components/schemas/DateTime'
+        updatedAt:
+          $ref: '#/components/schemas/DateTime'
+
+    CreateLoadRequest:
+      type: object
+      required:
+        - companyId
+        - goodsType
+        - weightKg
+        - truckTypeRequired
+        - pickupAddress
+        - destinationAddress
+        - loadingDate
+        - rateType
+        - currency
+      properties:
+        companyId:
+          $ref: '#/components/schemas/Uuid'
+        goodsType:
+          type: string
+          minLength: 1
+          maxLength: 200
+        weightKg:
+          type: integer
+          minimum: 1
+        truckTypeRequired:
+          $ref: '#/components/schemas/TruckType'
+        pickupAddress:
+          type: string
+          minLength: 1
+          maxLength: 500
+        pickupPoint:
+          $ref: '#/components/schemas/GeoPoint'
+        destinationAddress:
+          type: string
+          minLength: 1
+          maxLength: 500
+        destinationPoint:
+          $ref: '#/components/schemas/GeoPoint'
+        loadingDate:
+          type: string
+          format: date
+        deliveryDeadline:
+          type: string
+          format: date
+        specialRequirements:
+          type: string
+          maxLength: 2000
+        rateType:
+          $ref: '#/components/schemas/RateType'
+        offeredRate:
+          $ref: '#/components/schemas/MoneyAmount'
+        currency:
+          $ref: '#/components/schemas/CurrencyCode'
+
+    UpdateLoadRequest:
+      type: object
+      properties:
+        goodsType:
+          type: string
+          minLength: 1
+          maxLength: 200
+        weightKg:
+          type: integer
+          minimum: 1
+        truckTypeRequired:
+          $ref: '#/components/schemas/TruckType'
+        pickupAddress:
+          type: string
+          minLength: 1
+          maxLength: 500
+        pickupPoint:
+          allOf:
+            - $ref: '#/components/schemas/GeoPoint'
+          type: object
+          nullable: true
+        destinationAddress:
+          type: string
+          minLength: 1
+          maxLength: 500
+        destinationPoint:
+          allOf:
+            - $ref: '#/components/schemas/GeoPoint'
+          type: object
+          nullable: true
+        loadingDate:
+          type: string
+          format: date
+        deliveryDeadline:
+          type: string
+          format: date
+          nullable: true
+        specialRequirements:
+          type: string
+          maxLength: 2000
+          nullable: true
+        rateType:
+          $ref: '#/components/schemas/RateType'
+        offeredRate:
+          allOf:
+            - $ref: '#/components/schemas/MoneyAmount'
+          type: object
+          nullable: true
+
+    LoadListResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Load'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    CancelReasonRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+          maxLength: 1000
+
+    QuotationStatus:
+      type: string
+      enum: [submitted, withdrawn, accepted, not_selected, rejected, expired]
+      description: |
+        `not_selected` (provisional Charlie policy, not user-approved): siblings when another
+        quote is accepted; recoverable if the pending booking fails before confirmation.
+        `rejected` remains for explicit rejection paths distinct from non-selection.
+
+    Quotation:
+      type: object
+      required:
+        - id
+        - loadId
+        - transporterCompanyId
+        - amount
+        - status
+        - validUntil
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          $ref: '#/components/schemas/Uuid'
+        loadId:
+          $ref: '#/components/schemas/Uuid'
+        transporterCompanyId:
+          $ref: '#/components/schemas/Uuid'
+        truckId:
+          allOf:
+            - $ref: '#/components/schemas/Uuid'
+          type: string
+          nullable: true
+        amount:
+          $ref: '#/components/schemas/PositiveMoneyAmount'
+        status:
+          $ref: '#/components/schemas/QuotationStatus'
+        notes:
+          type: string
+          nullable: true
+        validUntil:
+          $ref: '#/components/schemas/DateTime'
+        createdAt:
+          $ref: '#/components/schemas/DateTime'
+        updatedAt:
+          $ref: '#/components/schemas/DateTime'
+
+    CreateQuotationRequest:
+      type: object
+      required: [transporterCompanyId, amount, validUntil]
+      properties:
+        transporterCompanyId:
+          $ref: '#/components/schemas/Uuid'
+        truckId:
+          $ref: '#/components/schemas/Uuid'
+        amount:
+          $ref: '#/components/schemas/PositiveMoneyAmount'
+        notes:
+          type: string
+          maxLength: 2000
+        validUntil:
+          $ref: '#/components/schemas/DateTime'
+
+    QuotationListResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Quotation'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    AcceptQuotationRequest:
+      type: object
+      properties:
+        notes:
+          type: string
+          maxLength: 1000
+
+    AcceptQuotationResponse:
+      type: object
+      required: [quotation, booking]
+      properties:
+        quotation:
+          $ref: '#/components/schemas/Quotation'
+        booking:
+          $ref: '#/components/schemas/Booking'
+
+    BookingStatus:
+      type: string
+      enum:
+        - pending_payment_arrangement
+        - confirmed
+        - cancelled
+      description: |
+        `pending_payment_arrangement` after quotation accept. `confirmed` only after
+        server-confirmed payment arrangement (and escrow protection when required).
+
+    TripStatus:
+      type: string
+      enum:
+        - not_started
+        - truck_dispatched
+        - goods_collected
+        - in_transit
+        - delivered
+      description: Operational progress. `delivered` is transporter assertion only.
+
+    CompletionStatus:
+      type: string
+      enum:
+        - not_complete
+        - awaiting_shipper_acceptance
+        - completed
+        - disputed
+        - cancelled
+      description: |
+        Trip completion is distinct from transporter `delivered` and from payment release
+        (QA-003 provisional Charlie policy — not user-approved).
+        On shipper delivery acceptance (with POD present), status becomes `completed`.
+        Release remains a separate admin/ops recording step and must not redefine completion.
+        `disputed` holds release until admin resolution (QA-005).
+        `awaiting_release` was removed in v0.2.0 as unsafe conflation with completion.
+
+    Booking:
+      type: object
+      required:
+        - id
+        - loadId
+        - quotationId
+        - shipperCompanyId
+        - transporterCompanyId
+        - status
+        - tripStatus
+        - completionStatus
+        - agreedAmount
+        - commissionRateBps
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          $ref: '#/components/schemas/Uuid'
+        loadId:
+          $ref: '#/components/schemas/Uuid'
+        quotationId:
+          $ref: '#/components/schemas/Uuid'
+        shipperCompanyId:
+          $ref: '#/components/schemas/Uuid'
+        transporterCompanyId:
+          $ref: '#/components/schemas/Uuid'
+        truckId:
+          allOf:
+            - $ref: '#/components/schemas/Uuid'
+          type: string
+          nullable: true
+        status:
+          $ref: '#/components/schemas/BookingStatus'
+        tripStatus:
+          $ref: '#/components/schemas/TripStatus'
+        completionStatus:
+          $ref: '#/components/schemas/CompletionStatus'
+        agreedAmount:
+          $ref: '#/components/schemas/PositiveMoneyAmount'
+        commissionRateBps:
+          type: integer
+          description: Commission in basis points; MVP fixed at 500 (5.00%)
+          enum: [500]
+        confirmedPaymentArrangementId:
+          allOf:
+            - $ref: '#/components/schemas/Uuid'
+          type: string
+          nullable: true
+          description: Set when booking becomes confirmed; references the confirming arrangement.
+        confirmedAt:
+          allOf:
+            - $ref: '#/components/schemas/DateTime'
+          type: string
+          nullable: true
+        createdAt:
+          $ref: '#/components/schemas/DateTime'
+        updatedAt:
+          $ref: '#/components/schemas/DateTime'
+
+    BookingListResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Booking'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    UpdateTripStatusRequest:
+      type: object
+      required: [tripStatus]
+      properties:
+        tripStatus:
+          $ref: '#/components/schemas/TripStatus'
+        note:
+          type: string
+          maxLength: 1000
+
+    PaymentMethod:
+      type: string
+      enum:
+        - prepay
+        - escrow
+        - deposit_balance
+        - cash
+        - corporate_credit
+      description: |
+        `cash` is never payment-protected. `escrow` requires independent-provider evidence
+        for protection. Provider brand names are not claimed as integrated.
+
+    ArrangementStatus:
+      type: string
+      enum: [proposed, confirmed, rejected, cancelled]
+      description: Whether Truber has confirmed the payment plan for the booking.
+
+    TransactionPaymentStatus:
+      type: string
+      enum: [unpaid, partially_paid, paid, refunded, failed]
+      description: Status of recorded money movement for a transaction — not arrangement or protection.
+
+    ProtectionStatus:
+      type: string
+      enum:
+        - none
+        - pending_evidence
+        - protected
+        - protection_failed
+        - released_from_protection
+      description: |
+        Escrow/protected hold state. Always `none` for cash. `protected` requires
+        server-accepted independent-provider evidence — never client self-assertion.
+
+    ReleaseStatus:
+      type: string
+      enum:
+        - not_applicable
+        - held
+        - release_requested
+        - released_recorded
+        - release_failed
+      description: |
+        Release tracking. `released_recorded` means an audit/ops record exists; it does
+        not assert Truber moved funds.
+
+    PaymentArrangement:
+      type: object
+      required:
+        - id
+        - bookingId
+        - method
+        - arrangementStatus
+        - protectionStatus
+        - releaseStatus
+        - totalAmount
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          $ref: '#/components/schemas/Uuid'
+        bookingId:
+          $ref: '#/components/schemas/Uuid'
+        method:
+          $ref: '#/components/schemas/PaymentMethod'
+        arrangementStatus:
+          $ref: '#/components/schemas/ArrangementStatus'
+        protectionStatus:
+          $ref: '#/components/schemas/ProtectionStatus'
+        releaseStatus:
+          $ref: '#/components/schemas/ReleaseStatus'
+        totalAmount:
+          $ref: '#/components/schemas/PositiveMoneyAmount'
+        depositAmount:
+          allOf:
+            - $ref: '#/components/schemas/MoneyAmount'
+          type: object
+          nullable: true
+          description: Required when method is deposit_balance.
+        balanceAmount:
+          allOf:
+            - $ref: '#/components/schemas/MoneyAmount'
+          type: object
+          nullable: true
+          description: Required when method is deposit_balance.
+        corporateCreditTermsDays:
+          type: integer
+          enum: [7, 14, 30]
+          nullable: true
+          description: Required when method is corporate_credit.
+        providerHint:
+          type: string
+          nullable: true
+          description: |
+            Optional free-text hint (e.g. intended rail). Not a confirmed integration.
+            Must not be treated as proof of Paynow/EcoCash/InnBucks support.
+        protectionEvidence:
+          allOf:
+            - $ref: '#/components/schemas/ProtectionEvidence'
+          type: object
+          nullable: true
+        depositReceipt:
+          allOf:
+            - $ref: '#/components/schemas/DepositReceipt'
+          type: object
+          nullable: true
+          description: Required before confirming deposit_balance arrangements.
+        confirmedAt:
+          allOf:
+            - $ref: '#/components/schemas/DateTime'
+          type: string
+          nullable: true
+        confirmedByUserId:
+          allOf:
+            - $ref: '#/components/schemas/Uuid'
+          type: string
+          nullable: true
+        createdAt:
+          $ref: '#/components/schemas/DateTime'
+        updatedAt:
+          $ref: '#/components/schemas/DateTime'
+
+    ProtectionEvidence:
+      type: object
+      required: [providerName, externalReference, recordedAt, recordedByUserId]
+      properties:
+        providerName:
+          type: string
+          description: Independent provider name as recorded by ops (not an integration claim)
+          maxLength: 200
+        externalReference:
+          type: string
+          description: Provider reference / hold id / receipt id
+          maxLength: 200
+        notes:
+          type: string
+          maxLength: 2000
+          nullable: true
+        recordedAt:
+          $ref: '#/components/schemas/DateTime'
+        recordedByUserId:
+          $ref: '#/components/schemas/Uuid'
+
+    CreatePaymentArrangementRequest:
+      type: object
+      description: |
+        Propose a payment plan. `totalAmount` must be strictly positive (QA-007).
+        For `deposit_balance`: both `depositAmount` and `balanceAmount` required, each
+        positive, and deposit+balance must equal total. Split ratio is **configurable**
+        (50/50 is only an example — no fixed rate in the contract).
+        For `corporate_credit`: `corporateCreditTermsDays` required; server rejects unless
+        the shipper company has an **approved** credit account with sufficient available
+        capacity (QA-011). Capacity reservation is concurrency-safe at confirm time.
+      required: [method, totalAmount]
+      properties:
+        method:
+          $ref: '#/components/schemas/PaymentMethod'
+        totalAmount:
+          $ref: '#/components/schemas/PositiveMoneyAmount'
+        depositAmount:
+          $ref: '#/components/schemas/PositiveMoneyAmount'
+        balanceAmount:
+          $ref: '#/components/schemas/PositiveMoneyAmount'
+        corporateCreditTermsDays:
+          type: integer
+          enum: [7, 14, 30]
+        providerHint:
+          type: string
+          maxLength: 200
+        notes:
+          type: string
+          maxLength: 2000
+
+    ConfirmPaymentArrangementRequest:
+      type: object
+      properties:
+        notes:
+          type: string
+          maxLength: 2000
+        protectionEvidence:
+          allOf:
+            - $ref: '#/components/schemas/ProtectionEvidenceRequest'
+          description: Optional; admin may attach evidence in the same call for escrow.
+
+    ProtectionEvidenceRequest:
+      type: object
+      required: [providerName, externalReference]
+      properties:
+        providerName:
+          type: string
+          minLength: 1
+          maxLength: 200
+        externalReference:
+          type: string
+          minLength: 1
+          maxLength: 200
+        notes:
+          type: string
+          maxLength: 2000
+
+    PaymentArrangementListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/PaymentArrangement'
+
+    PaymentTransaction:
+      type: object
+      required:
+        - id
+        - arrangementId
+        - amount
+        - paymentStatus
+        - recordedAt
+        - recordedByUserId
+      properties:
+        id:
+          $ref: '#/components/schemas/Uuid'
+        arrangementId:
+          $ref: '#/components/schemas/Uuid'
+        amount:
+          $ref: '#/components/schemas/MoneyAmount'
+        paymentStatus:
+          $ref: '#/components/schemas/TransactionPaymentStatus'
+        externalReference:
+          type: string
+          nullable: true
+          maxLength: 200
+        processingFee:
+          allOf:
+            - $ref: '#/components/schemas/MoneyAmount'
+          type: object
+          nullable: true
+          description: Processing fee recorded separately from Truber commission.
+        notes:
+          type: string
+          nullable: true
+          maxLength: 2000
+        recordedAt:
+          $ref: '#/components/schemas/DateTime'
+        recordedByUserId:
+          $ref: '#/components/schemas/Uuid'
+
+    RecordPaymentTransactionRequest:
+      type: object
+      required: [amount, paymentStatus]
+      properties:
+        amount:
+          $ref: '#/components/schemas/PositiveMoneyAmount'
+        paymentStatus:
+          $ref: '#/components/schemas/TransactionPaymentStatus'
+        externalReference:
+          type: string
+          maxLength: 200
+        processingFee:
+          $ref: '#/components/schemas/NonNegativeMoneyAmount'
+        notes:
+          type: string
+          maxLength: 2000
+
+    PaymentTransactionListResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/PaymentTransaction'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    ReleaseChannel:
+      type: string
+      enum: [manual_ops, provider_api]
+      description: |
+        `manual_ops` is the MVP path. `provider_api` flags a future capability for when
+        an authorised provider exposes release automation — recording with this channel
+        still does not claim funds moved via Truber.
+
+    PaymentReleaseRecord:
+      type: object
+      required:
+        - id
+        - arrangementId
+        - releaseChannel
+        - releaseStatus
+        - tripAmount
+        - commissionAmount
+        - transporterNetAmount
+        - recordedAt
+        - recordedByUserId
+      properties:
+        id:
+          $ref: '#/components/schemas/Uuid'
+        arrangementId:
+          $ref: '#/components/schemas/Uuid'
+        releaseChannel:
+          $ref: '#/components/schemas/ReleaseChannel'
+        releaseStatus:
+          $ref: '#/components/schemas/ReleaseStatus'
+        tripAmount:
+          allOf:
+            - $ref: '#/components/schemas/PositiveMoneyAmount'
+          description: Completed trip amount used as commission base.
+        commissionAmount:
+          allOf:
+            - $ref: '#/components/schemas/NonNegativeMoneyAmount'
+          description: 5% of tripAmount half-up to minor unit (provisional rounding).
+        commissionRateBps:
+          type: integer
+          enum: [500]
+        processingFeesTotal:
+          allOf:
+            - $ref: '#/components/schemas/NonNegativeMoneyAmount'
+          type: object
+          nullable: true
+          description: Sum of processing fees accounted separately from commission; zero allowed.
+        transporterNetAmount:
+          allOf:
+            - $ref: '#/components/schemas/NonNegativeMoneyAmount'
+          description: |
+            tripAmount minus commissionAmount before separately assigned processing fees
+            (fee payer unresolved).
+        externalReference:
+          type: string
+          nullable: true
+          maxLength: 200
+        notes:
+          type: string
+          nullable: true
+          maxLength: 2000
+        fundsMovementClaimedByTruber:
+          type: boolean
+          enum: [false]
+          description: Always false. Release records are audit/ops only in this contract.
+        recordedAt:
+          $ref: '#/components/schemas/DateTime'
+        recordedByUserId:
+          $ref: '#/components/schemas/Uuid'
+
+    RecordPaymentReleaseRequest:
+      type: object
+      description: |
+        Admin/ops only. Server returns 409 unless booking `completionStatus=completed`
+        (shipper accepted delivery with POD, or admin resolved dispute to completed with
+        audit — QA-001/QA-005). Release is held while `disputed`. Manually recorded only;
+        never claims Truber moved funds; no float; no live provider API.
+        `tripAmount` must be positive; `processingFeesTotal` may be zero (QA-007).
+      required: [releaseChannel, tripAmount]
+      properties:
+        releaseChannel:
+          $ref: '#/components/schemas/ReleaseChannel'
+        tripAmount:
+          $ref: '#/components/schemas/PositiveMoneyAmount'
+        processingFeesTotal:
+          $ref: '#/components/schemas/NonNegativeMoneyAmount'
+        externalReference:
+          type: string
+          maxLength: 200
+        notes:
+          type: string
+          maxLength: 2000
+
+    ProofOfDelivery:
+      type: object
+      required:
+        - id
+        - bookingId
+        - uploadedByUserId
+        - createdAt
+      properties:
+        id:
+          $ref: '#/components/schemas/Uuid'
+        bookingId:
+          $ref: '#/components/schemas/Uuid'
+        deliveryNoteReference:
+          type: string
+          nullable: true
+          maxLength: 200
+        photoUris:
+          type: array
+          items:
+            type: string
+            format: uri
+          maxItems: 20
+        recipientName:
+          type: string
+          nullable: true
+          maxLength: 200
+        recipientConfirmationNote:
+          type: string
+          nullable: true
+          maxLength: 2000
+        uploadedByUserId:
+          $ref: '#/components/schemas/Uuid'
+        createdAt:
+          $ref: '#/components/schemas/DateTime'
+
+    CreateProofOfDeliveryRequest:
+      type: object
+      description: |
+        QA-008 schema-enforced non-vacuous POD (not prose-only). Instance must satisfy
+        `anyOf`: (A) nonempty `photoUris` with each entry a non-blank `uri`, or
+        (B) non-blank `recipientConfirmationNote` (recipient confirmation). Both may be
+        present. Optional supporting fields: `deliveryNoteReference`, `recipientName`.
+        Empty `{}`, empty file lists, blank confirmation, and malformed/blank URIs are invalid.
+      properties:
+        deliveryNoteReference:
+          type: string
+          minLength: 1
+          maxLength: 200
+        photoUris:
+          type: array
+          description: File evidence URIs; emptiness alone does not satisfy anyOf.
+          items:
+            type: string
+            format: uri
+            minLength: 1
+            description: Absolute http(s) URI for a POD file/photo
+            pattern: '^https?://\S+$'
+          maxItems: 20
+        recipientName:
+          type: string
+          minLength: 1
+          maxLength: 200
+        recipientConfirmationNote:
+          type: string
+          maxLength: 2000
+      anyOf:
+        - type: object
+          required: [photoUris]
+          properties:
+            photoUris:
+              type: array
+              minItems: 1
+              maxItems: 20
+              items:
+                type: string
+                format: uri
+                minLength: 1
+                description: Absolute http(s) URI for a POD file/photo
+                pattern: '^https?://\S+$'
+        - type: object
+          required: [recipientConfirmationNote]
+          properties:
+            recipientConfirmationNote:
+              type: string
+              minLength: 1
+              maxLength: 2000
+              pattern: '^.*\S.*$'
+
+    ProofOfDeliveryListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProofOfDelivery'
+
+    DeliveryConfirmationDecision:
+      type: string
+      enum: [accepted, disputed]
+
+    DeliveryConfirmation:
+      type: object
+      required: [bookingId, decision, confirmedByUserId, confirmedAt]
+      properties:
+        bookingId:
+          $ref: '#/components/schemas/Uuid'
+        decision:
+          $ref: '#/components/schemas/DeliveryConfirmationDecision'
+        notes:
+          type: string
+          nullable: true
+          maxLength: 2000
+        confirmedByUserId:
+          $ref: '#/components/schemas/Uuid'
+        confirmedAt:
+          $ref: '#/components/schemas/DateTime'
+
+    ConfirmDeliveryRequest:
+      type: object
+      description: |
+        Shipper decision. Server rejects (409) if no POD artifact exists for the booking
+        (QA-008). On `accepted`, `completionStatus` becomes `completed` (QA-003 provisional).
+        On `disputed`, `completionStatus` becomes `disputed` and release is held (QA-005).
+      required: [decision]
+      properties:
+        decision:
+          $ref: '#/components/schemas/DeliveryConfirmationDecision'
+        notes:
+          type: string
+          maxLength: 2000
+
+    RatingDirection:
+      type: string
+      enum: [shipper_rates_transporter, transporter_rates_shipper]
+
+    Rating:
+      type: object
+      required:
+        - id
+        - bookingId
+        - direction
+        - score
+        - raterUserId
+        - createdAt
+      properties:
+        id:
+          $ref: '#/components/schemas/Uuid'
+        bookingId:
+          $ref: '#/components/schemas/Uuid'
+        direction:
+          $ref: '#/components/schemas/RatingDirection'
+        score:
+          type: integer
+          minimum: 1
+          maximum: 5
+        comment:
+          type: string
+          nullable: true
+          maxLength: 2000
+        raterUserId:
+          $ref: '#/components/schemas/Uuid'
+        createdAt:
+          $ref: '#/components/schemas/DateTime'
+
+    CreateRatingRequest:
+      type: object
+      required: [direction, score]
+      properties:
+        direction:
+          $ref: '#/components/schemas/RatingDirection'
+        score:
+          type: integer
+          minimum: 1
+          maximum: 5
+        comment:
+          type: string
+          maxLength: 2000
+
+    RatingListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Rating'
+
+    ConfirmBookingRequest:
+      type: object
+      description: |
+        Optional body. Admin override must include auditOverrideReason; shipper omit.
+        Override never bypasses payment gates.
+      properties:
+        auditOverrideReason:
+          type: string
+          minLength: 8
+          maxLength: 2000
+          description: Required when an admin confirms on behalf of ops assistance.
+
+    CancelBookingRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        beforeCollection:
+          type: boolean
+          default: true
+          description: MVP path expects true; post-collection cancel policy unresolved.
+
+    ResolveDisputeRequest:
+      type: object
+      required: [resolution, reason]
+      properties:
+        resolution:
+          type: string
+          enum: [complete_trip, cancel_trip]
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 2000
+
+    DisputeResolutionRecord:
+      type: object
+      required: [bookingId, resolution, reason, resolvedByUserId, resolvedAt, resultingCompletionStatus]
+      properties:
+        bookingId:
+          $ref: '#/components/schemas/Uuid'
+        resolution:
+          type: string
+          enum: [complete_trip, cancel_trip]
+        reason:
+          type: string
+        resolvedByUserId:
+          $ref: '#/components/schemas/Uuid'
+        resolvedAt:
+          $ref: '#/components/schemas/DateTime'
+        resultingCompletionStatus:
+          $ref: '#/components/schemas/CompletionStatus'
+
+    DepositReceiptRequest:
+      type: object
+      required: [externalReference, amount]
+      properties:
+        externalReference:
+          type: string
+          minLength: 1
+          maxLength: 200
+        amount:
+          $ref: '#/components/schemas/PositiveMoneyAmount'
+        notes:
+          type: string
+          maxLength: 2000
+
+    DepositReceipt:
+      type: object
+      required: [externalReference, amount, recordedAt, recordedByUserId]
+      properties:
+        externalReference:
+          type: string
+        amount:
+          $ref: '#/components/schemas/PositiveMoneyAmount'
+        notes:
+          type: string
+          nullable: true
+        recordedAt:
+          $ref: '#/components/schemas/DateTime'
+        recordedByUserId:
+          $ref: '#/components/schemas/Uuid'
+
+    RecordRefundRequest:
+      type: object
+      required: [amount, reason]
+      properties:
+        amount:
+          allOf:
+            - $ref: '#/components/schemas/PositiveMoneyAmount'
+          description: Magnitude of refund (audit); direction encoded on the record.
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        externalReference:
+          type: string
+          maxLength: 200
+
+    PaymentRefundRecord:
+      type: object
+      required:
+        - id
+        - arrangementId
+        - amount
+        - reason
+        - fundsMovementClaimedByTruber
+        - recordedAt
+        - recordedByUserId
+      properties:
+        id:
+          $ref: '#/components/schemas/Uuid'
+        arrangementId:
+          $ref: '#/components/schemas/Uuid'
+        amount:
+          $ref: '#/components/schemas/PositiveMoneyAmount'
+        reason:
+          type: string
+        externalReference:
+          type: string
+          nullable: true
+        fundsMovementClaimedByTruber:
+          type: boolean
+          enum: [false]
+        recordedAt:
+          $ref: '#/components/schemas/DateTime'
+        recordedByUserId:
+          $ref: '#/components/schemas/Uuid'
+
+    CreditAccountStatus:
+      type: string
+      enum: [unapproved, approved, suspended, revoked]
+
+    CreditAccount:
+      type: object
+      required:
+        - companyId
+        - status
+        - creditLimit
+        - reservedAmount
+        - availableAmount
+        - updatedAt
+      properties:
+        companyId:
+          $ref: '#/components/schemas/Uuid'
+        status:
+          $ref: '#/components/schemas/CreditAccountStatus'
+        creditLimit:
+          $ref: '#/components/schemas/NonNegativeMoneyAmount'
+        reservedAmount:
+          allOf:
+            - $ref: '#/components/schemas/NonNegativeMoneyAmount'
+          description: Sum of outstanding reservations (concurrency-safe)
+        availableAmount:
+          allOf:
+            - $ref: '#/components/schemas/NonNegativeMoneyAmount'
+          description: creditLimit minus reservedAmount (and drawn, when modeled)
+        defaultTermsDays:
+          type: integer
+          enum: [7, 14, 30]
+          nullable: true
+        updatedAt:
+          $ref: '#/components/schemas/DateTime'
+
+    UpsertCreditAccountRequest:
+      type: object
+      required: [status, creditLimit]
+      properties:
+        status:
+          $ref: '#/components/schemas/CreditAccountStatus'
+        creditLimit:
+          $ref: '#/components/schemas/NonNegativeMoneyAmount'
+        defaultTermsDays:
+          type: integer
+          enum: [7, 14, 30]
+        notes:
+          type: string
+          maxLength: 2000
+
+    OtpRequestResponse:
+      type: object
+      required: [status, expiresInSeconds]
+      properties:
+        status:
+          type: string
+          enum: [dispatched, stubbed]
+        expiresInSeconds:
+          type: integer
+          minimum: 1
+
+    VerifyOtpRequest:
+      type: object
+      required: [code]
+      properties:
+        code:
+          type: string
+          minLength: 4
+          maxLength: 12
+
+    VerificationDocumentType:
+      type: string
+      enum:
+        - national_id
+        - company_registration
+        - tax_clearance
+        - vehicle_registration
+        - insurance
+        - other
+
+    VerificationDocumentStatus:
+      type: string
+      enum: [submitted, approved, rejected]
+
+    VerificationDocument:
+      type: object
+      required:
+        - id
+        - ownerUserId
+        - documentType
+        - documentUri
+        - status
+        - createdAt
+      properties:
+        id:
+          $ref: '#/components/schemas/Uuid'
+        ownerUserId:
+          $ref: '#/components/schemas/Uuid'
+        companyId:
+          allOf:
+            - $ref: '#/components/schemas/Uuid'
+          type: string
+          nullable: true
+        truckId:
+          allOf:
+            - $ref: '#/components/schemas/Uuid'
+          type: string
+          nullable: true
+        documentType:
+          $ref: '#/components/schemas/VerificationDocumentType'
+        documentUri:
+          type: string
+          format: uri
+        status:
+          $ref: '#/components/schemas/VerificationDocumentStatus'
+        reviewNotes:
+          type: string
+          nullable: true
+        createdAt:
+          $ref: '#/components/schemas/DateTime'
+        reviewedAt:
+          allOf:
+            - $ref: '#/components/schemas/DateTime'
+          type: string
+          nullable: true
+
+    CreateVerificationDocumentRequest:
+      type: object
+      required: [documentType, documentUri]
+      properties:
+        documentType:
+          $ref: '#/components/schemas/VerificationDocumentType'
+        documentUri:
+          type: string
+          format: uri
+        companyId:
+          $ref: '#/components/schemas/Uuid'
+        truckId:
+          $ref: '#/components/schemas/Uuid'
+
+    ReviewVerificationDocumentRequest:
+      type: object
+      required: [decision]
+      properties:
+        decision:
+          type: string
+          enum: [approved, rejected]
+        reviewNotes:
+          type: string
+          maxLength: 2000
+        setCompanyVerified:
+          type: boolean
+          default: false
+        setTruckVerified:
+          type: boolean
+          default: false
+
+    VerificationDocumentListResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/VerificationDocument'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
