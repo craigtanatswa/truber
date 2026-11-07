@@ -3,14 +3,15 @@ import { Pool } from 'pg';
 import { loadEnv } from '../config/env';
 import { loadDotEnv } from '../load-dotenv';
 import { migrate } from './migrate';
+import { buildPoolConfig } from './pg-config';
 
 async function main(): Promise<void> {
   loadDotEnv();
   const env = loadEnv();
-  const pool = new Pool({ connectionString: env.DATABASE_URL, max: 1, application_name: 'truber-migrate' });
+  const pool = new Pool(buildPoolConfig(env.db, 'migration'));
   try {
-    await migrate(pool);
-    process.stdout.write('migrations applied\n');
+    await migrate(pool, env);
+    process.stdout.write(`migrations applied for schema ${env.db.DB_SCHEMA}\n`);
   } finally {
     await pool.end();
   }

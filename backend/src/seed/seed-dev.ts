@@ -11,7 +11,6 @@ async function main(): Promise<void> {
     confirm: process.env.SEED_CONFIRM,
     email: process.env.SEED_ADMIN_EMAIL ?? 'admin@seed.truber.local',
     password: process.env.SEED_ADMIN_PASSWORD,
-    databaseUrl: env.DATABASE_URL,
   });
   process.stdout.write(`seed admin ${result.created ? 'created' : 'already present'} id=${result.userId}\n`);
 }

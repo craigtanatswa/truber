@@ -47,3 +47,44 @@ jobs:
           npm run typecheck
           npm test
           npm run build
+
+  supabase-like:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: truber
+          POSTGRES_PASSWORD: truber
+          POSTGRES_DB: truber_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U truber -d truber_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - name: private schema and gis namespace
+        env:
+          NODE_ENV: test
+          JWT_ACCESS_SECRET: ci-only-jwt-secret-not-a-production-secret
+          DELIVERY_ADAPTER: dev
+          RESET_SOURCE_MAX: "1000"
+          CONFIRM_SOURCE_MAX: "1000"
+          OTP_SOURCE_MAX: "1000"
+          OTP_VERIFY_MAX: "1000"
+          PGHOST: 127.0.0.1
+          PGADMIN_PASSWORD: truber
+          PGRUNTIME_PASSWORD: truber
+        run: npm run test:supabase-like

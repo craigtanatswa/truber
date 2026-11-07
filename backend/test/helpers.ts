@@ -1,19 +1,31 @@
 import { INestApplication, LoggerService } from '@nestjs/common';
 import { randomUUID } from 'crypto';
+import { Pool } from 'pg';
 import request from 'supertest';
+import { loadEnv } from '../src/config/env';
 import { DbService } from '../src/db/db.service';
+import { qualifyAppSql } from '../src/db/identifiers';
+import { buildPoolConfig } from '../src/db/pg-config';
 import { SEED_CONFIRM, runSeed } from '../src/seed/seed-lib';
 
 export const ADMIN_EMAIL = 'admin@seed.truber.local';
 export const ADMIN_PASSWORD = 'seed-admin-password';
 
-export async function truncate(app: INestApplication): Promise<void> {
-  const db = app.get(DbService);
-  await db.query(`
-    TRUNCATE delivery_outbox, idempotency_records, rate_limit_buckets, otp_challenges,
-             password_reset_tokens, refresh_sessions, loads, company_members, companies, users
-    RESTART IDENTITY CASCADE
-  `);
+export async function truncate(): Promise<void> {
+  const env = loadEnv();
+  const pool = new Pool(buildPoolConfig(env.db, 'migration'));
+  try {
+    await pool.query(
+      qualifyAppSql(
+        `TRUNCATE delivery_outbox, idempotency_records, rate_limit_buckets, otp_challenges,
+                password_reset_tokens, refresh_sessions, loads, company_members, companies, users
+         RESTART IDENTITY CASCADE`,
+        { appSchema: env.db.DB_SCHEMA, postgisSchema: env.db.POSTGIS_SCHEMA },
+      ),
+    );
+  } finally {
+    await pool.end();
+  }
 }
 
 export interface HttpResult {
@@ -61,7 +73,6 @@ export async function seedAdmin(): Promise<void> {
     confirm: SEED_CONFIRM,
     email: ADMIN_EMAIL,
     password: ADMIN_PASSWORD,
-    databaseUrl: process.env.DATABASE_URL as string,
   });
 }
 

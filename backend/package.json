@@ -10,6 +10,7 @@
     "typecheck": "tsc -p tsconfig.eslint.json --noEmit --pretty false",
     "lint": "eslint \"src/**/*.ts\" \"test/**/*.ts\"",
     "test": "jest --runInBand",
+    "test:supabase-like": "bash scripts/prepare-local-supabase-like.sh && DB_TARGET=local DB_SCHEMA=truber POSTGIS_SCHEMA=gis DB_RUNTIME_ROLE=truber_runtime DB_SSL_MODE=disable DB_CONNECTION_MODE=direct DB_MIGRATION_CONNECTION_MODE=direct DATABASE_URL=postgres://truber_runtime:truber@127.0.0.1:5432/truber_gis_like DATABASE_MIGRATION_URL=postgres://truber:truber@127.0.0.1:5432/truber_gis_like jest --runInBand",
     "migrate": "tsx src/db/migrate-cli.ts",
     "seed": "tsx src/seed/seed-dev.ts"
   },

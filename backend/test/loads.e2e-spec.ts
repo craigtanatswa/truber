@@ -3,11 +3,13 @@ import { createApp } from '../src/create-app';
 import { DbService } from '../src/db/db.service';
 import { assertOperationResponse } from './contract';
 import { ADMIN_EMAIL, ADMIN_PASSWORD, http, latestPayload, seedAdmin, truncate, uniqueEmail } from './helpers';
+import { prepareTestDatabase } from './prepare-db';
 
 describe('loads and companies API', () => {
   let app: INestApplication;
 
   beforeAll(async () => {
+    await prepareTestDatabase();
     app = await createApp({ logger: false });
   });
 
@@ -16,7 +18,7 @@ describe('loads and companies API', () => {
   });
 
   beforeEach(async () => {
-    await truncate(app);
+    await truncate();
   });
 
   it('rejects unverified posting, wrong roles, tenant access, and client-controlled status', async () => {

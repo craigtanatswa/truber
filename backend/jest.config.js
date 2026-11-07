@@ -2,7 +2,7 @@
 module.exports = {
   moduleFileExtensions: ['js', 'json', 'ts'],
   rootDir: '.',
-  testRegex: '.e2e-spec.ts$',
+  testRegex: '\\.(e2e-spec|spec)\\.ts$',
   transform: {
     '^.+\\.ts$': ['ts-jest', { diagnostics: false, tsconfig: 'tsconfig.eslint.json' }],
   },

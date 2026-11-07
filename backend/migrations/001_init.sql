@@ -1,13 +1,6 @@
--- Auth + companies + loads schema for API v0.2.0 slice.
--- PostGIS is required. Booking, payment, quotation, and truck tables are
--- intentionally absent: those operations are not implemented in this slice.
-
-CREATE EXTENSION IF NOT EXISTS postgis;
-
-CREATE TABLE IF NOT EXISTS schema_migrations (
-  id text PRIMARY KEY,
-  applied_at timestamptz NOT NULL DEFAULT clock_timestamp()
-);
+-- Auth + companies + loads tables for API v0.2.0.
+-- The migrate command qualifies these names into DB_SCHEMA and installs PostGIS
+-- into POSTGIS_SCHEMA before this file runs. Booking and payment tables are absent.
 
 CREATE TABLE IF NOT EXISTS users (
   id uuid PRIMARY KEY,

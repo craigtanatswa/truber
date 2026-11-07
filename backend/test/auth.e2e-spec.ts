@@ -5,6 +5,7 @@ import { DbService } from '../src/db/db.service';
 import { SeedRefusal, runSeed } from '../src/seed/seed-lib';
 import { assertOperationResponse, assertSchema, contractVersion } from './contract';
 import { ADMIN_EMAIL, ADMIN_PASSWORD, capturingLogger, http, latestPayload, seedAdmin, truncate, uniqueEmail } from './helpers';
+import { prepareTestDatabase } from './prepare-db';
 
 const RESET_OK = {
   status: 'accepted',
@@ -20,6 +21,7 @@ describe('auth API', () => {
   const lines: string[] = [];
 
   beforeAll(async () => {
+    await prepareTestDatabase();
     app = await createApp({ logger: capturingLogger(lines) });
   });
 
@@ -28,7 +30,7 @@ describe('auth API', () => {
   });
 
   beforeEach(async () => {
-    await truncate(app);
+    await truncate();
     lines.length = 0;
   });
 
@@ -433,7 +435,6 @@ describe('auth API', () => {
         confirm: 'I_UNDERSTAND_THIS_IS_NOT_PRODUCTION',
         email: ADMIN_EMAIL,
         password: ADMIN_PASSWORD,
-        databaseUrl: process.env.DATABASE_URL as string,
       }),
     ).rejects.toBeInstanceOf(SeedRefusal);
 
@@ -443,7 +444,6 @@ describe('auth API', () => {
         confirm: 'yes',
         email: ADMIN_EMAIL,
         password: ADMIN_PASSWORD,
-        databaseUrl: process.env.DATABASE_URL as string,
       }),
     ).rejects.toThrow(/SEED_CONFIRM/);
 
@@ -457,7 +457,6 @@ describe('auth API', () => {
         confirm: 'I_UNDERSTAND_THIS_IS_NOT_PRODUCTION',
         email,
         password: ADMIN_PASSWORD,
-        databaseUrl: process.env.DATABASE_URL as string,
       }),
     ).rejects.toThrow(/escalate/);
     const db = app.get(DbService);
@@ -469,7 +468,6 @@ describe('auth API', () => {
       confirm: 'I_UNDERSTAND_THIS_IS_NOT_PRODUCTION',
       email: ADMIN_EMAIL,
       password: ADMIN_PASSWORD,
-      databaseUrl: process.env.DATABASE_URL as string,
     });
     expect(created.created).toBe(true);
     const hash = await db.query<{ password_hash: string }>('SELECT password_hash FROM users WHERE id = $1', [created.userId]);
@@ -478,7 +476,6 @@ describe('auth API', () => {
       confirm: 'I_UNDERSTAND_THIS_IS_NOT_PRODUCTION',
       email: ADMIN_EMAIL,
       password: 'different-password',
-      databaseUrl: process.env.DATABASE_URL as string,
     });
     expect(again.created).toBe(false);
     const after = await db.query<{ password_hash: string; role: string }>('SELECT password_hash, role FROM users WHERE id = $1', [

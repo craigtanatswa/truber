@@ -72,6 +72,19 @@ npm start
 
 The API listens on `127.0.0.1:3000` unless `BIND_HOST` is changed. That address is the VM loopback, not a public URL.
 
+`npm start` does not apply migrations. Run `npm run migrate` first. The migrate command is also what installs PostGIS into `POSTGIS_SCHEMA` and applies schema grants. It refuses to move PostGIS if it is already installed in a different schema.
+
+Two local checks:
+
+```bash
+npm test
+npm run test:supabase-like
+```
+
+`npm test` uses the existing local layout (`DB_SCHEMA=public`, `POSTGIS_SCHEMA=public`). `npm run test:supabase-like` creates a second local database, installs PostGIS in schema `gis`, and runs the API as a non-superuser role against schema `truber`. That second command is still local. It does not connect to Supabase.
+
+Hosted Supabase setup is documented in [docs/supabase-postgres.md](docs/supabase-postgres.md). Compatibility code is in this tree. No hosted database has been migrated or contacted by the API.
+
 Seed an admin only when you mean to:
 
 ```bash
