@@ -2,8 +2,13 @@ import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { PoolClient, QueryResult, QueryResultRow } from 'pg';
 import { ApiException } from '../common/api.exception';
-import { iso } from '../common/crypto';
+import { iso, sha256 } from '../common/crypto';
 import { pageMeta, pageWindow } from '../common/http';
+import {
+  assertIdempotencyKey,
+  readIdempotency,
+  storeIdempotency,
+} from '../common/idempotency';
 import { DbService } from '../db/db.service';
 import {
   OffPlatformBan,
@@ -33,7 +38,7 @@ export interface ListOffPlatformBansQuery {
 
 type BannedParty = 'caller' | 'caller_company' | 'counterparty_company';
 
-const BAN_RETURNING = `
+export const BAN_RETURNING = `
   id,
   finding_id AS "findingId",
   user_id AS "userId",
@@ -107,7 +112,7 @@ export class OffPlatformBanService {
            duration_days, applied_by_user_id, created_at
          )
          SELECT $1, $2, $3, $4, $5, $6, applied.starts_at,
-                applied.starts_at + interval '14 days', 14, $7, applied.starts_at
+                applied.starts_at + interval '336 hours', 14, $7, applied.starts_at
          FROM applied
          RETURNING ${BAN_RETURNING}`,
         [
@@ -171,7 +176,33 @@ export class OffPlatformBanService {
   }
 
   async lift(adminId: string, banId: string, liftReason: string): Promise<OffPlatformBan> {
+    const result = await this.liftWithIdempotency(adminId, banId, liftReason);
+    return result.body;
+  }
+
+  async liftWithIdempotency(
+    adminId: string,
+    banId: string,
+    liftReasonInput: string,
+    idempotencyKey?: string,
+  ): Promise<{ status: number; body: OffPlatformBan }> {
+    assertIdempotencyKey(idempotencyKey);
+    const liftReason = liftReasonInput.trim();
+    if (liftReason.length < 8 || liftReason.length > 4000) {
+      throw new ApiException(400, 'VALIDATION_ERROR', 'Request validation failed', {
+        fields: { liftReason: 'must be 8 to 4000 characters' },
+      });
+    }
+    const requestHash = sha256(JSON.stringify({ op: 'liftOffPlatformBan', banId, liftReason }));
     return this.db.tx(async (client) => {
+      const replay = await readIdempotency<OffPlatformBan>(
+        client,
+        adminId,
+        idempotencyKey,
+        'liftOffPlatformBan',
+        requestHash,
+      );
+      if (replay) return replay;
       const locked = await client.query(
         `SELECT ${BAN_RETURNING} FROM off_platform_bans WHERE id = $1 FOR UPDATE`,
         [banId],
@@ -192,7 +223,9 @@ export class OffPlatformBanService {
          RETURNING ${BAN_RETURNING}`,
         [banId, adminId, liftReason],
       );
-      return presentBan(updated.rows[0]);
+      const body = presentBan(updated.rows[0]);
+      await storeIdempotency(client, adminId, idempotencyKey, 'liftOffPlatformBan', requestHash, 200, body);
+      return { status: 200, body };
     });
   }
 }

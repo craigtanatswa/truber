@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { AuthController } from './auth/auth.controller';
 import { AuthService } from './auth/auth.service';
+import { AdminOnlyGuard } from './common/admin-only.guard';
 import { JwtAuthGuard } from './common/jwt-auth.guard';
 import { CompaniesController } from './companies/companies.controller';
 import { CompaniesService } from './companies/companies.service';
@@ -10,10 +11,22 @@ import { DeliveryService } from './delivery/delivery.service';
 import { RateLimitService } from './delivery/rate-limit.service';
 import { LoadsController } from './loads/loads.controller';
 import { LoadsService } from './loads/loads.service';
+import { BookingDirectory, UnavailableBookingDirectory } from './offplatform/booking-directory';
+import {
+  BookingOffPlatformReportsController,
+  OffPlatformAdminController,
+} from './offplatform/offplatform.controller';
 import { OffPlatformBanService } from './offplatform/offplatform-ban.service';
+import { OffPlatformReportService } from './offplatform/offplatform-report.service';
 
 @Module({
-  controllers: [AuthController, CompaniesController, LoadsController],
+  controllers: [
+    AuthController,
+    CompaniesController,
+    LoadsController,
+    BookingOffPlatformReportsController,
+    OffPlatformAdminController,
+  ],
   providers: [
     { provide: ENV, useFactory: () => loadEnv() },
     DbService,
@@ -23,7 +36,10 @@ import { OffPlatformBanService } from './offplatform/offplatform-ban.service';
     CompaniesService,
     LoadsService,
     OffPlatformBanService,
+    OffPlatformReportService,
+    { provide: BookingDirectory, useClass: UnavailableBookingDirectory },
     JwtAuthGuard,
+    AdminOnlyGuard,
   ],
 })
 export class AppModule {}

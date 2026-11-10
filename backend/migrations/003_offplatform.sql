@@ -66,7 +66,7 @@ CREATE TABLE IF NOT EXISTS off_platform_bans (
   ),
   CONSTRAINT off_platform_bans_duration_check CHECK (duration_days = 14),
   CONSTRAINT off_platform_bans_ends_at_check CHECK (
-    ends_at = starts_at + interval '14 days'
+    ends_at = starts_at + interval '336 hours'
   ),
   CONSTRAINT off_platform_bans_lift_pair_check CHECK (
     (lifted_at IS NULL AND lifted_by_user_id IS NULL AND lift_reason IS NULL)
