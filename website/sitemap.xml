@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://truber-web.vercel.app/</loc>
+  </url>
+  <url>
+    <loc>https://truber-web.vercel.app/how-it-works</loc>
+  </url>
+  <url>
+    <loc>https://truber-web.vercel.app/services</loc>
+  </url>
+  <url>
+    <loc>https://truber-web.vercel.app/become-a-transporter</loc>
+  </url>
+  <url>
+    <loc>https://truber-web.vercel.app/about</loc>
+  </url>
+  <url>
+    <loc>https://truber-web.vercel.app/safety</loc>
+  </url>
+  <url>
+    <loc>https://truber-web.vercel.app/contact</loc>
+  </url>
+  <url>
+    <loc>https://truber-web.vercel.app/sign-in</loc>
+  </url>
+  <url>
+    <loc>https://truber-web.vercel.app/register</loc>
+  </url>
+</urlset>
