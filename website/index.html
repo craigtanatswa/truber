@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- COPY: design/website/COPY.md -->
+<title>Truber — Connecting Cargo. Moving Business.</title>
+<meta name="description" content="Truber is a Zimbabwe-first freight marketplace for shippers and transporters. Post loads, compare quotes and book trips. The public preview is in testing.">
+<!-- PLACEHOLDER: canonical domain not set -->
+<link rel="canonical" href="https://truber-web.vercel.app/">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#000000">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Truber">
+<meta property="og:title" content="Truber — Connecting Cargo. Moving Business.">
+<meta property="og:description" content="A Zimbabwe-first freight marketplace. Post a load, compare quotes and book a truck. Preview in testing.">
+<meta property="og:url" content="https://truber-web.vercel.app/">
+<meta property="og:image" content="https://truber-web.vercel.app/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Truber logo with the tagline Connecting Cargo. Moving Business.">
+<meta property="og:locale" content="en_GB">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Truber — Connecting Cargo. Moving Business.">
+<meta name="twitter:description" content="A Zimbabwe-first freight marketplace. Post a load, compare quotes and book a truck. Preview in testing.">
+<meta name="twitter:image" content="https://truber-web.vercel.app/og-image.png">
+<meta http-equiv="Content-Security-Policy" content="form-action 'none'">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="/assets/icon-32.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<script>try{var t=localStorage.getItem("truber-theme");if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="/tokens.css">
+<link rel="stylesheet" href="/styles.css">
+<script src="/theme.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to main content</a>
+<header class="site-header">
+  <div class="container header-inner">
+    <a class="site-brand" href="/" aria-label="Truber home">
+      <picture>
+        <source srcset="/assets/logo/truber-wordmark-white@1x.webp 1x, /assets/logo/truber-wordmark-white@2x.webp 2x" type="image/webp">
+        <img src="/assets/logo/truber-wordmark-white@1x.png" srcset="/assets/logo/truber-wordmark-white@1x.png 1x, /assets/logo/truber-wordmark-white@2x.png 2x" width="115" height="32" alt="Truber">
+      </picture>
+    </a>
+    <details class="nav-menu">
+      <summary>Menu</summary>
+      <nav aria-label="Main (mobile)">
+        <ul class="nav-list">
+          <li><a class="nav-link" href="/" aria-current="page">Home</a></li>
+          <li><a class="nav-link" href="/how-it-works">How it works</a></li>
+          <li><a class="nav-link" href="/services">Services</a></li>
+          <li><a class="nav-link" href="/become-a-transporter">Become a transporter</a></li>
+          <li><a class="nav-link" href="/safety">Safety</a></li>
+          <li><a class="nav-link" href="/about">About</a></li>
+          <li><a class="nav-link" href="/contact">Contact</a></li>
+          <li><a class="nav-link" href="/sign-in">Sign in</a></li>
+        </ul>
+      </nav>
+    </details>
+    <nav class="nav-desktop" aria-label="Main">
+      <ul class="nav-list">
+        <li><a class="nav-link" href="/" aria-current="page">Home</a></li>
+        <li><a class="nav-link" href="/how-it-works">How it works</a></li>
+        <li><a class="nav-link" href="/services">Services</a></li>
+        <li><a class="nav-link" href="/become-a-transporter">Become a transporter</a></li>
+        <li><a class="nav-link" href="/safety">Safety</a></li>
+        <li><a class="nav-link" href="/about">About</a></li>
+        <li><a class="nav-link" href="/contact">Contact</a></li>
+        <li><a class="nav-link" href="/sign-in">Sign in</a></li>
+      </ul>
+    </nav>
+    <div class="header-actions">
+      <div id="theme-toggle-slot"></div>
+      <a class="btn btn-primary" href="https://truber-mobile-preview.vercel.app" rel="noopener">Try the preview</a>
+    </div>
+  </div>
+</header>
+<main id="main">
+  <section class="hero">
+    <div class="container hero-grid">
+      <div class="hero-content">
+        <!-- COPY: design/website/COPY.md -->
+        <p class="eyebrow">Connecting Cargo. Moving Business.</p>
+        <h1 class="hero-title">Post a load. Compare quotes. Book the trip.</h1>
+        <p class="hero-subhead">Truber is a freight marketplace for Zimbabwe. Shippers post loads. Transporters send quotations. You agree terms and confirm delivery. The public preview is in testing.</p>
+        <div class="hero-actions">
+          <a class="btn btn-primary" href="https://truber-mobile-preview.vercel.app" rel="noopener">Post a load</a>
+          <a class="btn btn-secondary" href="/become-a-transporter">Become a transporter</a>
+        </div>
+        <p class="hero-note">Prefer to explore first? <a href="https://truber-mobile-preview.vercel.app" rel="noopener">Try the preview</a></p>
+        <p class="hero-note">Live payments, GPS tracking and automated matching are coming soon.</p>
+      </div>
+      <div class="hero-visual">
+        <!-- PLACEHOLDER: hero illustration; licensed photography TBC by Truber Design -->
+        <svg class="hero-svg" viewBox="0 0 520 320" role="img" aria-labelledby="hero-visual-title">
+          <title id="hero-visual-title">Illustration of a truck travelling a route between two locations</title>
+          <rect class="visual-panel" x="8" y="8" width="504" height="304" rx="16"></rect>
+          <path class="route-line" d="M60 250 C150 250 160 90 260 90 S390 250 460 250"></path>
+          <circle class="route-pin" cx="60" cy="250" r="10"></circle>
+          <circle class="route-pin" cx="460" cy="250" r="10"></circle>
+          <rect class="truck-trailer" x="120" y="120" width="230" height="86" rx="10"></rect>
+          <rect class="truck-stripe" x="120" y="160" width="230" height="18"></rect>
+          <rect class="truck-cab" x="350" y="140" width="78" height="66" rx="10"></rect>
+          <rect class="truck-window" x="366" y="152" width="42" height="26" rx="6"></rect>
+          <circle class="truck-wheel" cx="168" cy="212" r="18"></circle>
+          <circle class="truck-wheel" cx="226" cy="212" r="18"></circle>
+          <circle class="truck-wheel" cx="388" cy="212" r="18"></circle>
+          <circle class="truck-wheel-hub" cx="168" cy="212" r="7"></circle>
+          <circle class="truck-wheel-hub" cx="226" cy="212" r="7"></circle>
+          <circle class="truck-wheel-hub" cx="388" cy="212" r="7"></circle>
+        </svg>
+        <div class="hero-icon-panel">
+          <picture>
+            <source srcset="/assets/logo/truber-icon-white@1x.webp 1x, /assets/logo/truber-icon-white@2x.webp 2x" type="image/webp">
+            <img src="/assets/logo/truber-icon-white@1x.png" srcset="/assets/logo/truber-icon-white@1x.png 1x, /assets/logo/truber-icon-white@2x.png 2x" width="251" height="160" alt="Truber">
+          </picture>
+        </div>
+      </div>
+    </div>
+  </section>
+  <section class="section section--muted" id="how-it-works">
+    <div class="container">
+      <!-- COPY: design/website/COPY.md -->
+      <div class="section-header">
+        <h2 class="section-title">How it works</h2>
+        <p class="section-intro">Truber is built for shippers who need trucks, and for transporters who need loads. Matching is not automated yet — you post or search, then quote and book.</p>
+      </div>
+      <div class="steps-grid">
+        <div class="journey-column">
+          <h3 class="journey-title">For shippers</h3>
+          <ol class="step-list">
+            <li class="step-card">
+              <span class="step-number" aria-hidden="true">1</span>
+              <h4 class="step-title">Post a load</h4>
+              <p class="step-text">Tell us the pickup, destination, goods, weight, truck type, dates and any special requirements. Add an offered rate, or leave it open for quotations.</p>
+            </li>
+            <li class="step-card">
+              <span class="step-number" aria-hidden="true">2</span>
+              <h4 class="step-title">Compare quotations</h4>
+              <p class="step-text">Transporters review your load and send quotes. You compare prices and conditions, then choose the one that fits.</p>
+            </li>
+            <li class="step-card">
+              <span class="step-number" aria-hidden="true">3</span>
+              <h4 class="step-title">Confirm the booking</h4>
+              <p class="step-text">Agree the price and how you’ll pay before the trip is booked. A booking is only confirmed once both sides have agreed the terms.</p>
+            </li>
+            <li class="step-card">
+              <span class="step-number" aria-hidden="true">4</span>
+              <h4 class="step-title">Confirm delivery</h4>
+              <p class="step-text">The transporter uploads proof of delivery. You check it, confirm, and rate the trip.</p>
+            </li>
+          </ol>
+        </div>
+        <div class="journey-column">
+          <h3 class="journey-title">For transporters</h3>
+          <ol class="step-list">
+            <li class="step-card">
+              <span class="step-number" aria-hidden="true">1</span>
+              <h4 class="step-title">Register and verify</h4>
+              <p class="step-text">Add your company and trucks, then upload your documents for review. Verified accounts can take bookings.</p>
+            </li>
+            <li class="step-card">
+              <span class="step-number" aria-hidden="true">2</span>
+              <h4 class="step-title">Find loads and quote</h4>
+              <p class="step-text">Browse loads that fit your trucks and send a quotation. There is no automated matching yet — you choose which loads to quote.</p>
+            </li>
+            <li class="step-card">
+              <span class="step-number" aria-hidden="true">3</span>
+              <h4 class="step-title">Run the trip</h4>
+              <p class="step-text">Once booked, collect the goods and update the status as the trip moves: dispatched, collected, in transit, delivered. Live GPS tracking is coming soon.</p>
+            </li>
+            <li class="step-card">
+              <span class="step-number" aria-hidden="true">4</span>
+              <h4 class="step-title">Upload proof and get paid</h4>
+              <p class="step-text">Upload proof of delivery after the drop-off. On completed trips, Truber’s commission is 5%. You receive the agreed amount minus that commission and any payment charges.</p>
+            </li>
+          </ol>
+        </div>
+      </div>
+      <p class="section-actions"><a class="btn btn-secondary" href="/how-it-works">See the full journey</a></p>
+    </div>
+  </section>
+  <section class="section">
+    <div class="container">
+      <!-- PLACEHOLDER: engineering-drafted copy from CONCEPT.md; Truber Design to supply final copy -->
+      <div class="section-header">
+        <h2 class="section-title">Why Truber</h2>
+        <p class="section-intro">Truber is being built around the things that make freight work: verified providers, clear quotations and a record of every trip.</p>
+      </div>
+      <ul class="card-grid card-grid--4">
+        <li class="card">
+          <h3 class="card-title">Verified transporters and trucks</h3>
+          <p>Company, truck and document checks are part of the Truber model, so shippers can compare providers with confidence.</p>
+        </li>
+        <li class="card">
+          <h3 class="card-title">Compare quotations side by side</h3>
+          <p>Post a load and review the quotations you receive before choosing the transporter that fits.</p>
+        </li>
+        <li class="card">
+          <h3 class="card-title">Clear booking records and proof of delivery</h3>
+          <p>Agreed terms, trip status and delivery records stay together on the booking.</p>
+        </li>
+        <li class="card">
+          <h3 class="card-title">Fewer empty return trips</h3>
+          <p>Return-load matching is planned to help transporters find work for the trip home.</p>
+          <p><span class="badge badge--soon">Coming soon</span></p>
+        </li>
+      </ul>
+    </div>
+  </section>
+  <section class="section section--muted">
+    <div class="container">
+      <!-- PLACEHOLDER: engineering-drafted copy from CONCEPT.md; Truber Design to supply final copy -->
+      <div class="section-header">
+        <h2 class="section-title">Built for both sides of the trip</h2>
+        <p class="section-intro">One marketplace for the people who need cargo moved and the people who move it.</p>
+      </div>
+      <div class="card-grid card-grid--2">
+        <article class="card">
+          <h3 class="card-title">For shippers</h3>
+          <ul class="list-check">
+            <li>Post loads with pickup, destination, goods type, weight, truck type and dates.</li>
+            <li>Search trucks by capacity, type, location and route.</li>
+            <li>Compare quotations from transporters.</li>
+            <li>Track booking status.</li>
+            <li>Confirm delivery and rate the transporter.</li>
+          </ul>
+        </article>
+        <article class="card">
+          <h3 class="card-title">For transporters</h3>
+          <ul class="list-check">
+            <li>Create company and truck profiles.</li>
+            <li>Set availability and preferred routes.</li>
+            <li>Find loads and send quotations.</li>
+            <li>Manage bookings and update trip status.</li>
+            <li>Upload proof of delivery.</li>
+            <li>Track payments.</li>
+          </ul>
+        </article>
+      </div>
+    </div>
+  </section>
+  <section class="section" id="trust">
+    <div class="container">
+      <!-- COPY: design/website/COPY.md -->
+      <div class="section-header">
+        <h2 class="section-title">Checked, not just claimed</h2>
+        <p class="section-intro">Trust on Truber comes from documents, ratings and a clear record of the booking — not from slogans.</p>
+      </div>
+      <ul class="card-grid card-grid--3">
+        <li class="card">
+          <h3 class="card-title">Verified companies, trucks and documents</h3>
+          <p>Companies, trucks and supporting documents are reviewed before an account can post loads or take bookings.</p>
+        </li>
+        <li class="card">
+          <h3 class="card-title">Ratings</h3>
+          <p>After a completed trip, shippers and transporters can rate each other. Ratings stay with the account.</p>
+        </li>
+        <li class="card">
+          <h3 class="card-title">Dispute handling</h3>
+          <p>If something goes wrong, either side can raise a dispute for Truber to review.</p>
+        </li>
+        <li class="card">
+          <h3 class="card-title">Deals outside Truber can lead to a ban</h3>
+          <p>Arranging a deal off the platform can lead to a ban. Keep bookings on Truber.</p>
+        </li>
+        <li class="card">
+          <h3 class="card-title">Cash is not protected</h3>
+          <p>Cash agreed on a Truber booking is not protected. Always treat cash as “Not protected”.</p>
+          <p><span class="badge badge--cash">Not protected</span></p>
+        </li>
+        <li class="card">
+          <h3 class="card-title">Protected payment is in testing</h3>
+          <p>Protected payment is in testing and is not live on the public preview. When it launches, money paid through Truber is meant to be held until delivery is confirmed and Truber approves the payout.</p>
+          <p><span class="badge badge--testing">In testing</span></p>
+        </li>
+      </ul>
+      <p class="section-actions"><a class="btn btn-secondary" href="/safety">Read about safety</a></p>
+    </div>
+  </section>
+  <section class="section section--muted" id="pricing">
+    <div class="container narrow">
+      <!-- COPY: design/website/COPY.md -->
+      <div class="section-header">
+        <h2 class="section-title">Pricing</h2>
+        <h3 class="pricing-headline">5% on completed trips only</h3>
+      </div>
+      <div class="prose">
+        <p>There is no fee to sign up, and no fee to list a load or a truck. Truber charges a 5% commission only when a trip is completed.</p>
+        <div class="example-box">
+          <p class="example-label">Example</p>
+          <p>On a completed trip priced at US$1,000.00, Truber’s commission is US$50.00. The transporter’s amount before payment processing charges is US$950.00. Payment processing charges, if any, are shown separately and are not included in that 5%.</p>
+        </div>
+        <!-- PLACEHOLDER: engineering-drafted copy from CONCEPT.md; Truber Design to supply final copy -->
+        <p class="notice"><strong>Important:</strong> Cash bookings are recorded on Truber but are not payment-protected.</p>
+      </div>
+    </div>
+  </section>
+  <section class="section" id="faq">
+    <div class="container narrow">
+      <!-- PLACEHOLDER: engineering-drafted copy from CONCEPT.md; Truber Design to supply final copy -->
+      <div class="section-header">
+        <h2 class="section-title">Frequently asked questions</h2>
+      </div>
+      <div class="faq-list">
+        <details class="faq-item">
+          <summary>Is Truber live?</summary>
+          <p>Truber is a preview in testing. Posting loads, quotations, bookings, proof of delivery, ratings and verification can be tried in the app preview. Live payments are not available.</p>
+        </details>
+        <details class="faq-item">
+          <summary>Who is Truber for?</summary>
+          <p>Truber is for shippers and transporters, starting in Zimbabwe.</p>
+        </details>
+        <details class="faq-item">
+          <summary>What does it cost?</summary>
+          <p>Truber charges 5% on completed trips only. There is no fee to sign up or to list a load or truck.</p>
+        </details>
+        <details class="faq-item">
+          <summary>Is my payment protected?</summary>
+          <p>Protected payment is in testing and is not live. Cash is not protected.</p>
+        </details>
+        <details class="faq-item">
+          <summary>Do you offer GPS tracking?</summary>
+          <p>GPS tracking is coming soon.</p>
+        </details>
+        <details class="faq-item">
+          <summary>When is a booking confirmed?</summary>
+          <p>A booking is confirmed only once a payment arrangement is confirmed.</p>
+        </details>
+        <details class="faq-item">
+          <summary>Where do you operate?</summary>
+          <p>The planned pilot is Harare to Bulawayo, Mutare, Gweru and Masvingo.</p>
+        </details>
+      </div>
+    </div>
+  </section>
+  <section class="section section--muted">
+    <div class="container narrow">
+      <!-- COPY: design/website/COPY.md -->
+      <div class="cta-panel">
+        <h2 class="section-title">Try the preview</h2>
+        <p>Explore the Truber preview — a test build of the app, not the live marketplace. Protected payment, live payments, GPS tracking and automated matching are coming soon.</p>
+        <p><a class="btn btn-primary" href="https://truber-mobile-preview.vercel.app" rel="noopener">Try the preview</a></p>
+      </div>
+    </div>
+  </section>
+</main>
+<footer class="site-footer">
+  <div class="container footer-inner">
+    <!-- COPY: design/website/COPY.md -->
+    <div class="footer-brand">
+      <a href="/" aria-label="Truber home">
+        <picture>
+          <source srcset="/assets/logo/truber-wordmark-white@1x.webp 1x, /assets/logo/truber-wordmark-white@2x.webp 2x" type="image/webp">
+          <img src="/assets/logo/truber-wordmark-white@1x.png" srcset="/assets/logo/truber-wordmark-white@1x.png 1x, /assets/logo/truber-wordmark-white@2x.png 2x" width="115" height="32" alt="Truber">
+        </picture>
+      </a>
+      <p class="footer-tagline">Connecting Cargo. Moving Business.</p>
+    </div>
+    <nav class="footer-nav" aria-label="Footer">
+      <ul class="footer-list">
+        <li><a href="/">Home</a></li>
+        <li><a href="/how-it-works">How it works</a></li>
+        <li><a href="/services">Services</a></li>
+        <li><a href="/become-a-transporter">Become a transporter</a></li>
+        <li><a href="/safety">Safety</a></li>
+        <li><a href="/about">About</a></li>
+        <li><a href="/contact">Contact</a></li>
+        <li><a href="/sign-in">Sign in</a></li>
+        <li><a href="/register">Create an account</a></li>
+        <li><a href="https://truber-mobile-preview.vercel.app" rel="noopener">Try the preview</a></li>
+      </ul>
+    </nav>
+    <div class="footer-meta">
+      <!-- PLACEHOLDER: support contact not confirmed -->
+      <p class="footer-contact">[support contact TBC]</p>
+      <!-- PLACEHOLDER: social accounts not set up -->
+      <p class="footer-social"><span class="social-soon">Facebook (coming soon)</span> <span class="social-soon">LinkedIn (coming soon)</span> <span class="social-soon">X (coming soon)</span></p>
+      <p class="footer-copy">© 2026 Truber, Harare, Zimbabwe</p>
+    </div>
+  </div>
+</footer>
+</body>
+</html>

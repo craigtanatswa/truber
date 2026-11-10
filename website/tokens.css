@@ -1,0 +1,318 @@
+/*
+  Truber website colour scheme — 10 November 2026 (CAT / Africa/Harare).
+
+  Scheme copy of tokens.css for the user-set palette:
+    Blue bar  #0035FE
+    White     #FEFEFE
+    Background #000000 (dark)
+
+  Do not overwrite tokens.css. Brian sets the shipped primary himself.
+  Official logo PNGs in assets/user-logos-2026-11-10/ must not be recoloured.
+  Those marks are white (plus the blue slash on the icon). There is no dark
+  wordmark in that set, so put the logo on a black block (nav / toolbar)
+  in light and dark.
+
+  Never use green as a brand colour. Success teal is status only.
+
+  Dark-mode link / small accent text
+  ----------------------------------
+  Raw #0035FE is 2.94:1 on #000000 and 2.44:1 on the dark card #1A1A1A —
+  do not use it as body or link text on dark surfaces.
+
+  --truber-link (dark): #6684FF
+    Computed by lightening #0035FE in HSL (same hue and saturation) to
+    about 5:1 on the dark card, so the colour still reads clearly blue.
+    It sits between the brief's examples #5C7CFF and #6F8BFF.
+      on #000000   6.31:1
+      on #111111   5.67:1  (surface-muted)
+      on #1A1A1A   5.23:1  (card)
+      on #1C1C20   5.10:1
+      on #242428   4.65:1  (AA, shy of the 5:1 aim — prefer #6F8BFF
+                            at 5.02:1 if a surface is as light as #242428)
+
+  --truber-ring (dark focus / control ring): #99AEFF
+    Lighter than the link tint so the ring meets the 3:1 non-text minimum
+    on the primary fill.
+      on #0035FE   3.35:1
+      on #000000   9.85:1
+      on #1A1A1A   8.17:1
+    Not for small body or link text (2.11:1 on #FEFEFE).
+    Primary buttons on black also take a #FEFEFE edge ring: the fill
+    itself is 2.94:1 on #000000, below the 3:1 non-text minimum.
+
+  WCAG AA contrast (calculated 10 November 2026, sRGB, WCAG 2 relative
+  luminance). AA normal text is 4.5:1. Large text / non-text UI is 3:1.
+  These are token-pair ratios, not a full page audit.
+
+  Light — text pairs (all AA)
+    #000000 on #FEFEFE           20.82:1  body on bg / card
+    #000000 on #F6F6F6           19.43:1  body on muted surface
+    #545454 on #FEFEFE            7.51:1  secondary on bg / card
+    #545454 on #F6F6F6            7.01:1  secondary on muted
+    #6E6E78 on #FEFEFE            5.00:1  muted on bg / card (4.9998, AA)
+    #6E6E78 on #F6F6F6            4.67:1  muted on muted surface
+    #FEFEFE on #0035FE            7.08:1  label on primary
+    #FEFEFE on #002ACB            9.49:1  label on pressed
+    #0035FE on #FEFEFE            7.08:1  primary / link on bg / card
+    #0035FE on #F6F6F6            6.55:1  primary / link on muted
+    #0035FE on #E5EAFE            5.96:1  primary on soft
+    #FEFEFE on #000000           20.82:1  label / nav link on black bar
+    #0F766E on #FEFEFE            5.43:1  success on card
+    #0F766E on #F6F6F6            5.06:1  success on muted
+    #0F766E on #E6F5F3            4.88:1  success on soft
+    #8A5A00 on #FEFEFE            5.88:1  warning on card
+    #8A5A00 on #F6F6F6            5.48:1  warning on muted
+    #8A5A00 on #FFF4D6            5.41:1  warning on soft
+    #B42318 on #FEFEFE            6.52:1  error on card
+    #B42318 on #F6F6F6            6.08:1  error on muted
+    #B42318 on #FEECEC            5.77:1  error on soft
+    #5C5C66 on #EEEEEE            5.70:1  cash on cash soft
+    #5C5C66 on #FEFEFE            6.55:1  cash on card
+
+  Dark — text pairs
+    #FEFEFE on #000000           20.82:1  body on scaffold
+    #FEFEFE on #1A1A1A           17.26:1  body on card
+    #FEFEFE on #111111           18.72:1  body on muted surface
+    #B0B0B0 on #000000            9.68:1  secondary on scaffold
+    #B0B0B0 on #1A1A1A            8.03:1  secondary on card
+    #9A9AA3 on #000000            7.53:1  muted on scaffold
+    #9A9AA3 on #1A1A1A            6.24:1  muted on card
+    #FEFEFE on #0035FE            7.08:1  label on primary CTA
+    #FEFEFE on #002ACB            9.49:1  label on pressed
+    #6684FF on #000000            6.31:1  link on scaffold
+    #6684FF on #1A1A1A            5.23:1  link on card
+    #6684FF on #111111            5.67:1  link on muted surface
+    #6684FF on #0D1630            5.37:1  link on soft
+    #2DD4BF on #000000           11.28:1  success on scaffold
+    #2DD4BF on #1A1A1A            9.35:1  success on card
+    #2DD4BF on #0F2E2B            7.80:1  success on soft
+    #E0A800 on #000000            9.77:1  warning on scaffold
+    #E0A800 on #1A1A1A            8.10:1  warning on card
+    #E0A800 on #2E2400            7.14:1  warning on soft
+    #F04438 on #000000            5.59:1  error on scaffold
+    #F04438 on #111111            5.03:1  error on muted (AA)
+    #F04438 on #1A1A1A            4.63:1  error on card (AA)
+    #F04438 on #2E1210            4.62:1  error on soft (AA)
+    #B8B8C0 on #3A3A40            5.73:1  cash on cash soft
+    #B8B8C0 on #1A1A1A            8.83:1  cash on card
+
+  Non-text / control notes (3:1)
+    Pale borders (#EEEEEE / #2A2A2A) are decorative and do not meet 3:1
+    against cards. Meaningful input or control edges need a stronger
+    treatment (focus ring). --truber-border-strong is still short of 3:1
+    on #FEFEFE; use the focus ring.
+    #0035FE against #000000 is 2.94:1, and against #1A1A1A is 2.44:1 —
+    add a #FEFEFE or --truber-ring edge so the primary control is visible
+    on dark surfaces.
+*/
+
+:root {
+  color-scheme: light;
+
+  /* === Colour: light (10 November 2026 scheme) === */
+  --truber-primary: #0035FE;
+  --truber-primary-pressed: #002ACB;
+  --truber-primary-soft: #E5EAFE;
+  --truber-on-primary: #FEFEFE;
+  --truber-link: #0035FE;
+  --truber-nav-active: #0035FE;
+  --truber-ring: #0035FE;
+
+  --truber-sidebar: #000000;
+  --truber-bg: #FEFEFE;
+  --truber-card: #FEFEFE;
+  --truber-surface-muted: #F6F6F6;
+  --truber-text: #000000;
+  --truber-text-secondary: #545454;
+  --truber-text-muted: #6E6E78;
+  --truber-text-inverse: #FEFEFE;
+  --truber-border: #EEEEEE;
+  --truber-border-strong: #D0D0D0;
+
+  /* Semantic — success is teal, never brand green */
+  --truber-success: #0F766E;
+  --truber-success-soft: #E6F5F3;
+  --truber-warning: #8A5A00;
+  --truber-warning-soft: #FFF4D6;
+  --truber-error: #B42318;
+  --truber-error-soft: #FEECEC;
+  --truber-cash: #5C5C66;
+  --truber-cash-soft: #EEEEEE;
+
+  /* Protected payment chip: black, white label, blue check. Not live yet. */
+  --truber-payment-protected: #000000;
+  --truber-payment-protected-soft: #F0F0F0;
+
+  /* === Type ===
+     System-ui / Inter stack. Do not load a webfont from a CDN. */
+  --truber-font: Inter, system-ui, "Segoe UI", Roboto, "Helvetica Neue", Helvetica, Arial, "Noto Sans", sans-serif;
+
+  --truber-size-display: 32px;   /* 700 / 1.20 / -0.5px — marketing hero; 40px allowed from 960px */
+  --truber-size-hero: 28px;      /* 700 / 1.25 */
+  --truber-size-section: 24px;   /* 700 / 1.25 */
+  --truber-size-h1: 22px;        /* 600 / 1.30 */
+  --truber-size-h2: 20px;        /* 600 / 1.30 */
+  --truber-size-h3: 18px;        /* 600 / 1.35 */
+  --truber-size-title: 16px;     /* 600 / 1.40 */
+  --truber-size-title-sm: 14px;  /* 600 / 1.40 */
+  --truber-size-body: 16px;      /* 400 / 1.50 — marketing body */
+  --truber-size-body-sm: 14px;   /* 400 / 1.50 */
+  --truber-size-helper: 12px;    /* 400 / 1.45 — never sole payment warning */
+  --truber-size-button: 14px;    /* 600 / 1.30 */
+  --truber-size-badge: 11px;     /* 600 — badges only */
+
+  --truber-weight-regular: 400;
+  --truber-weight-medium: 600;
+  --truber-weight-bold: 700;
+
+  --truber-leading-display: 1.20;
+  --truber-leading-hero: 1.25;
+  --truber-leading-section: 1.25;
+  --truber-leading-heading: 1.30;
+  --truber-leading-title: 1.40;
+  --truber-leading-body: 1.50;
+  --truber-leading-helper: 1.45;
+  --truber-leading-button: 1.30;
+
+  /* === Space (4px base, 8px major). Kit matches xs=4, sm=8, md=12, xl=24. === */
+  --truber-space-xxs: 2px;
+  --truber-space-xs: 4px;
+  --truber-space-control-gap: 6px;
+  --truber-space-sm: 8px;
+  --truber-space-md: 12px;
+  --truber-space-lg: 16px;
+  --truber-space-xl: 24px;
+  --truber-space-xxl: 32px;
+  --truber-space-xxxl: 48px;
+  --truber-gutter: 16px;
+  --truber-card-padding: 16px;
+  --truber-section-gap: 24px;
+  --truber-section-y: 48px;      /* vertical section padding, mobile */
+  --truber-content-max: 1120px;
+
+  /* === Radius (Rune Kit neutral) === */
+  --truber-radius-xs: 2px;
+  --truber-radius-sm: 4px;
+  --truber-radius-md: 6px;
+  --truber-radius-lg: 8px;
+  --truber-radius-xl: 10px;
+  --truber-radius-full: 999px;
+
+  /* === Shadow (Rune geometry, Truber black alpha) === */
+  --truber-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --truber-shadow-menu: 0 4px 8px rgba(0, 0, 0, 0.08);
+  --truber-shadow-dialog: 0 8px 16px rgba(0, 0, 0, 0.12);
+
+  /* === Motion (Rune CSS tweens). Spring periods are not tween times. === */
+  --truber-duration-enter: 150ms;
+  --truber-duration-exit: 110ms;
+  --truber-ease-enter: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --truber-ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  --truber-period-control: 250ms;
+  --truber-period-overlay: 250ms;
+  --truber-period-disclosure: 300ms;
+  --truber-bounce: 0;
+
+  /* === Touch === */
+  --truber-target-min: 48px;
+  --truber-button-height: 48px;
+  --truber-row-min: 56px;
+
+  --truber-focus-ring: 2px solid var(--truber-ring);
+  --truber-focus-offset: 2px;
+}
+
+/* Forced dark. Keep this block identical to the prefers-color-scheme block. */
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --truber-primary: #0035FE;
+  --truber-primary-pressed: #002ACB;
+  --truber-primary-soft: #0D1630;
+  --truber-on-primary: #FEFEFE;
+  --truber-link: #6684FF;
+  --truber-nav-active: #6684FF;
+  --truber-ring: #99AEFF;
+
+  --truber-sidebar: #000000;
+  --truber-bg: #000000;
+  --truber-card: #1A1A1A;
+  --truber-surface-muted: #111111;
+  --truber-text: #FEFEFE;
+  --truber-text-secondary: #B0B0B0;
+  --truber-text-muted: #9A9AA3;
+  --truber-text-inverse: #FEFEFE;
+  --truber-border: #2A2A2A;
+  --truber-border-strong: #545454;
+
+  --truber-success: #2DD4BF;
+  --truber-success-soft: #0F2E2B;
+  --truber-warning: #E0A800;
+  --truber-warning-soft: #2E2400;
+  --truber-error: #F04438;
+  --truber-error-soft: #2E1210;
+  --truber-cash: #B8B8C0;
+  --truber-cash-soft: #3A3A40;
+
+  --truber-payment-protected: #000000;
+  --truber-payment-protected-soft: #2A2A2E;
+
+  --truber-focus-ring: 2px solid var(--truber-ring);
+}
+
+/* System dark, unless the page forces light. Keep identical to [data-theme="dark"]. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+
+    --truber-primary: #0035FE;
+    --truber-primary-pressed: #002ACB;
+    --truber-primary-soft: #0D1630;
+    --truber-on-primary: #FEFEFE;
+    --truber-link: #6684FF;
+    --truber-nav-active: #6684FF;
+    --truber-ring: #99AEFF;
+
+    --truber-sidebar: #000000;
+    --truber-bg: #000000;
+    --truber-card: #1A1A1A;
+    --truber-surface-muted: #111111;
+    --truber-text: #FEFEFE;
+    --truber-text-secondary: #B0B0B0;
+    --truber-text-muted: #9A9AA3;
+    --truber-text-inverse: #FEFEFE;
+    --truber-border: #2A2A2A;
+    --truber-border-strong: #545454;
+
+    --truber-success: #2DD4BF;
+    --truber-success-soft: #0F2E2B;
+    --truber-warning: #E0A800;
+    --truber-warning-soft: #2E2400;
+    --truber-error: #F04438;
+    --truber-error-soft: #2E1210;
+    --truber-cash: #B8B8C0;
+    --truber-cash-soft: #3A3A40;
+
+    --truber-payment-protected: #000000;
+    --truber-payment-protected-soft: #2A2A2E;
+
+    --truber-focus-ring: 2px solid var(--truber-ring);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --truber-duration-enter: 0.01ms;
+    --truber-duration-exit: 0.01ms;
+    --truber-period-control: 0.01ms;
+    --truber-period-overlay: 0.01ms;
+    --truber-period-disclosure: 0.01ms;
+  }
+}
+
+@media (min-width: 960px) {
+  :root {
+    --truber-section-y: 80px;
+    --truber-gutter: 32px;
+  }
+}
