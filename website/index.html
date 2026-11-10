@@ -41,7 +41,7 @@
 <header class="site-header">
   <div class="container header-inner">
     <a class="site-brand" href="/" aria-label="Truber home">
-      <img class="logo-wordmark" src="/assets/logo/wordmark-white-transparent.png" width="1046" height="292" fetchpriority="high" alt="Truber">
+      <picture class="logo-picture"><source type="image/avif" srcset="/assets/logo/derived/wordmark-white-transparent-64h.avif"><source type="image/webp" srcset="/assets/logo/derived/wordmark-white-transparent-64h.webp"><img class="logo-wordmark" src="/assets/logo/wordmark-white-transparent.png" width="1046" height="292" fetchpriority="high" alt="Truber"></picture>
     </a>
     <details class="nav-menu">
       <summary>Menu</summary>
@@ -100,7 +100,7 @@
             <label class="quick-quote-label" for="quote-to">To</label>
             <input class="quick-quote-input" id="quote-to" name="to" type="text" placeholder="e.g. Bulawayo" autocomplete="off">
           </div>
-          <button class="btn btn-primary quick-quote-submit" type="submit">See trucks</button>
+          <button class="btn btn-primary quick-quote-submit" type="submit">Post this load</button>
         </form>
         <p class="quick-quote-note" id="quick-quote-note">Opens the Truber web app preview. No prices are shown here, and nothing is booked.</p>
       </div>
@@ -116,33 +116,48 @@
         <h2 class="scene-title" id="scene-title">Freight, end to end.</h2>
         <div class="scene-figures">
           <figure class="scene-figure">
-            <picture>
+            <picture data-defer>
+              <source type="image/avif" data-srcset="/assets/images/scene-1-depot-640.avif 640w, /assets/images/scene-1-depot-1280.avif 1280w, /assets/images/scene-1-depot-1920.avif 1920w, /assets/images/scene-1-depot-2560.avif 2560w" sizes="(min-width: 1248px) 1200px, 100vw">
+              <source type="image/webp" data-srcset="/assets/images/scene-1-depot-640.webp 640w, /assets/images/scene-1-depot-1280.webp 1280w, /assets/images/scene-1-depot-1920.webp 1920w, /assets/images/scene-1-depot-2560.webp 2560w" sizes="(min-width: 1248px) 1200px, 100vw">
+              <img src="/assets/images/placeholder-16x9.gif" data-src="/assets/images/scene-1-depot-1280.jpg" data-srcset="/assets/images/scene-1-depot-1280.jpg 1280w, /assets/images/scene-1-depot-1920.jpg 1920w" sizes="(min-width: 1248px) 1200px, 100vw" width="2560" height="1440" alt="A freight depot yard with red earth, white box trucks at the loading dock, pallets of bagged goods and a forklift." loading="lazy" decoding="async">
+            </picture>
+            <noscript><picture>
               <source type="image/avif" srcset="/assets/images/scene-1-depot-640.avif 640w, /assets/images/scene-1-depot-1280.avif 1280w, /assets/images/scene-1-depot-1920.avif 1920w, /assets/images/scene-1-depot-2560.avif 2560w" sizes="(min-width: 1248px) 1200px, 100vw">
               <source type="image/webp" srcset="/assets/images/scene-1-depot-640.webp 640w, /assets/images/scene-1-depot-1280.webp 1280w, /assets/images/scene-1-depot-1920.webp 1920w, /assets/images/scene-1-depot-2560.webp 2560w" sizes="(min-width: 1248px) 1200px, 100vw">
               <img src="/assets/images/scene-1-depot-1280.jpg" srcset="/assets/images/scene-1-depot-1280.jpg 1280w, /assets/images/scene-1-depot-1920.jpg 1920w" sizes="(min-width: 1248px) 1200px, 100vw" width="2560" height="1440" alt="A freight depot yard with red earth, white box trucks at the loading dock, pallets of bagged goods and a forklift." loading="lazy" decoding="async">
-            </picture>
+            </picture></noscript>
             <figcaption class="scene-caption">
               <span class="scene-caption-title">Post a load from the depot.</span>
               <span class="scene-caption-text">Add the cargo, pickup and drop-off details, then post the load for transporters to quote.</span>
             </figcaption>
           </figure>
           <figure class="scene-figure">
-            <picture>
+            <picture data-defer>
+              <source type="image/avif" data-srcset="/assets/images/scene-2-route-640.avif 640w, /assets/images/scene-2-route-1280.avif 1280w, /assets/images/scene-2-route-1920.avif 1920w, /assets/images/scene-2-route-2560.avif 2560w" sizes="(min-width: 1248px) 1200px, 100vw">
+              <source type="image/webp" data-srcset="/assets/images/scene-2-route-640.webp 640w, /assets/images/scene-2-route-1280.webp 1280w, /assets/images/scene-2-route-1920.webp 1920w, /assets/images/scene-2-route-2560.webp 2560w" sizes="(min-width: 1248px) 1200px, 100vw">
+              <img src="/assets/images/placeholder-16x9.gif" data-src="/assets/images/scene-2-route-1280.jpg" data-srcset="/assets/images/scene-2-route-1280.jpg 1280w, /assets/images/scene-2-route-1920.jpg 1920w" sizes="(min-width: 1248px) 1200px, 100vw" width="2560" height="1440" alt="Aerial view of a truck on a winding road across dry Southern African savanna, with hills on the horizon." loading="lazy" decoding="async">
+            </picture>
+            <noscript><picture>
               <source type="image/avif" srcset="/assets/images/scene-2-route-640.avif 640w, /assets/images/scene-2-route-1280.avif 1280w, /assets/images/scene-2-route-1920.avif 1920w, /assets/images/scene-2-route-2560.avif 2560w" sizes="(min-width: 1248px) 1200px, 100vw">
               <source type="image/webp" srcset="/assets/images/scene-2-route-640.webp 640w, /assets/images/scene-2-route-1280.webp 1280w, /assets/images/scene-2-route-1920.webp 1920w, /assets/images/scene-2-route-2560.webp 2560w" sizes="(min-width: 1248px) 1200px, 100vw">
               <img src="/assets/images/scene-2-route-1280.jpg" srcset="/assets/images/scene-2-route-1280.jpg 1280w, /assets/images/scene-2-route-1920.jpg 1920w" sizes="(min-width: 1248px) 1200px, 100vw" width="2560" height="1440" alt="Aerial view of a truck on a winding road across dry Southern African savanna, with hills on the horizon." loading="lazy" decoding="async">
-            </picture>
+            </picture></noscript>
             <figcaption class="scene-caption">
               <span class="scene-caption-title">Compare quotes from transporters.</span>
               <span class="scene-caption-text">Transporters send quotes on your load. You compare them and choose. Matching isn’t automated yet.</span>
             </figcaption>
           </figure>
           <figure class="scene-figure">
-            <picture>
+            <picture data-defer>
+              <source type="image/avif" data-srcset="/assets/images/scene-3-delivered-640.avif 640w, /assets/images/scene-3-delivered-1280.avif 1280w, /assets/images/scene-3-delivered-1920.avif 1920w, /assets/images/scene-3-delivered-2560.avif 2560w" sizes="(min-width: 1248px) 1200px, 100vw">
+              <source type="image/webp" data-srcset="/assets/images/scene-3-delivered-640.webp 640w, /assets/images/scene-3-delivered-1280.webp 1280w, /assets/images/scene-3-delivered-1920.webp 1920w, /assets/images/scene-3-delivered-2560.webp 2560w" sizes="(min-width: 1248px) 1200px, 100vw">
+              <img src="/assets/images/placeholder-16x9.gif" data-src="/assets/images/scene-3-delivered-1280.jpg" data-srcset="/assets/images/scene-3-delivered-1280.jpg 1280w, /assets/images/scene-3-delivered-1920.jpg 1920w" sizes="(min-width: 1248px) 1200px, 100vw" width="2560" height="1440" alt="Boxed cargo on pallets beside an open delivery truck at a receiving bay, with a clipboard on a wooden crate." loading="lazy" decoding="async">
+            </picture>
+            <noscript><picture>
               <source type="image/avif" srcset="/assets/images/scene-3-delivered-640.avif 640w, /assets/images/scene-3-delivered-1280.avif 1280w, /assets/images/scene-3-delivered-1920.avif 1920w, /assets/images/scene-3-delivered-2560.avif 2560w" sizes="(min-width: 1248px) 1200px, 100vw">
               <source type="image/webp" srcset="/assets/images/scene-3-delivered-640.webp 640w, /assets/images/scene-3-delivered-1280.webp 1280w, /assets/images/scene-3-delivered-1920.webp 1920w, /assets/images/scene-3-delivered-2560.webp 2560w" sizes="(min-width: 1248px) 1200px, 100vw">
               <img src="/assets/images/scene-3-delivered-1280.jpg" srcset="/assets/images/scene-3-delivered-1280.jpg 1280w, /assets/images/scene-3-delivered-1920.jpg 1920w" sizes="(min-width: 1248px) 1200px, 100vw" width="2560" height="1440" alt="Boxed cargo on pallets beside an open delivery truck at a receiving bay, with a clipboard on a wooden crate." loading="lazy" decoding="async">
-            </picture>
+            </picture></noscript>
             <figcaption class="scene-caption">
               <span class="scene-caption-title">Confirm delivery. Payouts are planned.</span>
               <span class="scene-caption-text">Once payouts are live, they’ll follow a confirmed delivery. Protected payment is coming soon, and Truber doesn’t hold any funds today.</span>
@@ -311,7 +326,7 @@
   <div class="container footer-inner">
     <div class="footer-brand">
       <a href="/" aria-label="Truber home">
-        <img class="logo-wordmark" src="/assets/logo/wordmark-white-transparent.png" width="1046" height="292" loading="lazy" alt="Truber">
+        <picture class="logo-picture"><source type="image/avif" srcset="/assets/logo/derived/wordmark-white-transparent-64h.avif"><source type="image/webp" srcset="/assets/logo/derived/wordmark-white-transparent-64h.webp"><img class="logo-wordmark" src="/assets/logo/wordmark-white-transparent.png" width="1046" height="292" loading="lazy" alt="Truber"></picture>
       </a>
       <!-- COPY: design/website/COPY.md -->
       <p class="footer-tagline">Connecting Cargo. Moving Business.</p>

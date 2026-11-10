@@ -14,7 +14,7 @@
   --truber-container: 1200px;
   --truber-gutter: clamp(20px, 4vw, 32px);
   --truber-header-h: 64px;
-  --truber-section-y: clamp(72px, 10vw, 128px);   /* Uber rhythm, not Villiers 200px */
+  --truber-section-y: clamp(72px, 10vw, 128px);
   --truber-hairline: 1px solid rgba(254,254,254,0.12); /* dark; light uses var(--truber-border) */
 
   /* Space scale additions (4px base continues) */

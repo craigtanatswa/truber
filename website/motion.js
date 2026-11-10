@@ -47,6 +47,32 @@ document.documentElement.classList.add('js');
     for (var i = 0; i < steps.length; i++) sceneObserver.observe(steps[i]);
   }
 
+  function load(p) {
+    p.querySelectorAll('[data-srcset], [data-src]').forEach(function (el) {
+      var srcset = el.getAttribute('data-srcset');
+      var src = el.getAttribute('data-src');
+      if (srcset) el.srcset = srcset;
+      if (src) el.src = src;
+      el.removeAttribute('data-srcset');
+      el.removeAttribute('data-src');
+    });
+    p.removeAttribute('data-defer');
+  }
+
+  function defer() {
+    var pictures = document.querySelectorAll('picture[data-defer]');
+    if (!('IntersectionObserver' in window)) return pictures.forEach(load);
+    var observer = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (entry.isIntersecting) {
+          load(entry.target);
+          observer.unobserve(entry.target);
+        }
+      });
+    }, { rootMargin: '300px 0px' });
+    pictures.forEach(function (p) { observer.observe(p); });
+  }
+
   function onMotionChange() {
     if (reduce.matches) {
       showAll();
@@ -58,6 +84,7 @@ document.documentElement.classList.add('js');
 
   observeReveals();
   startScene();
+  defer();
   if (wide.addEventListener) {
     wide.addEventListener('change', startScene);
     reduce.addEventListener('change', onMotionChange);
