@@ -39,12 +39,12 @@ python3 -m http.server -d website 8080
 | `og-image.png` | 1200 × 630 social image; derived (composed from the user-supplied icon and wordmark on `#000000`), including the tagline. |
 | `README.md` | This guide, excluded from deploys. |
 | `register.html` | Account registration demo form. |
-| `robots.txt` | Search-crawler rules; currently blocks all crawling until launch. |
+| `robots.txt` | Search-crawler rules; allows crawling and points to the sitemap. |
 | `safety.html` | Safety and trust information. |
 | `services.html` | Planned services cards. |
 | `sign-in.html` | Sign-in demo form. |
 | `site.webmanifest` | Web-app name, colours and icons. |
-| `sitemap.xml` | Public page URLs, kept for launch. |
+| `sitemap.xml` | Public page URLs. |
 | `styles.css` | Layout and component styles using design tokens only, with no hex values. |
 | `theme.js` | System/Light/Dark theme toggle. |
 | `tokens.css` | Colour and design tokens. |
@@ -91,18 +91,21 @@ python3 -c 'import re,hashlib,base64;s=re.search(r"<script>([^<]*)</script>",ope
 
 Desktop navigation shows from 1200px. Below that, a `<details>` Menu button keeps the header to one row from 640px.
 
-## Search indexing: noindex until launch
+## Search indexing
 
-Every page has `<meta name="robots" content="noindex, nofollow">`, `vercel.json` sends `X-Robots-Tag: noindex, nofollow`, and `robots.txt` is exactly `User-agent: *` followed by `Disallow: /`. `sitemap.xml` is kept for launch.
+The site is indexable per the user decision of 10 Nov 2026 15:35 CAT: “Merge PR #11 once Mark signs off and let search engines index it”. There is no robots meta and no `X-Robots-Tag`; `robots.txt` allows crawling and points to the sitemap. The production domain is https://truber-web.vercel.app.
 
-### At launch: remove noindex, restore robots
+### Launch record
 
-- [ ] Remove the robots meta (and its noindex comment) from every page.
-- [ ] Remove the `X-Robots-Tag` header from `vercel.json`.
-- [ ] Restore `robots.txt` to `User-agent: *`, `Allow: /` and `Sitemap: https://<production domain>/sitemap.xml`.
-- [ ] Set the production domain in canonical, `og:url`, `og:image`, `twitter:image` and `sitemap.xml`.
-- [ ] Replace `[support contact TBC]`.
-- [ ] Re-run Lighthouse (SEO should return to 100).
+- [x] robots meta removed from every page.
+- [x] `X-Robots-Tag` removed from `vercel.json`.
+- [x] `robots.txt` restored with `Allow: /` and `Sitemap`.
+- [x] canonical, `og:url`, `og:image`, `twitter:image` and `sitemap.xml` set to https://truber-web.vercel.app.
+
+Still open:
+
+- [ ] If a custom domain is added later, update those URLs and `robots.txt`.
+- [ ] Replace “[support contact TBC]”.
 
 ## Demo forms
 
@@ -121,20 +124,18 @@ Each marker below is a TBD endpoint per `api/openapi.yaml` and is not connected:
 
 ## Placeholders
 
-There are 95 placeholder comments in the HTML (count with `grep -o "PLACEHOLDER" -r website --include="*.html" | wc -l`), by kind:
+There are 76 placeholder comments in the HTML (count with `grep -o "PLACEHOLDER" -r website --include="*.html" | wc -l`), by kind:
 
 | Kind | Count | Where |
 | --- | --- | --- |
 | Engineering-drafted copy | 48 | Content blocks across all ten HTML pages. |
 | Support contact | 12 | Repeated per page. |
 | Social accounts | 10 | Repeated per page. |
-| noindex until launch | 10 | Every HTML page. |
-| Canonical domain | 9 | Every page except `404.html`; current value `https://truber-web.vercel.app`. |
 | Demo form | 4 | `become-a-transporter.html`, `contact.html`, `register.html`, `sign-in.html`. |
 | Truck type list | 1 | `become-a-transporter.html`. |
 | Hero illustration | 1 | `index.html`; licensed photography TBC by Truber Design. |
 
-The 48 copy markers sit on content blocks. The support contact, social account, noindex and canonical markers (12, 10, 10 and 9) repeat on each page.
+The 48 copy markers sit on content blocks. The support contact and social account markers (12 and 10) repeat on each page.
 
 Truber Design owns the final copy. Design-owned copy is marked `<!-- COPY: design/website/COPY.md -->`.
 
@@ -142,13 +143,13 @@ Truber Design owns the final copy. Design-owned copy is marked `<!-- COPY: desig
 
 The Vercel project is `truber-web` (under team `craigmudirira`’s projects), Git-linked to `craigtanatswa/truber`. Set the root directory to `website`, the framework preset to Other, and provide no build command, install command or environment variables. The production branch is `main`.
 
-`vercel.json` sets `cleanUrls` and security headers, including a strict CSP with no external origins and the temporary noindex header. `README.md` is excluded from deploys via `.vercelignore`.
+`vercel.json` sets `cleanUrls` and security headers, including a strict CSP with no external origins. `README.md` is excluded from deploys via `.vercelignore`.
 
 Vercel adds `Access-Control-Allow-Origin: *` to static files on its own; that is fine for a public static site with no private data.
 
 ## Checks
 
-Run Lighthouse mobile on every page and require all four categories to score at least 90. While noindex is in place, the SEO score drops (the “Page is blocked from indexing” audit fails); this is expected until launch. Also run:
+Run Lighthouse mobile on every page and require all four categories to score at least 90. Also run:
 
 - `html-validate` with `html-validate:recommended`.
 - axe-core via Playwright.
