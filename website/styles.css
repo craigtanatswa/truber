@@ -330,7 +330,16 @@ a {
   margin-left: auto;
 }
 
+/* Reserve the toggle's width before theme.js inserts it (CLS 0) and keep it fixed across labels */
+#theme-toggle-slot {
+  display: block;
+  flex: none;
+  min-width: 82px;
+  min-height: 40px;
+}
+
 .theme-toggle {
+  width: 100%;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -391,6 +400,11 @@ a {
   .theme-toggle {
     padding-inline: 10px;
     font-size: 12px;
+  }
+
+  #theme-toggle-slot {
+    min-width: 66px;
+    min-height: 36px;
   }
 
   .header-cta {
