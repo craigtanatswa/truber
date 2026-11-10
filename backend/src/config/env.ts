@@ -18,7 +18,7 @@ const schema = z.object({
   DB_POOL_MAX: z.coerce.number().int().min(1).max(20).default(10),
   DB_STATEMENT_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120_000).default(15_000),
   JWT_ACCESS_SECRET: z.string().min(32),
-  JWT_ACCESS_TTL_SECONDS: z.coerce.number().int().default(900),
+  JWT_ACCESS_TTL_SECONDS: z.coerce.number().int().default(1800),
   RESET_TOKEN_TTL_SECONDS: z.coerce.number().int().default(1800),
   REFRESH_TTL_SECONDS: z.coerce.number().int().min(3600).max(7_776_000).default(1_209_600),
   OTP_TTL_SECONDS: z.coerce.number().int().min(60).max(3600).default(600),
@@ -53,8 +53,8 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
     throw error;
   }
 
-  if (parsed.JWT_ACCESS_TTL_SECONDS !== 900) {
-    throw new Error('JWT_ACCESS_TTL_SECONDS must be 900 to match API v0.2.0');
+  if (parsed.JWT_ACCESS_TTL_SECONDS !== 1800) {
+    throw new Error('JWT_ACCESS_TTL_SECONDS must be 1800 to match API v0.4.0');
   }
   if (parsed.RESET_TOKEN_TTL_SECONDS !== 1800) {
     throw new Error('RESET_TOKEN_TTL_SECONDS must be 1800 to match API v0.2.0');

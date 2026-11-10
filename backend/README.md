@@ -110,7 +110,7 @@ Do not copy `payload` into tickets or logs.
 
 ## Configuration that the contract fixes
 
-- Access JWT lifetime is 900 seconds. `expiresIn` is 900. Any other `JWT_ACCESS_TTL_SECONDS` prevents startup.
+- Access JWT lifetime is 1800 seconds (30 minutes). `expiresIn` is 1800, per API v0.4.0. Any other `JWT_ACCESS_TTL_SECONDS` prevents startup.
 - Reset tokens live 1800 seconds. Any other `RESET_TOKEN_TTL_SECONDS` prevents startup.
 - Passwords are hashed with scrypt (`N=16384`, `r=8`, `p=1`).
 - Refresh sessions last 14 days unless `REFRESH_TTL_SECONDS` is set (minimum 1 hour, maximum 90 days). The contract does not set this.

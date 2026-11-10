@@ -52,7 +52,7 @@ describe('auth API', () => {
     });
     expect(withCity.status).toBe(201);
     assertOperationResponse('registerUser', 201, withCity.body);
-    expect(withCity.body.expiresIn).toBe(900);
+    expect(withCity.body.expiresIn).toBe(1800);
     expect(withCity.body.tokenType).toBe('Bearer');
     expect(withCity.body.user).toMatchObject({
       email: 'city.user@example.com',
@@ -64,7 +64,7 @@ describe('auth API', () => {
     expect(JSON.stringify(withCity.body)).not.toContain('city-password');
     const decoded = jwt.decode(withCity.body.accessToken as string) as { sub: string; role: string; exp: number; iat: number };
     expect(decoded.role).toBe('shipper');
-    expect(decoded.exp - decoded.iat).toBe(900);
+    expect(decoded.exp - decoded.iat).toBe(1800);
     expect(String(withCity.body.refreshToken)).not.toMatch(/\./);
     const stored = await db.query<{ city: string }>('SELECT city FROM users WHERE email = $1', ['city.user@example.com']);
     expect(stored.rows[0].city).toBe('Harare');
@@ -143,7 +143,7 @@ describe('auth API', () => {
     const ok = await http(app, 'post', '/auth/login', { body: { email: email.toUpperCase(), password: 'login-password' } });
     expect(ok.status).toBe(200);
     assertOperationResponse('login', 200, ok.body);
-    expect(ok.body.expiresIn).toBe(900);
+    expect(ok.body.expiresIn).toBe(1800);
 
     const wrong = await http(app, 'post', '/auth/login', { body: { email, password: 'not-the-password' } });
     const missing = await http(app, 'post', '/auth/login', { body: { email: uniqueEmail('missing'), password: 'not-the-password' } });
@@ -173,7 +173,7 @@ describe('auth API', () => {
     expect(garbage.status).toBe(401);
     const otherSecret = jwt.sign({ sub: registered.body.user.id, role: 'shipper' }, 'another-secret-that-is-long-enough-32', {
       algorithm: 'HS256',
-      expiresIn: 900,
+      expiresIn: 1800,
     });
     expect((await http(app, 'get', '/auth/me', { token: otherSecret })).status).toBe(401);
     const expired = jwt.sign(
@@ -188,7 +188,7 @@ describe('auth API', () => {
 
     const escalatedRole = jwt.sign({ sub: registered.body.user.id, role: 'admin' }, process.env.JWT_ACCESS_SECRET as string, {
       algorithm: 'HS256',
-      expiresIn: 900,
+      expiresIn: 1800,
     });
     expect((await http(app, 'get', '/auth/me', { token: escalatedRole })).status).toBe(401);
   });
@@ -201,6 +201,9 @@ describe('auth API', () => {
     const rotated = await http(app, 'post', '/auth/refresh', { body: { refreshToken: first } });
     expect(rotated.status).toBe(200);
     assertOperationResponse('refreshToken', 200, rotated.body);
+    expect(rotated.body.expiresIn).toBe(1800);
+    const rotatedDecoded = jwt.decode(rotated.body.accessToken as string) as { exp: number; iat: number };
+    expect(rotatedDecoded.exp - rotatedDecoded.iat).toBe(1800);
     expect(rotated.body.refreshToken).not.toBe(first);
     const replay = await http(app, 'post', '/auth/refresh', { body: { refreshToken: first } });
     expect(replay.status).toBe(401);
@@ -228,6 +231,47 @@ describe('auth API', () => {
       registered.body.user.id,
     ]);
     expect((await http(app, 'post', '/auth/refresh', { body: { refreshToken: afterRace.body.refreshToken as string } })).status).toBe(401);
+  });
+
+  it('accepts an issued access token just before 30 minutes and rejects it just after (clock-controlled)', async () => {
+    const email = uniqueEmail('ttl');
+    const password = 'ttl-password';
+    await http(app, 'post', '/auth/register', {
+      body: { email, password, fullName: 'TTL User', role: 'shipper' },
+    });
+    const login = await http(app, 'post', '/auth/login', { body: { email, password } });
+    expect(login.status).toBe(200);
+    const accessToken = login.body.accessToken as string;
+    const decoded = jwt.decode(accessToken) as { exp: number; iat: number };
+    expect(decoded.exp - decoded.iat).toBe(1800);
+    const spy = jest.spyOn(Date, 'now');
+    try {
+      spy.mockReturnValue((decoded.iat + 1799) * 1000);
+      const before = await http(app, 'get', '/auth/me', { token: accessToken });
+      expect(before.status).toBe(200);
+      spy.mockReturnValue((decoded.iat + 1801) * 1000);
+      const after = await http(app, 'get', '/auth/me', { token: accessToken });
+      expect(after.status).toBe(401);
+      assertOperationResponse('getCurrentUser', 401, after.body);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('keeps password-reset token TTL at 30 minutes', async () => {
+    const email = uniqueEmail('reset-ttl');
+    const registered = await http(app, 'post', '/auth/register', {
+      body: { email, password: 'reset-ttl-password', fullName: 'Reset TTL', role: 'shipper' },
+    });
+    const requested = await http(app, 'post', '/auth/password-reset/request', { body: { email } });
+    expect(requested.status).toBe(202);
+    const db = app.get(DbService);
+    const rows = await db.query<{ ttl: number }>(
+      `SELECT EXTRACT(EPOCH FROM (expires_at - created_at))::float AS ttl FROM password_reset_tokens WHERE user_id = $1`,
+      [registered.body.user.id],
+    );
+    expect(rows.rows[0].ttl).toBeGreaterThan(1795);
+    expect(rows.rows[0].ttl).toBeLessThan(1805);
   });
 
   it('answers password reset requests without enumeration and consumes tokens once', async () => {
