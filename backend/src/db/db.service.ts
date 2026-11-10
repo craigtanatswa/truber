@@ -26,6 +26,9 @@ export class DbService implements OnModuleInit, OnModuleDestroy, DbQuery {
   }
 
   query<T extends QueryResultRow = QueryResultRow>(text: string, params: unknown[] = []): Promise<QueryResult<T>> {
+    if (this.transactionMode) {
+      return this.tx((client) => client.query<T>(text, params));
+    }
     return this.pool.query<T>(this.qualify(text), params);
   }
 
@@ -33,7 +36,13 @@ export class DbService implements OnModuleInit, OnModuleDestroy, DbQuery {
     const client = await this.pool.connect();
     const qualified = this.qualifyClient(client);
     try {
-      await qualified.query('BEGIN');
+      if (this.transactionMode) {
+        await client.query(
+          `BEGIN; SET LOCAL search_path = pg_catalog; SET LOCAL statement_timeout = ${Number(this.env.db.DB_STATEMENT_TIMEOUT_MS)}`,
+        );
+      } else {
+        await qualified.query('BEGIN');
+      }
       const result = await fn(qualified);
       await qualified.query('COMMIT');
       return result;
@@ -47,6 +56,10 @@ export class DbService implements OnModuleInit, OnModuleDestroy, DbQuery {
     } finally {
       client.release();
     }
+  }
+
+  private get transactionMode(): boolean {
+    return this.env.db.DB_CONNECTION_MODE === 'transaction';
   }
 
   private qualify(text: string): string {
