@@ -21,7 +21,7 @@
 
   function updateButtons() {
     var label = LABELS[mode];
-    var description = "Colour theme: " + label + ". Change theme";
+    var description = "Theme: " + label;
     buttons.forEach(function (button) {
       button.textContent = label;
       button.setAttribute("aria-label", description);

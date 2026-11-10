@@ -7,6 +7,7 @@
   --v2-black: rgb(0 0 0);
   --v2-hairline-dark: rgba(254,254,254,.12);
   --v2-glass-strip: rgba(0,0,0,.62);
+  --v2-hero-panel: rgba(0,0,0,.72); /* mobile hero panel, solid, no backdrop-filter (Design 18:20) */
   --v2-light-bg: rgb(254 254 254);
   --v2-light-text: rgb(0 0 0);
   --v2-light-text-secondary: rgb(84 84 84);
@@ -579,7 +580,7 @@ a {
 
 @media (max-width: 639px) {
   .hero-bottom {
-    background: var(--v2-glass-strip);
+    background: var(--v2-hero-panel);
     border-radius: var(--truber-radius-card);
     padding: var(--truber-space-lg);
   }
