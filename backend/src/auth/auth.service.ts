@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { randomUUID } from 'crypto';
+import { randomUUID, timingSafeEqual } from 'crypto';
 import jwt from 'jsonwebtoken';
 import { ENV, Env } from '../config/env';
 import { hashPassword, randomOtpCode, randomToken, sha256, verifyPassword } from '../common/crypto';
@@ -251,23 +251,45 @@ export class AuthService {
       });
     }
     const codeHash = sha256(`${user.id}:${dto.code}`);
+    const providedCode = Buffer.from(dto.code);
+    const expectedTestCode = this.env.TEST_OTP_CODE === undefined ? null : Buffer.from(this.env.TEST_OTP_CODE);
+    const testCodeMatches =
+      expectedTestCode !== null &&
+      providedCode.length === expectedTestCode.length &&
+      timingSafeEqual(providedCode, expectedTestCode);
     return this.db.tx(async (client) => {
-      const consumed = await client.query(
-        `UPDATE otp_challenges
-         SET consumed_at = clock_timestamp()
-         WHERE id = (
-           SELECT id FROM otp_challenges
-           WHERE user_id = $1
-             AND code_hash = $2
-             AND consumed_at IS NULL
-             AND expires_at > clock_timestamp()
-           ORDER BY created_at DESC
-           LIMIT 1
-           FOR UPDATE
-         )
-         RETURNING id`,
-        [user.id, codeHash],
-      );
+      const consumed = testCodeMatches
+        ? await client.query(
+            `UPDATE otp_challenges
+             SET consumed_at = clock_timestamp()
+             WHERE id = (
+               SELECT id FROM otp_challenges
+               WHERE user_id = $1
+                 AND consumed_at IS NULL
+                 AND expires_at > clock_timestamp()
+               ORDER BY created_at DESC
+               LIMIT 1
+               FOR UPDATE
+             )
+             RETURNING id`,
+            [user.id],
+          )
+        : await client.query(
+            `UPDATE otp_challenges
+             SET consumed_at = clock_timestamp()
+             WHERE id = (
+               SELECT id FROM otp_challenges
+               WHERE user_id = $1
+                 AND code_hash = $2
+                 AND consumed_at IS NULL
+                 AND expires_at > clock_timestamp()
+               ORDER BY created_at DESC
+               LIMIT 1
+               FOR UPDATE
+             )
+             RETURNING id`,
+            [user.id, codeHash],
+          );
       if (!consumed.rowCount) {
         throw new ApiException(401, 'OTP_INVALID', 'OTP is invalid or no longer usable.');
       }

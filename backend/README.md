@@ -194,3 +194,13 @@ Do not copy `payload` into tickets or logs.
 ## Product rules left for later slices
 
 No confirmed payment arrangement is created, so no confirmed booking is created. Cash is not marked payment-protected. The 5% completion commission is not calculated. Processing fees are not charged. Release is not recorded and is not automatic. The service holds no float.
+
+## Test-environment seed (`npm run seed:test`)
+
+`scripts/seed-test-env.ts` fills a **test** environment with fake accounts (admin, verified/unverified/pending/banned shippers and transporters), companies, six sample loads (posted, draft and cancelled) and one 14-day off-platform ban. It works through the running API where an endpoint exists. It uses SQL only to provision the admin, read a dev-adapter OTP from `delivery_outbox`, rotate a forgotten test password, and create the ban when no booking fixture is visible. It is idempotent: loads are matched by a `[TEST-SEED:<key>]` marker.
+
+It refuses to run when `NODE_ENV=production`, when any of `DATABASE_URL`, `DATABASE_MIGRATION_URL` or `SEED_API_URL` contains the production project ref, or unless `SEED_TEST_ENV=yes`. Set `SEED_API_URL` to the running test API, plus the usual DB settings. Passwords are printed once and written to the gitignored `backend/.seed-output.json` (mode 600).
+
+### `TEST_OTP_CODE` (test environments only)
+
+When set to six digits, `/auth/otp/verify` also accepts that code, consuming the user's newest open challenge, so `/auth/otp/request` must be called first. Boot is refused when `NODE_ENV=production` or the database URL points at the production project. A warning is logged at startup. The code itself is never logged.
