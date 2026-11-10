@@ -7,12 +7,18 @@ import { likeContains, pageMeta, pageWindow } from '../common/http';
 import { assertCalendarDate } from '../common/validation';
 import { DbService } from '../db/db.service';
 import { CANCELLABLE_STATUSES, DbUser, LoadResponse, LoadStatus, TRANSPORTER_VISIBLE_STATUSES } from '../domain';
+import { BookingDirectory } from '../offplatform/booking-directory';
+import { OffPlatformBanService } from '../offplatform/offplatform-ban.service';
 import { LOAD_RETURNING, presentLoad } from '../present';
 import { CancelLoadDto, CreateLoadDto, ListLoadsQueryDto, MoneyDto, UpdateLoadDto } from './loads.dto';
 
 @Injectable()
 export class LoadsService {
-  constructor(private readonly db: DbService) {}
+  constructor(
+    private readonly db: DbService,
+    private readonly bans: OffPlatformBanService,
+    private readonly bookingDirectory: BookingDirectory,
+  ) {}
 
   async list(actor: DbUser, query: ListLoadsQueryDto): Promise<{ data: LoadResponse[]; meta: ReturnType<typeof pageMeta> }> {
     if (query.pickupDateFrom) assertCalendarDate(query.pickupDateFrom, 'pickupDateFrom');
@@ -90,6 +96,8 @@ export class LoadsService {
       if (company.rows[0].type !== 'shipper') {
         throw new ApiException(403, 'COMPANY_TYPE_MISMATCH', 'Loads can only be created for a shipper company.');
       }
+      // A commission-owing gate would follow here; the ban check must stay first.
+      await this.bans.assertNotBanned(actor.id, dto.companyId, { client });
       const inserted = await client.query(
         `INSERT INTO loads (
            id, company_id, created_by, status, goods_type, weight_kg, truck_type_required,
@@ -204,6 +212,7 @@ export class LoadsService {
       const replay = await this.readIdempotency(client, actor.id, idempotencyKey, 'postLoad', requestHash);
       if (replay) return replay;
       const current = await this.lockForMutation(client, actor, loadId);
+      await this.bans.assertNotBanned(actor.id, current.companyId, { client });
       const account = await client.query<{ account_status: string }>('SELECT account_status FROM users WHERE id = $1', [actor.id]);
       const company = await client.query<{ verification_status: string }>(
         'SELECT verification_status FROM companies WHERE id = $1 FOR SHARE',
@@ -244,6 +253,22 @@ export class LoadsService {
       const current = await this.lockForMutation(client, actor, loadId);
       if (current.status === 'cancelled') {
         throw new ApiException(409, 'LOAD_ALREADY_CANCELLED', 'This load is already cancelled.');
+      }
+      const booking = await this.bookingDirectory.findActiveForLoad(client, loadId);
+      if (booking) {
+        if (actor.role === 'admin') {
+          throw new ApiException(
+            409,
+            'ADMIN_CANCEL_VIA_BOOKING',
+            'Record this cancellation on the booking with an audited reason (cancelBooking).',
+          );
+        }
+        throw new ApiException(
+          409,
+          'SELF_CANCEL_NOT_ALLOWED',
+          'This booking can only be cancelled by Truber admin. Contact support.',
+          { bookingId: booking.bookingId, bookingStatus: booking.status },
+        );
       }
       if (!CANCELLABLE_STATUSES.includes(current.status)) {
         throw new ApiException(409, 'LOAD_CANCEL_BLOCKED', 'This load can no longer be cancelled on this endpoint.');

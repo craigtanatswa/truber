@@ -5,7 +5,7 @@ import path from 'path';
 import tls from 'tls';
 import { loadEnv } from '../src/config/env';
 import { qualifyAppSql } from '../src/db/identifiers';
-import { buildSsl } from '../src/db/pg-config';
+import { buildPoolConfig, buildSsl } from '../src/db/pg-config';
 
 const OPENAPI_SHA256 = '7f44d228ba8129398a9d2790e3e08770efbfed381fab7be391bef592f38221f4';
 
@@ -46,7 +46,9 @@ describe('database configuration', () => {
   });
 
   it('refuses transaction pooler, weak TLS, public supabase schemas, and shared migration credentials', () => {
-    expect(() => loadEnv(env({ DB_CONNECTION_MODE: 'transaction' }))).toThrow(/Invalid environment configuration: DB_CONNECTION_MODE/);
+    expect(() => loadEnv(env({ DB_MIGRATION_CONNECTION_MODE: 'transaction' }))).toThrow(
+      /Invalid environment configuration: DB_MIGRATION_CONNECTION_MODE/,
+    );
     expect(() =>
       loadEnv(env({ DATABASE_URL: 'postgres://runtime_placeholder:placeholder@127.0.0.1:6543/truber_test' })),
     ).toThrow(/6543/);
@@ -111,6 +113,77 @@ describe('database configuration', () => {
     expect(() => loadEnv(env({ DB_SSL_MODE: 'disable', DATABASE_URL: 'postgres://runtime_placeholder:placeholder@db.example.invalid:5432/postgres' }))).toThrow(
       /loopback/,
     );
+  });
+
+  it('allows the transaction pooler for runtime while keeping migrations on session connections', () => {
+    const transaction = loadEnv(
+      env({
+        DATABASE_URL: 'postgres://runtime_placeholder:placeholder@127.0.0.1:6543/truber_test',
+        DATABASE_MIGRATION_URL: 'postgres://migrator_placeholder:placeholder@127.0.0.1:5432/truber_test',
+        DB_CONNECTION_MODE: 'transaction',
+      }),
+    );
+    expect(transaction.db.DB_CONNECTION_MODE).toBe('transaction');
+    const transactionPool = buildPoolConfig(transaction.db, 'runtime');
+    expect(transactionPool.options).toBeUndefined();
+    expect(transactionPool.statement_timeout).toBeUndefined();
+    const direct = loadEnv(env({ DATABASE_MIGRATION_URL: 'postgres://migrator_placeholder:placeholder@127.0.0.1:5432/truber_test' }));
+    const directPool = buildPoolConfig(direct.db, 'runtime');
+    expect(directPool.options).toBe('-c search_path=pg_catalog');
+    expect(directPool.statement_timeout).toBe(direct.db.DB_STATEMENT_TIMEOUT_MS);
+
+    expect(() =>
+      loadEnv(
+        env({
+          DATABASE_MIGRATION_URL: 'postgres://migrator_placeholder:placeholder@127.0.0.1:6543/truber_test',
+        }),
+      ),
+    ).toThrow(/6543/);
+
+    const caText = '-----BEGIN CERTIFICATE-----\\nTEST\\n-----END CERTIFICATE-----\\n';
+    const supabase = env({
+      DB_TARGET: 'supabase',
+      DB_SCHEMA: 'truber',
+      POSTGIS_SCHEMA: 'gis',
+      DB_SSL_MODE: 'verify-full',
+      DB_SSL_CA: caText,
+      DB_RUNTIME_ROLE: 'truber_runtime',
+      DATABASE_URL: 'postgres://runtime_placeholder:placeholder@db.example.invalid:5432/postgres',
+    });
+    expect(() => loadEnv(supabase)).toThrow(/DATABASE_MIGRATION_URL is required/);
+    const api = loadEnv(supabase, { purpose: 'api' });
+    expect(api.migrationUrl).toBe('');
+    expect(api.db.DB_SSL_CA).toContain('\n');
+    expect(api.db.DB_SSL_CA).not.toContain('\\n');
+    const ssl = buildSsl(api.db, api.DATABASE_URL);
+    expect(String(ssl?.ca)).toContain('\n');
+    expect(String(ssl?.ca)).not.toContain('\\n');
+
+    expect(() => loadEnv(env({ CLIENT_IP_SOURCE: 'vercel' }))).toThrow(/CLIENT_IP_SOURCE=vercel/);
+    expect(loadEnv(env({ CLIENT_IP_SOURCE: 'vercel', VERCEL: '1' })).CLIENT_IP_SOURCE).toBe('vercel');
+    expect(loadEnv(env({ VERCEL: '1' })).db.DB_POOL_MAX).toBe(2);
+    expect(loadEnv(env({ VERCEL: '1', DB_POOL_MAX: '1' })).db.DB_POOL_MAX).toBe(1);
+    expect(loadEnv(env()).db.DB_POOL_MAX).toBe(10);
+  });
+
+  it('refuses the dev booking fixtures file in production', () => {
+    expect(() =>
+      loadEnv(
+        env({
+          NODE_ENV: 'production',
+          DELIVERY_ADAPTER: 'disabled',
+          DEV_BOOKING_FIXTURES_FILE: '/tmp/truber-booking-fixtures.json',
+        }),
+      ),
+    ).toThrow('DEV_BOOKING_FIXTURES_FILE cannot be used when NODE_ENV=production');
+    expect(
+      loadEnv(
+        env({
+          NODE_ENV: 'test',
+          DEV_BOOKING_FIXTURES_FILE: '/tmp/truber-booking-fixtures.json',
+        }),
+      ).DEV_BOOKING_FIXTURES_FILE,
+    ).toBe('/tmp/truber-booking-fixtures.json');
   });
 
   it('verifies TLS hostname and certificate and never disables authorization checks', () => {

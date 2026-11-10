@@ -114,6 +114,66 @@ npm run seed
 
 The password is not stored in git. A second run does not reset it. The command will not turn an existing shipper or transporter into an admin.
 
+## Deploying to Vercel
+
+The API can run as one Vercel serverless function. `npm start` (`dist/main.js`) still works unchanged for a normal server. Both entry points call the same `createApp()` in `src/create-app.ts`, so the 32 KB JSON limit, request-id middleware, validation pipe, and `ApiExceptionFilter` are identical.
+
+| File | Role |
+| --- | --- |
+| `api/index.ts` | Vercel function entry. Re-exports the handler from `src/serverless.ts`. |
+| `src/serverless.ts` | Builds the Nest app on the first request, then reuses it for later requests on the same warm instance. A failed boot is not cached; the next request retries. Boot failures return 503 `SERVICE_UNAVAILABLE` and the reason only goes to the function log. |
+| `vercel.json` | Rewrites every path to `/api`, sets `maxDuration` to 30 s, pins region `fra1` (Frankfurt, next to the Supabase project in `eu-central-1`). The build step is `npm run typecheck`; Vercel compiles the function itself. |
+| `public/robots.txt` | Vercel requires a non-empty static output directory. This file is the only static asset. |
+
+Vercel project settings: set **Root Directory** to `backend`. `package.json` pins Node `24.x`.
+
+### Environment variables (Vercel project settings, Production)
+
+Names only. Values go into Vercel's environment settings and nowhere else: not chat, not git, not this README.
+
+| Name | Value to use |
+| --- | --- |
+| `NODE_ENV` | `production` |
+| `DATABASE_URL` | The **transaction pooler** URI (port `6543`) from the Supabase dashboard Connect screen, with user `truber_runtime.<project-ref>` and the `truber_runtime` password. Secret. |
+| `DB_CONNECTION_MODE` | `transaction` |
+| `DB_TARGET` | `supabase` |
+| `DB_SCHEMA` | `truber` |
+| `POSTGIS_SCHEMA` | `gis` |
+| `DB_RUNTIME_ROLE` | `truber_runtime` |
+| `DB_SSL_MODE` | `verify-full` |
+| `DB_SSL_CA` | PEM text of the Supabase CA certificate (Dashboard, Database Settings, SSL). Real newlines or literal `\n` both work. Use this instead of `DB_SSL_CA_FILE`, because a function cannot mount secret files. |
+| `JWT_ACCESS_SECRET` | A new random value of at least 32 characters, unique to this deployment. Secret. |
+| `DELIVERY_ADAPTER` | `disabled`. `dev` is refused when `NODE_ENV=production`. |
+| `CLIENT_IP_SOURCE` | `vercel`. Rate limits then key on the client address Vercel puts in `X-Forwarded-For` (Vercel overwrites that header, so it cannot be spoofed). Without it, every caller shares Vercel's proxy address. The value is refused unless `VERCEL=1`, which Vercel sets itself. |
+
+Optional: `DB_POOL_MAX` (defaults to `2` when `VERCEL=1`, otherwise `10`), `DB_STATEMENT_TIMEOUT_MS` (default 15000), `REFRESH_TTL_SECONDS`, `OTP_TTL_SECONDS`, and the `*_SOURCE_MAX` / `*_WINDOW_SECONDS` rate-limit values. `JWT_ACCESS_TTL_SECONDS` and `RESET_TOKEN_TTL_SECONDS` may be omitted; if set they must be `1800`.
+
+Do **not** set `DATABASE_MIGRATION_URL` on Vercel. The API never migrates, so with `DB_TARGET=supabase` it boots without the owner credential. Migrations stay a separate `npm run migrate` run from an operator machine over a direct or session connection; the migration connection refuses port 6543 and `transaction` mode because it needs a session advisory lock.
+
+### Transaction pooler behaviour
+
+Supavisor (and PgBouncer) in transaction mode hand each transaction to any server connection and reject startup parameters. With `DB_CONNECTION_MODE=transaction` the runtime pool:
+
+- sends no `options` or `statement_timeout` startup parameters;
+- runs every statement inside `BEGIN; SET LOCAL search_path = pg_catalog; SET LOCAL statement_timeout = <DB_STATEMENT_TIMEOUT_MS>`, including single statements, so the session guarantees from direct mode still hold per transaction;
+- uses only unnamed prepared statements (node-postgres default; no query sets `name`) and only transaction-scoped advisory locks (`pg_advisory_xact_lock`).
+
+All application SQL is schema-qualified, so nothing depends on the pooler's default `search_path`.
+
+### What does not carry over to serverless
+
+- **Cold starts.** The first request on a new instance builds the Nest app and runs the readiness check (two catalog queries).
+- **No background work.** The API has no timers, intervals, or queues today. Expiry is checked at request time. Future scheduled work needs Vercel Cron (limited on Hobby) or another runner.
+- **Request length.** `maxDuration` is 30 s; the database statement timeout is 15 s.
+- **Delivery.** With `DELIVERY_ADAPTER=disabled`, password-reset and OTP codes are not sent or stored, so those flows cannot complete on the hosted API until a real email/SMS provider is added.
+- **File uploads.** No upload route exists yet. POD and verification documents must go to object storage (for example Supabase Storage with signed upload URLs), not the function filesystem, and Vercel caps request bodies at 4.5 MB.
+- **CORS.** None is configured, same as the normal server. Native mobile apps do not need it; a browser client on another origin will.
+- **Deployment Protection.** If the Vercel team protects deployments by default, the `*.vercel.app` URL answers with a Vercel login page. The public API needs protection relaxed for production or a custom domain.
+
+### Local check of the serverless entry
+
+`test/serverless.e2e-spec.ts` serves `api/index.ts` through `http.createServer` and checks that status codes, error bodies, and `X-Request-Id` match the normal app. To check pooler compatibility, run the suite with the runtime URL pointed at a local PgBouncer in `pool_mode = transaction` and `DB_CONNECTION_MODE=transaction`, keeping `DATABASE_MIGRATION_URL` on the direct port.
+
 ## Delivery
 
 `DELIVERY_ADAPTER=dev` writes password-reset tokens and OTP codes into `delivery_outbox`. No route reads that table, and the values are not returned or logged. `DELIVERY_ADAPTER=disabled` stores nothing retrievable and still returns the generic reset 202. The process refuses to boot when `NODE_ENV=production` and the adapter is `dev`. This service does not call an email or SMS provider.
@@ -135,7 +195,7 @@ Do not copy `payload` into tickets or logs.
 - OTP codes last 10 minutes unless `OTP_TTL_SECONDS` is set. The contract does not set this.
 - Register and reset passwords longer than 256 characters are rejected as an abuse limit, not as a product complexity policy.
 - Emails are stored lowercase.
-- `X-Forwarded-For` is not trusted. Rate limits use the socket address.
+- `X-Forwarded-For` is not trusted by default. Rate limits use the socket address. On Vercel only, `CLIENT_IP_SOURCE=vercel` trusts the one hop Vercel adds (see Deploying to Vercel).
 
 ## Contract gaps recorded, not edited
 
