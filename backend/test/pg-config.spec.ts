@@ -166,6 +166,26 @@ describe('database configuration', () => {
     expect(loadEnv(env()).db.DB_POOL_MAX).toBe(10);
   });
 
+  it('refuses the dev booking fixtures file in production', () => {
+    expect(() =>
+      loadEnv(
+        env({
+          NODE_ENV: 'production',
+          DELIVERY_ADAPTER: 'disabled',
+          DEV_BOOKING_FIXTURES_FILE: '/tmp/truber-booking-fixtures.json',
+        }),
+      ),
+    ).toThrow('DEV_BOOKING_FIXTURES_FILE cannot be used when NODE_ENV=production');
+    expect(
+      loadEnv(
+        env({
+          NODE_ENV: 'test',
+          DEV_BOOKING_FIXTURES_FILE: '/tmp/truber-booking-fixtures.json',
+        }),
+      ).DEV_BOOKING_FIXTURES_FILE,
+    ).toBe('/tmp/truber-booking-fixtures.json');
+  });
+
   it('verifies TLS hostname and certificate and never disables authorization checks', () => {
     const caPath = path.join(tmpdir(), 'truber-config-test-ca.pem');
     writeFileSync(caPath, '-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----\n');
