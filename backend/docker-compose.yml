@@ -30,7 +30,7 @@ services:
       DATABASE_URL: postgres://truber:truber@db:5432/truber
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?set JWT_ACCESS_SECRET}
       DELIVERY_ADAPTER: dev
-      JWT_ACCESS_TTL_SECONDS: 900
+      JWT_ACCESS_TTL_SECONDS: 1800
       RESET_TOKEN_TTL_SECONDS: 1800
     ports:
       - "3000:3000"
