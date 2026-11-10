@@ -7,3 +7,4 @@ coverage/
 backend/var/
 .vercel/
 backend/.seed-output.json
+backend/.seed-sql/

@@ -1,38 +1,54 @@
 /*
- * Test-environment seed for hands-on product testing (NOT for production).
+ * Test-environment seed for hands-on product testing.
  *
  * Creates clearly fake shipper, transporter and admin accounts, companies in
- * several verification states, sample loads, and one off-platform ban scenario.
- * Data goes through the real HTTP API wherever an endpoint exists; SQL is used
- * only where the API has no endpoint (admin provisioning, reading a dev OTP from
- * delivery_outbox, an expired-password reset on rerun, and the ban scenario when
- * no dev booking fixture is available).
+ * several verification states, sample loads and one off-platform ban scenario,
+ * all tagged with a seed batch id so `npm run seed:cleanup` can remove exactly
+ * this batch later.
  *
- * Idempotent: rerunning finds existing accounts, companies and loads (loads are
- * matched by a [TEST-SEED:<key>] marker) and only fills in what is missing.
+ * Everything that has an API endpoint goes through the HTTP API. The few steps
+ * with no endpoint (promoting the TEST admin, marking seeded TEST users
+ * phone-verified while SMS is off, the ban scenario while bookings don't exist,
+ * and password recovery) are emitted as reviewed, idempotent SQL files in
+ * backend/.seed-sql/.
+ *   - Default mode (local test DB): the seed applies those files itself through
+ *     DATABASE_URL and carries on.
+ *   - --http-only mode (forced for the user-approved production target): the
+ *     seed never reads any database setting. It writes the SQL file, saves its
+ *     progress to the output file and exits with code 3. An operator runs the
+ *     file (e.g. via the Supabase MCP) and reruns the seed, which continues.
  *
- * Required env:
- *   SEED_TEST_ENV=yes        explicit opt-in
- *   SEED_API_URL             base URL of the running API (e.g. http://127.0.0.1:3108)
- *   DATABASE_URL (+ usual DB_* settings, same as the API) for SQL fallbacks
- * Optional env:
- *   SEED_OUTPUT_FILE         defaults to backend/.seed-output.json (gitignored)
- *   TEST_OTP_CODE            if the API runs with the test OTP code, the seed uses it
- *   SEED_BOOKING_FIXTURES_FILE  JSON file the API reads via DEV_BOOKING_FIXTURES_FILE;
- *                            when set, the ban scenario goes through the HTTP API.
+ * Required env: SEED_TEST_ENV=yes, SEED_API_URL=<base URL of the running API>.
+ * Default mode also needs the API's usual DATABASE_URL / DB_* settings.
+ * Production target: SEED_ALLOW_PRODUCTION=user-approved-2026-11-10, an https
+ * SEED_API_URL that is not localhost, and DATABASE_URL/DATABASE_MIGRATION_URL unset.
+ * Optional: SEED_BATCH_ID, SEED_OUTPUT_FILE, SEED_SQL_DIR, SEED_SQL_SCHEMA
+ * (http-only, default truber), SEED_BOOKING_FIXTURES_FILE (local only).
  */
 import 'reflect-metadata';
-import { randomBytes, randomUUID } from 'crypto';
-import { existsSync, readFileSync, writeFileSync } from 'fs';
+import { randomBytes } from 'crypto';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { resolve } from 'path';
-import { Pool, PoolClient } from 'pg';
+import { Pool } from 'pg';
 import { hashPassword } from '../src/common/crypto';
-import { Env, loadEnv } from '../src/config/env';
-import { qualifyAppSql } from '../src/db/identifiers';
+import { loadEnv } from '../src/config/env';
 import { buildPoolConfig } from '../src/db/pg-config';
 import { loadDotEnv } from '../src/load-dotenv';
+import {
+  assertBatchId,
+  assertSchema,
+  banScenarioIds,
+  batchTag,
+  buildAccountsSql,
+  buildBanSql,
+  buildPasswordResetSql,
+  SeedUserRef,
+} from './seed-sql';
 
 export const PRODUCTION_PROJECT_REF = 'nvejijeprejhtbsarehz';
+/** Exact value the user-approved production override needs (user decision relayed 2026-11-10 12:28 CAT). */
+export const PRODUCTION_OVERRIDE = 'user-approved-2026-11-10';
+export const EXIT_NEEDS_SQL = 3;
 
 export class SeedTestEnvRefusal extends Error {
   constructor(message: string) {
@@ -41,22 +57,63 @@ export class SeedTestEnvRefusal extends Error {
   }
 }
 
+export interface SeedMode {
+  production: boolean;
+  httpOnly: boolean;
+  apiUrl: string;
+}
+
+const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]', '0.0.0.0']);
+
 /** Pure guard, unit-tested. Throws SeedTestEnvRefusal when seeding is not allowed. */
-export function assertSeedTestEnvAllowed(source: NodeJS.ProcessEnv): void {
+export function resolveSeedMode(source: NodeJS.ProcessEnv, argv: readonly string[] = []): SeedMode {
   if ((source.NODE_ENV ?? '').trim().toLowerCase() === 'production') {
     throw new SeedTestEnvRefusal('Refusing to seed: NODE_ENV=production');
+  }
+  if (source.SEED_TEST_ENV !== 'yes') {
+    throw new SeedTestEnvRefusal('Refusing to seed: set SEED_TEST_ENV=yes to confirm this is test data');
+  }
+  const apiUrl = source.SEED_API_URL ?? '';
+  let parsed: URL;
+  try {
+    parsed = new URL(apiUrl);
+  } catch {
+    throw new SeedTestEnvRefusal('Refusing to seed: SEED_API_URL must be the http(s) base URL of the running API');
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new SeedTestEnvRefusal('Refusing to seed: SEED_API_URL must be the http(s) base URL of the running API');
+  }
+  const override = source.SEED_ALLOW_PRODUCTION;
+  if (override !== undefined && override !== '') {
+    if (override !== PRODUCTION_OVERRIDE) {
+      throw new SeedTestEnvRefusal('Refusing to seed: SEED_ALLOW_PRODUCTION has an unexpected value');
+    }
+    if (parsed.protocol !== 'https:' || LOCAL_HOSTS.has(parsed.hostname.toLowerCase()) || parsed.hostname.startsWith('127.')) {
+      throw new SeedTestEnvRefusal('Refusing to seed: the production target needs an https SEED_API_URL that is not localhost');
+    }
+    for (const key of ['DATABASE_URL', 'DATABASE_MIGRATION_URL']) {
+      if ((source[key] ?? '') !== '') {
+        throw new SeedTestEnvRefusal(`Refusing to seed: unset ${key}; the production target is HTTP-only and never uses database credentials`);
+      }
+    }
+    return { production: true, httpOnly: true, apiUrl };
   }
   for (const key of ['DATABASE_URL', 'DATABASE_MIGRATION_URL', 'SEED_API_URL']) {
     if ((source[key] ?? '').toLowerCase().includes(PRODUCTION_PROJECT_REF)) {
       throw new SeedTestEnvRefusal(`Refusing to seed: ${key} points at the production Supabase project`);
     }
   }
-  if (source.SEED_TEST_ENV !== 'yes') {
-    throw new SeedTestEnvRefusal('Refusing to seed: set SEED_TEST_ENV=yes to confirm this is a test environment');
+  return { production: false, httpOnly: argv.includes('--http-only'), apiUrl };
+}
+
+export function resolveBatchId(fromEnv: string | undefined, fromOutput: string | undefined, now = new Date()): string {
+  if (fromEnv && fromOutput && fromEnv !== fromOutput) {
+    throw new SeedTestEnvRefusal(
+      `Refusing to seed: SEED_BATCH_ID=${fromEnv} differs from the batch ${fromOutput} in the output file; use another SEED_OUTPUT_FILE for a new batch`,
+    );
   }
-  if (!source.SEED_API_URL || !/^https?:\/\/\S+$/.test(source.SEED_API_URL)) {
-    throw new SeedTestEnvRefusal('Refusing to seed: SEED_API_URL must be the http(s) base URL of the running test API');
-  }
+  const chosen = fromEnv || fromOutput || `t${now.toISOString().slice(0, 10).replace(/-/g, '')}-${randomBytes(3).toString('hex')}`;
+  return assertBatchId(chosen);
 }
 
 type Role = 'shipper' | 'transporter' | 'admin';
@@ -70,7 +127,7 @@ interface AccountSpec {
   city: string;
   role: Role;
   activate: boolean;
-  company?: { legalName: string; tradingName: string; registrationNumber: string; city: string; verification: Verification };
+  company?: { legalName: string; tradingName: string; registrationSuffix: string; city: string; verification: Verification };
   purpose: string;
 }
 
@@ -96,7 +153,7 @@ export const ACCOUNTS: AccountSpec[] = [
     company: {
       legalName: 'TEST Mhofu Agri Supplies (Pvt) Ltd',
       tradingName: 'TEST Mhofu Agri',
-      registrationNumber: 'TEST-REG-0001',
+      registrationSuffix: '0001',
       city: 'Harare',
       verification: 'verified',
     },
@@ -113,7 +170,7 @@ export const ACCOUNTS: AccountSpec[] = [
     company: {
       legalName: 'TEST Kudzi Wholesalers (Pvt) Ltd',
       tradingName: 'TEST Kudzi Wholesale',
-      registrationNumber: 'TEST-REG-0002',
+      registrationSuffix: '0002',
       city: 'Bulawayo',
       verification: 'unverified',
     },
@@ -130,7 +187,7 @@ export const ACCOUNTS: AccountSpec[] = [
     company: {
       legalName: 'TEST Zambezi Haulage (Pvt) Ltd',
       tradingName: 'TEST Zambezi Haulage',
-      registrationNumber: 'TEST-REG-0003',
+      registrationSuffix: '0003',
       city: 'Harare',
       verification: 'verified',
     },
@@ -147,7 +204,7 @@ export const ACCOUNTS: AccountSpec[] = [
     company: {
       legalName: 'TEST Eastern Highlands Logistics',
       tradingName: 'TEST EH Logistics',
-      registrationNumber: 'TEST-REG-0004',
+      registrationSuffix: '0004',
       city: 'Mutare',
       verification: 'pending',
     },
@@ -164,7 +221,7 @@ export const ACCOUNTS: AccountSpec[] = [
     company: {
       legalName: 'TEST Midlands Banned Traders',
       tradingName: 'TEST Banned Traders',
-      registrationNumber: 'TEST-REG-0005',
+      registrationSuffix: '0005',
       city: 'Gweru',
       verification: 'verified',
     },
@@ -293,14 +350,12 @@ export const LOADS: LoadSpec[] = [
   },
 ];
 
-/** Fixed id for the fake booking that anchors the ban scenario (no bookings table exists yet). */
-export const BAN_SCENARIO_BOOKING_ID = 'b0a1e5ed-7e57-4000-8000-000000000001';
-const BAN_SCENARIO_LOAD_ID = 'b0a1e5ed-7e57-4000-8000-000000000002';
 
 interface SeedOutputAccount {
   email: string;
   role: Role;
-  password: string;
+  password: string | null;
+  pendingPassword?: string;
   userId: string;
   companyId: string | null;
   companyName: string | null;
@@ -309,12 +364,26 @@ interface SeedOutputAccount {
   purpose: string;
 }
 
-interface SeedOutput {
-  generatedAt: string;
+export interface SeedOutput {
+  batchId: string;
+  schema: string;
   apiUrl: string;
+  mode: 'default' | 'http-only' | 'production-http-only';
+  generatedAt: string;
   accounts: Record<string, SeedOutputAccount>;
   loads: Record<string, { id: string; status: string; route: string }>;
-  banScenario: { bookingId: string; reportId: string | null; banIds: string[]; via: string } | null;
+  banScenario: { bookingId: string; reportId: string | null; findingId: string | null; banIds: string[]; via: string } | null;
+  createdIds: {
+    users: string[];
+    companies: string[];
+    loads: string[];
+    offPlatformReports: string[];
+    offPlatformFindings: string[];
+    offPlatformBans: string[];
+  };
+  /** Rows without their own API id, removed by cleanup through the batch user ids. */
+  cleanedByUserId: string[];
+  pendingSql: string[];
 }
 
 class Api {
@@ -345,144 +414,221 @@ class Api {
   }
 }
 
+class NeedsSql extends Error {
+  constructor(readonly file: string) {
+    super(`SQL step needed: ${file}`);
+  }
+}
+
 function strongPassword(): string {
-  // 24 url-safe chars plus a fixed suffix so every class is present.
   return `${randomBytes(18).toString('base64url')}-Tt9`;
 }
 
 function addDays(days: number): string {
-  const date = new Date(Date.now() + days * 86_400_000);
-  return date.toISOString().slice(0, 10);
+  return new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
 }
 
 function marker(key: string): string {
   return `[TEST-SEED:${key}]`;
 }
 
+function seededName(spec: AccountSpec, batchId: string): string {
+  return `${spec.fullName} (${batchTag(batchId)})`;
+}
+
+function addId(list: string[], id: string | null | undefined): void {
+  if (id && !list.includes(id)) list.push(id);
+}
+
 async function main(): Promise<void> {
-  loadDotEnv();
-  assertSeedTestEnvAllowed(process.env);
-  const env: Env = loadEnv(process.env, { purpose: 'api' });
-  const apiUrl = process.env.SEED_API_URL as string;
-  const api = new Api(apiUrl);
+  const overrideRequested = (process.env.SEED_ALLOW_PRODUCTION ?? '') !== '';
+  if (!overrideRequested && !process.argv.includes('--http-only')) {
+    loadDotEnv(); // never for the production target: a local .env could carry DB credentials
+  }
+  const mode = resolveSeedMode(process.env, process.argv.slice(2));
+  const api = new Api(mode.apiUrl);
   const outFile = resolve(process.env.SEED_OUTPUT_FILE ?? resolve(__dirname, '..', '.seed-output.json'));
+  const sqlDir = resolve(process.env.SEED_SQL_DIR ?? resolve(__dirname, '..', '.seed-sql'));
   const previous: SeedOutput | null = existsSync(outFile) ? (JSON.parse(readFileSync(outFile, 'utf8')) as SeedOutput) : null;
-  const pool = new Pool(buildPoolConfig(env.db, 'runtime'));
-  const layout = { appSchema: env.db.DB_SCHEMA, postgisSchema: env.db.POSTGIS_SCHEMA };
-  const q = (client: Pool | PoolClient, sql: string, params: unknown[] = []) => client.query(qualifyAppSql(sql, layout), params);
-  const testOtp = process.env.TEST_OTP_CODE?.trim() || null;
+  if (previous && previous.apiUrl !== mode.apiUrl) {
+    throw new SeedTestEnvRefusal(`Refusing to seed: ${outFile} belongs to ${previous.apiUrl}; use another SEED_OUTPUT_FILE`);
+  }
+  const batchId = resolveBatchId(process.env.SEED_BATCH_ID?.trim() || undefined, previous?.batchId);
+  const tag = batchTag(batchId);
+
+  let pool: Pool | null = null;
+  let schema: string;
+  if (mode.httpOnly) {
+    schema = assertSchema(process.env.SEED_SQL_SCHEMA?.trim() || previous?.schema || 'truber');
+  } else {
+    const env = loadEnv(process.env, { purpose: 'api' });
+    schema = assertSchema(env.db.DB_SCHEMA);
+    pool = new Pool(buildPoolConfig(env.db, 'runtime'));
+  }
+
+  const output: SeedOutput = {
+    batchId,
+    schema,
+    apiUrl: mode.apiUrl,
+    mode: mode.production ? 'production-http-only' : mode.httpOnly ? 'http-only' : 'default',
+    generatedAt: new Date().toISOString(),
+    accounts: previous?.accounts ?? {},
+    loads: previous?.loads ?? {},
+    banScenario: previous?.banScenario ?? null,
+    createdIds: previous?.createdIds ?? {
+      users: [],
+      companies: [],
+      loads: [],
+      offPlatformReports: [],
+      offPlatformFindings: [],
+      offPlatformBans: [],
+    },
+    cleanedByUserId: [
+      'company_members',
+      'refresh_sessions',
+      'password_reset_tokens',
+      'otp_challenges',
+      'idempotency_records',
+      'delivery_outbox',
+      'rate_limit_buckets (otp-user:/otp-verify: keys)',
+    ],
+    pendingSql: [],
+  };
+  const save = () => writeFileSync(outFile, `${JSON.stringify(output, null, 2)}\n`, { mode: 0o600 });
   const newPasswords: Array<{ email: string; password: string }> = [];
-  const output: SeedOutput = { generatedAt: new Date().toISOString(), apiUrl, accounts: {}, loads: {}, banScenario: null };
 
-  log(`seeding via API ${apiUrl}`);
-
-  try {
-    const tokens: Record<string, string> = {};
-
-    // 1. Admin first: there is no public admin sign-up, so provision via SQL (same as the existing dev seed).
-    for (const spec of ACCOUNTS) {
-      const existing = await q(pool, 'SELECT id, role, account_status FROM users WHERE email = $1', [spec.email]);
-      let password = previous?.accounts?.[spec.key]?.password ?? null;
-      let row = existing.rows[0] as { id: string; role: Role; account_status: string } | undefined;
-      if (row && row.role !== spec.role) {
-        throw new Error(`Refusing: ${spec.email} exists with role ${row.role}, expected ${spec.role}`);
-      }
-      if (!row) {
-        password = strongPassword();
-        newPasswords.push({ email: spec.email, password });
-        if (spec.role === 'admin') {
-          const id = randomUUID();
-          await q(
-            pool,
-            `INSERT INTO users (id, email, password_hash, full_name, phone, city, role, account_status, created_at, updated_at)
-             VALUES ($1, $2, $3, $4, $5, $6, 'admin', 'active', clock_timestamp(), clock_timestamp())`,
-            [id, spec.email, await hashPassword(password), spec.fullName, spec.phone, spec.city],
-          );
-          log(`admin ${spec.email} provisioned via SQL (no admin sign-up endpoint)`);
-        } else {
-          await api.call('POST', '/auth/register', {
-            body: { email: spec.email, password, fullName: spec.fullName, phone: spec.phone, city: spec.city, role: spec.role },
-            expect: [201],
-          });
-          log(`${spec.role} ${spec.email} registered via POST /auth/register`);
-        }
-      }
-      // Log in over HTTP; if the stored password no longer works (output file lost), rotate it via SQL once.
-      let login = password
-        ? await api.call('POST', '/auth/login', { body: { email: spec.email, password } })
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- loosely typed JSON in a test-only script
-        : { status: 401, body: null as any };
-      if (login.status !== 200 && login.status !== 401) {
-        throw new Error(`POST /auth/login for ${spec.email} -> ${login.status}`);
-      }
-      if (login.status === 401) {
-        password = strongPassword();
-        newPasswords.push({ email: spec.email, password });
-        await q(pool, 'UPDATE users SET password_hash = $2, updated_at = clock_timestamp() WHERE email = $1', [
-          spec.email,
-          await hashPassword(password),
-        ]);
-        log(`${spec.email}: previous password unknown, set a new test password via SQL`);
-        login = await api.call('POST', '/auth/login', { body: { email: spec.email, password }, expect: [200] });
-      }
-      tokens[spec.key] = login.body.accessToken;
-      row = { id: login.body.user.id, role: spec.role, account_status: login.body.user.accountStatus };
-
-      // 2. Phone/OTP verification over HTTP (request + verify). The code comes from TEST_OTP_CODE
-      //    if the API has it, otherwise from the dev delivery outbox (DELIVERY_ADAPTER=dev).
-      if (spec.activate && row.account_status === 'pending_verification') {
-        await api.call('POST', '/auth/otp/request', { token: tokens[spec.key], body: { channel: 'sms' }, expect: [202, 200] });
-        let code = testOtp;
-        if (!code) {
-          const staged = await q(
-            pool,
-            `SELECT payload FROM delivery_outbox WHERE user_id = $1 AND kind = 'otp' ORDER BY created_at DESC LIMIT 1`,
-            [row.id],
-          );
-          code = (staged.rows[0]?.payload as string | undefined) ?? null;
-        }
-        if (code) {
-          const verified = await api.call('POST', '/auth/otp/verify', { token: tokens[spec.key], body: { code }, expect: [200] });
-          row.account_status = verified.body.accountStatus;
-          log(`${spec.email} phone verified via POST /auth/otp/verify`);
-        } else {
-          await q(pool, `UPDATE users SET account_status = 'active', updated_at = clock_timestamp() WHERE id = $1 AND account_status = 'pending_verification'`, [row.id]);
-          row.account_status = 'active';
-          log(`${spec.email}: no OTP code obtainable (delivery disabled, no TEST_OTP_CODE); activated via SQL`);
-        }
-      }
-
-      output.accounts[spec.key] = {
-        email: spec.email,
-        role: spec.role,
-        password: password as string,
-        userId: row.id,
-        companyId: null,
-        companyName: spec.company?.legalName ?? null,
-        companyVerification: null,
-        accountStatus: row.account_status,
-        purpose: spec.purpose,
-      };
+  /** Write the SQL file; apply it locally in default mode, otherwise stop and ask the operator. */
+  const sqlStep = async (step: string, sql: string): Promise<void> => {
+    mkdirSync(sqlDir, { recursive: true, mode: 0o700 });
+    const file = resolve(sqlDir, `${batchId}-${step}.sql`);
+    writeFileSync(file, sql, { mode: 0o600 });
+    if (pool) {
+      await pool.query(sql);
+      log(`applied ${file} with the local test connection`);
+      return;
     }
+    output.pendingSql = [file];
+    throw new NeedsSql(file);
+  };
 
-    // 3. Companies over HTTP (owner creates; admin sets verification via PATCH /companies/{id}).
+  log(`batch ${batchId}, mode ${output.mode}, API ${mode.apiUrl}`);
+  try {
+    // ---- Phase 1: accounts (HTTP register + login) -------------------------------------------
+    const tokens: Record<string, string> = {};
+    const loginAll = async (): Promise<{
+      resets: Array<SeedUserRef & { passwordHash: string }>;
+      promote: SeedUserRef | null;
+      activate: SeedUserRef[];
+    }> => {
+      const resets: Array<SeedUserRef & { passwordHash: string }> = [];
+      let promote: SeedUserRef | null = null;
+      const activate: SeedUserRef[] = [];
+      for (const spec of ACCOUNTS) {
+        const known = output.accounts[spec.key];
+        let password = known?.password ?? null;
+        if (!known) {
+          password = strongPassword();
+          const registered = await api.call('POST', '/auth/register', {
+            body: {
+              email: spec.email,
+              password,
+              fullName: seededName(spec, batchId),
+              phone: spec.phone,
+              city: spec.city,
+              // The API has no admin sign-up; the TEST admin registers as a shipper and is promoted by SQL.
+              role: spec.role === 'admin' ? 'shipper' : spec.role,
+            },
+            expect: [201, 409],
+          });
+          if (registered.status === 201) {
+            newPasswords.push({ email: spec.email, password });
+            log(`${spec.email} registered via POST /auth/register`);
+          } else {
+            password = null; // exists from an earlier run whose output file is gone
+          }
+        }
+        let login = password ? await api.call('POST', '/auth/login', { body: { email: spec.email, password } }) : null;
+        if (login && login.status !== 200 && login.status !== 401) {
+          throw new Error(`POST /auth/login for ${spec.email} -> ${login.status}`);
+        }
+        if ((!login || login.status === 401) && known?.pendingPassword) {
+          login = await api.call('POST', '/auth/login', { body: { email: spec.email, password: known.pendingPassword } });
+          if (login.status === 200) {
+            password = known.pendingPassword;
+            delete known.pendingPassword;
+          }
+        }
+        if (!login || login.status !== 200) {
+          if (!known?.userId) {
+            throw new SeedTestEnvRefusal(
+              `${spec.email} already exists but this output file has no record of it. Use the output file from the run that created it, or run seed:cleanup for that batch first.`,
+            );
+          }
+          const pending = known.pendingPassword ?? strongPassword();
+          known.pendingPassword = pending;
+          if (!newPasswords.some((p) => p.email === spec.email)) newPasswords.push({ email: spec.email, password: pending });
+          resets.push({ userId: known.userId, email: spec.email, passwordHash: await hashPassword(pending) });
+          continue;
+        }
+        const user = login.body.user as { id: string; fullName: string; role: string; accountStatus: string };
+        if (!user.fullName.endsWith(`(${tag})`)) {
+          throw new SeedTestEnvRefusal(`${spec.email} belongs to another seed batch ("${user.fullName}"); clean that batch up first`);
+        }
+        tokens[spec.key] = login.body.accessToken as string;
+        addId(output.createdIds.users, user.id);
+        output.accounts[spec.key] = {
+          email: spec.email,
+          role: spec.role,
+          password,
+          ...(known?.pendingPassword ? { pendingPassword: known.pendingPassword } : {}),
+          userId: user.id,
+          companyId: known?.companyId ?? null,
+          companyName: spec.company?.legalName ?? null,
+          companyVerification: known?.companyVerification ?? null,
+          accountStatus: user.accountStatus,
+          purpose: spec.purpose,
+        };
+        if (spec.role === 'admin' && user.role !== 'admin') promote = { userId: user.id, email: spec.email };
+        if (spec.activate && user.accountStatus === 'pending_verification') activate.push({ userId: user.id, email: spec.email });
+      }
+      return { resets, promote, activate };
+    };
+
+    let pass = await loginAll();
+    save();
+    if (pass.resets.length > 0) {
+      await sqlStep('00-password-reset', buildPasswordResetSql({ schema, batchId, resets: pass.resets }));
+      pass = await loginAll();
+    }
+    if (pass.promote || pass.activate.length > 0) {
+      await sqlStep('01-accounts', buildAccountsSql({ schema, batchId, promoteAdmin: pass.promote, activate: pass.activate }));
+      pass = await loginAll(); // fresh tokens carry the promoted role
+      if (pass.promote || pass.activate.length > 0 || pass.resets.length > 0) {
+        throw new Error('accounts SQL was applied but the accounts are still not ready');
+      }
+    }
+    save();
+
+    // ---- Phase 2: companies (owner creates over HTTP; TEST admin sets verification) ----------
     const adminToken = tokens.admin;
     for (const spec of ACCOUNTS) {
       if (!spec.company) continue;
-      const mine = await api.call<{ data: Array<{ id: string; legalName: string; verificationStatus: Verification }> }>(
+      const account = output.accounts[spec.key];
+      const registrationNumber = `TEST-${batchId}-${spec.company.registrationSuffix}`;
+      const mine = await api.call<{ data: Array<{ id: string; registrationNumber: string | null; verificationStatus: Verification }> }>(
         'GET',
         `/companies?type=${spec.role}&pageSize=100`,
         { token: tokens[spec.key], expect: [200] },
       );
-      let company = mine.body.data.find((c) => c.legalName === spec.company!.legalName);
+      let company = mine.body.data.find((c) => c.registrationNumber === registrationNumber);
       if (!company) {
         const created = await api.call('POST', '/companies', {
           token: tokens[spec.key],
           body: {
             type: spec.role,
             legalName: spec.company.legalName,
-            tradingName: spec.company.tradingName,
-            registrationNumber: spec.company.registrationNumber,
+            tradingName: `${spec.company.tradingName} (${tag})`,
+            registrationNumber,
             countryCode: 'ZW',
             city: spec.company.city,
           },
@@ -491,6 +637,7 @@ async function main(): Promise<void> {
         company = created.body;
         log(`company "${spec.company.legalName}" created via POST /companies`);
       }
+      addId(output.createdIds.companies, company!.id);
       if (company!.verificationStatus !== spec.company.verification) {
         const patched = await api.call('PATCH', `/companies/${company!.id}`, {
           token: adminToken,
@@ -498,13 +645,14 @@ async function main(): Promise<void> {
           expect: [200],
         });
         company = patched.body;
-        log(`company "${spec.company.legalName}" set to ${spec.company.verification} by admin via PATCH /companies/{id}`);
+        log(`company "${spec.company.legalName}" set to ${spec.company.verification} by the TEST admin via PATCH /companies/{id}`);
       }
-      output.accounts[spec.key].companyId = company!.id;
-      output.accounts[spec.key].companyVerification = company!.verificationStatus;
+      account.companyId = company!.id;
+      account.companyVerification = company!.verificationStatus;
     }
+    save();
 
-    // 4. Sample loads for the verified shipper, over HTTP.
+    // ---- Phase 3: sample loads (verified TEST shipper, HTTP) ----------------------------------
     const shipperToken = tokens.shipper;
     const shipperCompanyId = output.accounts.shipper.companyId as string;
     const existingLoads = await api.call<{ data: Array<{ id: string; status: string; specialRequirements: string | null }> }>(
@@ -528,7 +676,7 @@ async function main(): Promise<void> {
             destinationPoint: spec.destinationPoint,
             loadingDate: addDays(spec.loadingInDays),
             deliveryDeadline: addDays(spec.deadlineInDays),
-            specialRequirements: `${marker(spec.key)} ${spec.specialRequirements}`,
+            specialRequirements: `${marker(spec.key)} TEST ${tag}. ${spec.specialRequirements}`,
             rateType: spec.rateType,
             ...(spec.offeredRateMinor ? { offeredRate: { amountMinor: spec.offeredRateMinor, currency: 'USD' } } : {}),
             currency: 'USD',
@@ -538,169 +686,144 @@ async function main(): Promise<void> {
         load = created.body;
         log(`load ${spec.key} created via POST /loads`);
       }
+      addId(output.createdIds.loads, load!.id);
       if (load!.status === 'draft' && (spec.target === 'posted' || spec.target === 'cancelled')) {
-        const posted = await api.call('POST', `/loads/${load!.id}/post`, {
-          token: shipperToken,
-          idempotencyKey: `seed-post-${load!.id}`,
-          expect: [200],
-        });
-        load = posted.body;
+        load = (await api.call('POST', `/loads/${load!.id}/post`, { token: shipperToken, idempotencyKey: `seed-post-${load!.id}`, expect: [200] })).body;
       }
       if (spec.target === 'cancelled' && load!.status !== 'cancelled') {
-        const cancelled = await api.call('POST', `/loads/${load!.id}/cancel`, {
-          token: shipperToken,
-          idempotencyKey: `seed-cancel-${load!.id}`,
-          body: { reason: 'TEST seed: cancelled example' },
-          expect: [200],
-        });
-        load = cancelled.body;
+        load = (
+          await api.call('POST', `/loads/${load!.id}/cancel`, {
+            token: shipperToken,
+            idempotencyKey: `seed-cancel-${load!.id}`,
+            body: { reason: `TEST ${tag}: cancelled example` },
+            expect: [200],
+          })
+        ).body;
       }
-      output.loads[spec.key] = {
-        id: load!.id,
-        status: load!.status,
-        route: `${spec.pickupAddress} -> ${spec.destinationAddress}`,
-      };
+      output.loads[spec.key] = { id: load!.id, status: load!.status, route: `${spec.pickupAddress} -> ${spec.destinationAddress}` };
     }
+    save();
 
-    // 5. Off-platform ban scenario: banned shipper + verified transporter on a fake booking.
-    output.banScenario = await seedBanScenario({
-      api,
-      pool,
-      q,
-      adminToken,
-      transporterToken: tokens.transporter,
-      banned: output.accounts.shipper_banned,
-      transporter: output.accounts.transporter,
-    });
-
-    writeFileSync(outFile, `${JSON.stringify(output, null, 2)}\n`, { mode: 0o600 });
-    log(`wrote ${outFile} (gitignored; contains test passwords)`);
-    process.stdout.write('\nTEST ACCOUNTS\n');
-    for (const account of Object.values(output.accounts)) {
-      process.stdout.write(
-        `  ${account.role.padEnd(11)} ${account.email.padEnd(40)} status=${account.accountStatus} company=${account.companyVerification ?? '-'}\n`,
+    // ---- Phase 4: off-platform ban scenario --------------------------------------------------
+    const ids = banScenarioIds(batchId);
+    const banned = output.accounts.shipper_banned;
+    const reporter = output.accounts.transporter;
+    const admin = output.accounts.admin;
+    const recordBan = async (via: string): Promise<boolean> => {
+      const reports = await api.call<{ data: Array<{ id: string; finding?: { id: string; bans: Array<{ id: string }> } | null }> }>(
+        'GET',
+        `/admin/off-platform-reports?bookingId=${ids.bookingId}`,
+        { token: adminToken, expect: [200] },
       );
-    }
-    if (newPasswords.length > 0) {
-      process.stdout.write('\nNEW PASSWORDS (shown once; also in the output file)\n');
-      for (const entry of newPasswords) process.stdout.write(`  ${entry.email}  ${entry.password}\n`);
+      const report = reports.body.data[0];
+      if (!report?.finding || report.finding.bans.length === 0) return false;
+      addId(output.createdIds.offPlatformReports, report.id);
+      addId(output.createdIds.offPlatformFindings, report.finding.id);
+      for (const ban of report.finding.bans) addId(output.createdIds.offPlatformBans, ban.id);
+      output.banScenario = {
+        bookingId: ids.bookingId,
+        reportId: report.id,
+        findingId: report.finding.id,
+        banIds: report.finding.bans.map((b) => b.id),
+        via: output.banScenario?.via ?? via,
+      };
+      return true;
+    };
+    const viaBefore = previous?.pendingSql?.some((f) => f.endsWith('-02-ban.sql')) ? 'sql' : 'existing';
+    if (await recordBan(viaBefore)) {
+      log('ban scenario already present');
     } else {
-      process.stdout.write('\nNo passwords changed on this run; existing ones are in the output file.\n');
+      const fixtureFile = mode.production ? undefined : process.env.SEED_BOOKING_FIXTURES_FILE?.trim();
+      let viaHttp = false;
+      if (fixtureFile) {
+        const current = existsSync(fixtureFile) ? (JSON.parse(readFileSync(fixtureFile, 'utf8')) as Array<Record<string, unknown>>) : [];
+        if (!current.some((b) => b.bookingId === ids.bookingId)) {
+          current.push({
+            bookingId: ids.bookingId,
+            loadId: output.loads['hre-byo-fertiliser'].id,
+            status: 'confirmed',
+            shipperCompanyId: banned.companyId,
+            transporterCompanyId: reporter.companyId,
+          });
+          writeFileSync(fixtureFile, `${JSON.stringify(current, null, 2)}\n`);
+        }
+        const report = await api.call('POST', `/bookings/${ids.bookingId}/off-platform-reports`, {
+          token: tokens.transporter,
+          idempotencyKey: `seed-report-${ids.bookingId}`,
+          body: { suspectedParty: 'shipper', description: `TEST ${tag}: shipper asked to settle in cash outside Truber after the booking was confirmed.` },
+        });
+        if (report.status === 201) {
+          await api.call('POST', `/admin/off-platform-reports/${report.body.id}/finding`, {
+            token: adminToken,
+            idempotencyKey: `seed-finding-${report.body.id}`,
+            body: {
+              outcome: 'confirmed',
+              reason: `TEST ${tag}: confirmed for testing the 14-day ban.`,
+              responsibleParties: [{ role: 'shipper', userId: banned.userId, companyId: banned.companyId }],
+            },
+            expect: [201, 200],
+          });
+          viaHttp = await recordBan('http');
+          log('ban scenario created via HTTP (report by TEST transporter, confirmed finding by TEST admin)');
+        } else {
+          log(`booking fixture not visible to the API (report -> ${report.status}); using SQL`);
+        }
+      }
+      if (!viaHttp) {
+        await sqlStep(
+          '02-ban',
+          buildBanSql({
+            schema,
+            batchId,
+            ids,
+            reporter: { userId: reporter.userId, email: reporter.email },
+            admin: { userId: admin.userId, email: admin.email },
+            banned: { userId: banned.userId, email: banned.email, companyId: banned.companyId as string },
+          }),
+        );
+        if (!(await recordBan('sql'))) throw new Error('ban SQL was applied but the API does not show the ban');
+      }
     }
+
+    output.pendingSql = [];
+    save();
+    log(`done; wrote ${outFile} (gitignored; contains test passwords)`);
+    printSummary(output, newPasswords);
+  } catch (error) {
+    if (error instanceof NeedsSql) {
+      save();
+      printSummary(output, newPasswords);
+      process.stdout.write(
+        [
+          '',
+          'ACTION NEEDED (nothing is wrong): this step has no API endpoint.',
+          `  1. Review and run this SQL file against the target database (e.g. Supabase MCP execute_sql):`,
+          `       ${error.file}`,
+          '  2. Rerun the same seed command. It continues from where it stopped.',
+          `Progress and passwords so far are saved in ${outFile}.`,
+          '',
+        ].join('\n'),
+      );
+      process.exitCode = EXIT_NEEDS_SQL;
+      return;
+    }
+    save();
+    throw error;
   } finally {
-    await pool.end();
+    await pool?.end();
   }
 }
 
-async function seedBanScenario(input: {
-  api: Api;
-  pool: Pool;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- loosely typed JSON in a test-only script
-  q: (client: Pool | PoolClient, sql: string, params?: unknown[]) => Promise<any>;
-  adminToken: string;
-  transporterToken: string;
-  banned: SeedOutputAccount;
-  transporter: SeedOutputAccount;
-}): Promise<SeedOutput['banScenario']> {
-  const { api, pool, q, banned, transporter } = input;
-  const fixtureFile = process.env.SEED_BOOKING_FIXTURES_FILE?.trim();
-  if (fixtureFile) {
-    const current: Array<Record<string, unknown>> = existsSync(fixtureFile)
-      ? (JSON.parse(readFileSync(fixtureFile, 'utf8')) as Array<Record<string, unknown>>)
-      : [];
-    if (!current.some((b) => b.bookingId === BAN_SCENARIO_BOOKING_ID)) {
-      current.push({
-        bookingId: BAN_SCENARIO_BOOKING_ID,
-        loadId: BAN_SCENARIO_LOAD_ID,
-        status: 'confirmed',
-        shipperCompanyId: banned.companyId,
-        transporterCompanyId: transporter.companyId,
-      });
-      writeFileSync(fixtureFile, `${JSON.stringify(current, null, 2)}\n`);
-    }
+function printSummary(output: SeedOutput, newPasswords: Array<{ email: string; password: string }>): void {
+  process.stdout.write(`\nTEST ACCOUNTS (batch ${output.batchId})\n`);
+  for (const a of Object.values(output.accounts)) {
+    process.stdout.write(`  ${a.role.padEnd(11)} ${a.email.padEnd(40)} status=${a.accountStatus} company=${a.companyVerification ?? '-'}\n`);
   }
-
-  const existing = await q(pool, 'SELECT id, status FROM off_platform_reports WHERE booking_id = $1 ORDER BY created_at LIMIT 1', [
-    BAN_SCENARIO_BOOKING_ID,
-  ]);
-  if (existing.rows[0]) {
-    const bans = await q(pool, 'SELECT b.id FROM off_platform_bans b JOIN off_platform_findings f ON f.id = b.finding_id WHERE f.report_id = $1', [
-      existing.rows[0].id,
-    ]);
-    log('ban scenario already present');
-    return { bookingId: BAN_SCENARIO_BOOKING_ID, reportId: existing.rows[0].id, banIds: bans.rows.map((r: { id: string }) => r.id), via: 'existing' };
-  }
-
-  const reportBody = {
-    suspectedParty: 'shipper',
-    description: 'TEST seed: shipper asked to settle in cash outside Truber after the booking was confirmed.',
-  };
-  if (fixtureFile) {
-    const report = await api.call('POST', `/bookings/${BAN_SCENARIO_BOOKING_ID}/off-platform-reports`, {
-      token: input.transporterToken,
-      idempotencyKey: `seed-report-${BAN_SCENARIO_BOOKING_ID}`,
-      body: reportBody,
-    });
-    if (report.status === 201) {
-      const finding = await api.call('POST', `/admin/off-platform-reports/${report.body.id}/finding`, {
-        token: input.adminToken,
-        idempotencyKey: `seed-finding-${report.body.id}`,
-        body: {
-          outcome: 'confirmed',
-          reason: 'TEST seed: confirmed for testing the 14-day ban.',
-          responsibleParties: [{ role: 'shipper', userId: banned.userId, companyId: banned.companyId }],
-        },
-        expect: [201, 200],
-      });
-      const bans = (finding.body?.bans ?? []) as Array<{ id: string }>;
-      log('ban scenario created via HTTP (report by transporter, confirmed finding by admin)');
-      return { bookingId: BAN_SCENARIO_BOOKING_ID, reportId: report.body.id, banIds: bans.map((b) => b.id), via: 'http' };
-    }
-    log(`booking fixture not visible to the API (report -> ${report.status}); falling back to SQL`);
-  }
-
-  // SQL fallback: no bookings domain exists, so mirror what the report + finding + ban services write.
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    const reportId = randomUUID();
-    const findingId = randomUUID();
-    const banId = randomUUID();
-    await q(
-      client,
-      `INSERT INTO off_platform_reports (id, booking_id, reported_by_user_id, reporter_role, suspected_party, description, evidence_uris, status, created_at)
-       VALUES ($1, $2, $3, 'transporter', 'shipper', $4, '[]'::jsonb, 'confirmed', clock_timestamp())`,
-      [reportId, BAN_SCENARIO_BOOKING_ID, transporter.userId, reportBody.description],
-    );
-    const adminRow = await q(client, `SELECT id FROM users WHERE email = 'test.admin@example.com'`);
-    const adminId = adminRow.rows[0].id as string;
-    await q(
-      client,
-      `INSERT INTO off_platform_findings (id, report_id, booking_id, outcome, reason, responsible_parties, reviewed_by_user_id, reviewed_at)
-       VALUES ($1, $2, $3, 'confirmed', $4, $5::jsonb, $6, clock_timestamp())`,
-      [
-        findingId,
-        reportId,
-        BAN_SCENARIO_BOOKING_ID,
-        'TEST seed: confirmed for testing the 14-day ban.',
-        JSON.stringify([{ role: 'shipper', userId: banned.userId, companyId: banned.companyId }]),
-        adminId,
-      ],
-    );
-    await q(
-      client,
-      `INSERT INTO off_platform_bans (id, finding_id, user_id, company_id, party_role, reason, starts_at, ends_at, duration_days, applied_by_user_id, created_at)
-       VALUES ($1, $2, $3, $4, 'shipper', $5, date_trunc('milliseconds', clock_timestamp()), date_trunc('milliseconds', clock_timestamp()) + interval '336 hours', 14, $6, clock_timestamp())`,
-      [banId, findingId, banned.userId, banned.companyId, 'TEST seed: confirmed for testing the 14-day ban.', adminId],
-    );
-    await client.query('COMMIT');
-    log('ban scenario created via SQL fallback (no bookings endpoint/fixture available)');
-    return { bookingId: BAN_SCENARIO_BOOKING_ID, reportId, banIds: [banId], via: 'sql' };
-  } catch (error) {
-    await client.query('ROLLBACK');
-    throw error;
-  } finally {
-    client.release();
+  if (newPasswords.length > 0) {
+    process.stdout.write('\nNEW PASSWORDS (shown once; also in the output file)\n');
+    for (const p of newPasswords) process.stdout.write(`  ${p.email}  ${p.password}\n`);
+  } else {
+    process.stdout.write('\nNo passwords changed on this run; existing ones are in the output file.\n');
   }
 }
 
