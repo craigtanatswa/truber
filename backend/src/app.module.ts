@@ -14,7 +14,7 @@ import { LoadsService } from './loads/loads.service';
 @Module({
   controllers: [AuthController, CompaniesController, LoadsController],
   providers: [
-    { provide: ENV, useFactory: () => loadEnv() },
+    { provide: ENV, useFactory: () => loadEnv(process.env, { purpose: 'api' }) },
     DbService,
     RateLimitService,
     DeliveryService,
