@@ -32,7 +32,7 @@ import { OffPlatformReportService } from './offplatform/offplatform-report.servi
     OffPlatformAdminController,
   ],
   providers: [
-    { provide: ENV, useFactory: () => loadEnv() },
+    { provide: ENV, useFactory: () => loadEnv(process.env, { purpose: 'api' }) },
     DbService,
     RateLimitService,
     DeliveryService,
