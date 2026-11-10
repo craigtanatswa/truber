@@ -17,7 +17,9 @@ export async function truncate(): Promise<void> {
   try {
     await pool.query(
       qualifyAppSql(
-        `TRUNCATE delivery_outbox, idempotency_records, rate_limit_buckets, otp_challenges,
+        `TRUNCATE commission_collection_allocations, commission_collections, commission_receivables,
+                payment_records, payouts, payment_arrangements,
+                delivery_outbox, idempotency_records, rate_limit_buckets, otp_challenges,
                 password_reset_tokens, refresh_sessions, loads, company_members, companies, users
          RESTART IDENTITY CASCADE`,
         { appSchema: env.db.DB_SCHEMA, postgisSchema: env.db.POSTGIS_SCHEMA },

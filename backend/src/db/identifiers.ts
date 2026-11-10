@@ -1,4 +1,7 @@
 export const APP_TABLES = [
+  'commission_collection_allocations',
+  'commission_collections',
+  'commission_receivables',
   'company_members',
   'companies',
   'delivery_outbox',
@@ -6,11 +9,16 @@ export const APP_TABLES = [
   'loads',
   'otp_challenges',
   'password_reset_tokens',
+  'payment_arrangements',
+  'payment_records',
+  'payouts',
   'rate_limit_buckets',
   'refresh_sessions',
   'schema_migrations',
   'users',
 ] as const;
+
+const APP_FUNCTIONS = new Set(['billing_receivable_immutable']);
 
 const POSTGIS_FUNCTIONS = new Set([
   'ST_AsText',
@@ -76,6 +84,8 @@ export function qualifyAppSql(sql: string, layout: DbLayout): string {
       const previous = start > 0 ? sql[start - 1] : '';
       const alreadyQualified = previous === '.' || previous === '"';
       if (!alreadyQualified && tables.has(word)) {
+        out += `${quoteIdent(layout.appSchema)}.${word}`;
+      } else if (!alreadyQualified && APP_FUNCTIONS.has(word)) {
         out += `${quoteIdent(layout.appSchema)}.${word}`;
       } else if (!alreadyQualified && POSTGIS_FUNCTIONS.has(word)) {
         out += `${quoteIdent(layout.postgisSchema)}.${word}`;
