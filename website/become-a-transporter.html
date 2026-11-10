@@ -23,15 +23,18 @@
 <meta name="twitter:title" content="Become a transporter | Truber">
 <meta name="twitter:description" content="Apply to join Truber as a transporter. Register your company and trucks, get verified and quote on loads that fit your routes. The preview is in testing.">
 <meta name="twitter:image" content="https://truber-web.vercel.app/og-image.png">
-<meta http-equiv="Content-Security-Policy" content="form-action 'none'">
 <link rel="icon" href="/favicon.ico" sizes="any">
 <link rel="icon" type="image/png" sizes="32x32" href="/assets/icon-32.png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="manifest" href="/site.webmanifest">
 <script>try{var t=localStorage.getItem("truber-theme");if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="preload" href="/assets/fonts/InterVariable-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/tokens.css">
+<link rel="stylesheet" href="/tokens-web-v2.css">
 <link rel="stylesheet" href="/styles.css">
+<meta http-equiv="Content-Security-Policy" content="form-action 'none'">
 <script src="/theme.js" defer></script>
+<script src="/motion.js" defer></script>
 <script src="/forms.js" defer></script>
 </head>
 <body>
@@ -39,81 +42,80 @@
 <header class="site-header">
   <div class="container header-inner">
     <a class="site-brand" href="/" aria-label="Truber home">
-      <img class="logo-wordmark" src="/assets/logo/wordmark-white-transparent.png" width="1046" height="292" alt="Truber">
+      <img class="logo-wordmark" src="/assets/logo/wordmark-white-transparent.png" width="1046" height="292" fetchpriority="high" alt="Truber">
     </a>
     <details class="nav-menu">
       <summary>Menu</summary>
-      <nav aria-label="Main (mobile)">
+      <nav class="nav-menu-panel" aria-label="Main (mobile)">
         <ul class="nav-list">
-          <li><a class="nav-link" href="/">Home</a></li>
-          <li><a class="nav-link" href="/how-it-works">How it works</a></li>
-          <li><a class="nav-link" href="/services">Services</a></li>
-          <li><a class="nav-link" href="/become-a-transporter" aria-current="page">Become a transporter</a></li>
-          <li><a class="nav-link" href="/safety">Safety</a></li>
-          <li><a class="nav-link" href="/about">About</a></li>
-          <li><a class="nav-link" href="/contact">Contact</a></li>
-          <li><a class="nav-link" href="/sign-in">Sign in</a></li>
+          <li><a class="nav-pill" href="/how-it-works">How it works</a></li>
+          <li><a class="nav-pill" href="/services">Services</a></li>
+          <li><a class="nav-pill" href="/become-a-transporter" aria-current="page">Transporters</a></li>
+          <li><a class="nav-pill" href="/safety">Safety</a></li>
+          <li><a class="nav-pill" href="/about">About</a></li>
+          <li><a class="nav-pill" href="/contact">Contact</a></li>
         </ul>
       </nav>
     </details>
     <nav class="nav-desktop" aria-label="Main">
       <ul class="nav-list">
-        <li><a class="nav-link" href="/">Home</a></li>
-        <li><a class="nav-link" href="/how-it-works">How it works</a></li>
-        <li><a class="nav-link" href="/services">Services</a></li>
-        <li><a class="nav-link" href="/become-a-transporter" aria-current="page">Become a transporter</a></li>
-        <li><a class="nav-link" href="/safety">Safety</a></li>
-        <li><a class="nav-link" href="/about">About</a></li>
-        <li><a class="nav-link" href="/contact">Contact</a></li>
-        <li><a class="nav-link" href="/sign-in">Sign in</a></li>
+        <li><a class="nav-pill" href="/how-it-works">How it works</a></li>
+        <li><a class="nav-pill" href="/services">Services</a></li>
+        <li><a class="nav-pill" href="/become-a-transporter" aria-current="page">Transporters</a></li>
+        <li><a class="nav-pill" href="/safety">Safety</a></li>
+        <li><a class="nav-pill" href="/about">About</a></li>
+        <li><a class="nav-pill" href="/contact">Contact</a></li>
       </ul>
     </nav>
     <div class="header-actions">
       <div id="theme-toggle-slot"></div>
-      <a class="btn btn-primary" href="https://truber-mobile-preview.vercel.app" rel="noopener">Try the preview</a>
+      <a class="btn btn-primary header-cta" href="/app/">Open web app</a>
     </div>
   </div>
 </header>
 <main id="main">
-  <section class="section">
+  <section class="page-hero" aria-labelledby="page-title">
     <div class="container narrow">
       <!-- PLACEHOLDER: engineering-drafted copy from CONCEPT.md; Truber Design to supply final copy -->
-      <h1 class="page-title">Become a transporter</h1>
+      <p class="eyebrow">For transporters</p>
+      <h1 class="page-title" id="page-title">Become a transporter</h1>
       <p class="lead">Truber is a freight marketplace for Zimbabwe. Transporters register their companies and trucks, then quote on loads that fit their routes. The public preview is in testing.</p>
-      <div class="btn-row">
-        <a class="btn btn-primary" href="#apply">Apply to join</a>
-        <a class="btn btn-secondary" href="https://truber-mobile-preview.vercel.app" rel="noopener">Try the preview</a>
+      <div class="section-actions">
+        <div class="btn-row">
+          <a class="btn btn-primary" href="#apply">Apply to join</a>
+          <a class="btn btn-secondary" href="/app/">Try the preview</a>
+        </div>
       </div>
     </div>
   </section>
   <section class="section section--muted">
     <div class="container">
       <!-- PLACEHOLDER: engineering-drafted copy from CONCEPT.md; Truber Design to supply final copy -->
-      <div class="section-header">
+      <div class="section-header" data-reveal>
         <h2 class="section-title">Why transport with Truber</h2>
         <p class="section-intro">Truber gives transporters a clear place to find work, quote on terms they choose and keep a record of every trip.</p>
       </div>
       <div class="stack">
         <ul class="card-grid card-grid--4">
-          <li class="card">
+          <li class="card" data-reveal>
             <h3 class="card-title">Find loads that fit your trucks</h3>
             <p>Browse loads by capacity, truck type, location and route, then choose which ones to quote.</p>
           </li>
-          <li class="card">
+          <li class="card" data-reveal>
             <h3 class="card-title">Quote on your terms</h3>
             <p>Send a quotation with your price and conditions for the trip.</p>
           </li>
-          <li class="card">
+          <li class="card" data-reveal>
             <h3 class="card-title">Clear booking and delivery records</h3>
             <p>Keep booking terms, trip status and proof of delivery together in one record.</p>
           </li>
-          <li class="card">
+          <li class="card" data-reveal>
             <h3 class="card-title">Ratings that stay with your account</h3>
             <p>After a completed trip, ratings will stay with your account.</p>
           </li>
         </ul>
         <!-- PLACEHOLDER: engineering-drafted copy from CONCEPT.md; Truber Design to supply final copy -->
-        <div class="earnings-box">
+        <div class="earnings-box" data-reveal>
           <h3 class="card-title">Your earnings</h3>
           <p>You receive the agreed amount minus 5% commission and any processing fees. Commission applies to completed trips only.</p>
         </div>
@@ -123,33 +125,33 @@
   <section class="section">
     <div class="container narrow">
       <!-- PLACEHOLDER: engineering-drafted copy from CONCEPT.md; Truber Design to supply final copy -->
-      <div class="section-header">
+      <div class="section-header" data-reveal>
         <h2 class="section-title">How to join</h2>
         <p class="section-intro">Registration, documents and truck details will be reviewed before an account can take bookings.</p>
       </div>
       <ol class="step-list">
-        <li class="step-card">
+        <li class="step-card" data-reveal>
           <span class="step-number" aria-hidden="true">1</span>
           <h3 class="step-title">Register</h3>
           <p class="step-text">Create your transporter account and add your company details.</p>
         </li>
-        <li class="step-card">
+        <li class="step-card" data-reveal>
           <span class="step-number" aria-hidden="true">2</span>
           <h3 class="step-title">Upload company documents</h3>
           <p class="step-text">Upload the documents Truber needs to verify your company.</p>
         </li>
-        <li class="step-card">
+        <li class="step-card" data-reveal>
           <span class="step-number" aria-hidden="true">3</span>
           <h3 class="step-title">Register trucks</h3>
           <p class="step-text">Add each truck with its registration number, type, capacity, trailer specifications and documents.</p>
         </li>
-        <li class="step-card">
+        <li class="step-card" data-reveal>
           <span class="step-number" aria-hidden="true">4</span>
           <h3 class="step-title">Get verified</h3>
           <p class="step-text">Truber will review your company, trucks and documents. Verified accounts will be able to take bookings.</p>
           <p><span class="badge badge--planned">Planned</span></p>
         </li>
-        <li class="step-card">
+        <li class="step-card" data-reveal>
           <span class="step-number" aria-hidden="true">5</span>
           <h3 class="step-title">Start quoting</h3>
           <p class="step-text">Find loads that fit your trucks and send quotations. Matching is not automated yet.</p>
@@ -160,19 +162,19 @@
   <section class="section section--muted">
     <div class="container">
       <!-- PLACEHOLDER: engineering-drafted copy from CONCEPT.md; Truber Design to supply final copy -->
-      <div class="section-header">
+      <div class="section-header" data-reveal>
         <h2 class="section-title">What you’ll need</h2>
         <p class="section-intro">Have these details ready when you apply. The app preview shows the registration and verification flow.</p>
       </div>
       <ul class="card-grid card-grid--3">
-        <li class="card">
+        <li class="card" data-reveal>
           <h3 class="card-title">Company</h3>
           <ul class="list-check">
             <li>Company details</li>
             <li>Verification documents</li>
           </ul>
         </li>
-        <li class="card">
+        <li class="card" data-reveal>
           <h3 class="card-title">Trucks</h3>
           <ul class="list-check">
             <li>Registration number</li>
@@ -185,7 +187,7 @@
             <li>Assigned driver</li>
           </ul>
         </li>
-        <li class="card">
+        <li class="card" data-reveal>
           <h3 class="card-title">Drivers</h3>
           <ul class="list-check">
             <li>Driver identification</li>
@@ -197,7 +199,7 @@
   <section class="section" id="apply">
     <div class="container narrow">
       <!-- PLACEHOLDER: engineering-drafted copy from CONCEPT.md; Truber Design to supply final copy -->
-      <div class="section-header">
+      <div class="section-header" data-reveal>
         <h2 class="section-title">Apply to join</h2>
         <p class="section-intro">Send an application to join as a transporter. This is a demo form for the website; nothing is sent or stored.</p>
       </div>
@@ -261,7 +263,7 @@
   <section class="section section--muted" id="faq">
     <div class="container narrow">
       <!-- PLACEHOLDER: engineering-drafted copy from CONCEPT.md; Truber Design to supply final copy -->
-      <div class="section-header">
+      <div class="section-header" data-reveal>
         <h2 class="section-title">Transporter questions</h2>
       </div>
       <div class="faq-list">
@@ -291,32 +293,43 @@
 </main>
 <footer class="site-footer">
   <div class="container footer-inner">
-    <!-- COPY: design/website/COPY.md -->
     <div class="footer-brand">
       <a href="/" aria-label="Truber home">
         <img class="logo-wordmark" src="/assets/logo/wordmark-white-transparent.png" width="1046" height="292" loading="lazy" alt="Truber">
       </a>
+      <!-- COPY: design/website/COPY.md -->
       <p class="footer-tagline">Connecting Cargo. Moving Business.</p>
     </div>
     <nav class="footer-nav" aria-label="Footer">
-      <ul class="footer-list">
-        <li><a href="/">Home</a></li>
-        <li><a href="/how-it-works">How it works</a></li>
-        <li><a href="/services">Services</a></li>
-        <li><a href="/become-a-transporter">Become a transporter</a></li>
-        <li><a href="/safety">Safety</a></li>
-        <li><a href="/about">About</a></li>
-        <li><a href="/contact">Contact</a></li>
-        <li><a href="/sign-in">Sign in</a></li>
-        <li><a href="/register">Create an account</a></li>
-        <li><a href="https://truber-mobile-preview.vercel.app" rel="noopener">Try the preview</a></li>
-      </ul>
+      <div class="footer-column">
+        <h2 class="footer-heading">Explore</h2>
+        <ul class="footer-list">
+          <li><a href="/how-it-works">How it works</a></li>
+          <li><a href="/services">Services</a></li>
+          <li><a href="/become-a-transporter">Become a transporter</a></li>
+          <li><a href="/safety">Safety</a></li>
+        </ul>
+      </div>
+      <div class="footer-column">
+        <h2 class="footer-heading">Company</h2>
+        <ul class="footer-list">
+          <li><a href="/about">About</a></li>
+          <li><a href="/contact">Contact</a></li>
+        </ul>
+      </div>
+      <div class="footer-column">
+        <h2 class="footer-heading">Web app</h2>
+        <ul class="footer-list">
+          <li><a href="/app/">Open web app</a></li>
+        </ul>
+      </div>
     </nav>
     <div class="footer-meta">
       <!-- PLACEHOLDER: support contact not confirmed -->
       <p class="footer-contact">[support contact TBC]</p>
       <!-- PLACEHOLDER: social accounts not set up -->
-      <p class="footer-social"><span class="social-soon">Facebook (coming soon)</span> <span class="social-soon">LinkedIn (coming soon)</span> <span class="social-soon">X (coming soon)</span></p>
+      <p class="footer-social"><span class="social-soon">Social accounts coming soon</span></p>
+      <!-- COPY: design/website/COPY.md -->
       <p class="footer-copy">© 2026 Truber, Harare, Zimbabwe</p>
     </div>
   </div>

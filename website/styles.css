@@ -1,6 +1,8 @@
 /* v2 scrims and fixed-light band (rgb only, no hex) */
 :root {
   --v2-hero-scrim: linear-gradient(to bottom, rgba(0,0,0,.55) 0%, rgba(0,0,0,.15) 45%, rgba(0,0,0,.6) 100%);
+  /* Text-side readability layer, added under Design's scrim so white hero text reaches 4.5:1 (measured; pending Design sign-off) */
+  --v2-hero-scrim-side: linear-gradient(to right, rgba(0,0,0,.55) 0%, rgba(0,0,0,.4) 55%, rgba(0,0,0,0) 90%);
   --v2-on-image: rgb(254 254 254);
   --v2-black: rgb(0 0 0);
   --v2-hairline-dark: rgba(254,254,254,.12);
@@ -526,10 +528,8 @@ a {
 
 .hero {
   position: relative;
-  display: grid;
-  align-content: space-between;
   overflow: clip;
-  min-height: max(640px, calc(100svh - var(--truber-header-h)));
+  min-height: max(600px, calc(100svh - var(--truber-header-h)));
   background: var(--v2-black);
   color: var(--v2-on-image);
 }
@@ -560,7 +560,15 @@ a {
   position: absolute;
   inset: 0;
   z-index: 1;
-  background: var(--v2-hero-scrim);
+  background: var(--v2-hero-scrim-side), var(--v2-hero-scrim);
+}
+
+@media (max-width: 639px) {
+  .hero-bottom {
+    background: var(--v2-glass-strip);
+    border-radius: var(--truber-radius-card);
+    padding: var(--truber-space-lg);
+  }
 }
 
 .hero-content {
@@ -569,9 +577,19 @@ a {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  min-height: max(640px, calc(100svh - var(--truber-header-h)));
-  padding-top: clamp(48px, 10vh, 120px);
+  justify-content: space-between;
+  gap: clamp(24px, 5vh, 48px);
+  min-height: max(600px, calc(100svh - var(--truber-header-h)));
+  padding-top: clamp(24px, 5vh, 56px);
   padding-bottom: clamp(32px, 5vh, 48px);
+}
+
+.hero-top,
+.hero-bottom {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
 }
 
 .eyebrow {
@@ -585,15 +603,23 @@ a {
 }
 
 .hero-title {
-  max-width: 14ch;
+  max-width: 16ch;
   color: var(--v2-on-image);
+  font-size: min(var(--truber-size-web-h1), 9vh);
+  line-height: 1.02;
+}
+
+@media (min-width: 1024px) {
+  .hero-title {
+    max-width: 20ch;
+  }
 }
 
 .hero-subhead {
-  max-width: 56ch;
+  max-width: 52ch;
   margin: var(--truber-space-lg) 0 0;
   color: var(--v2-on-image);
-  font-size: clamp(16px, 1.4vw, 20px);
+  font-size: clamp(16px, 1.4vw, 18px);
   line-height: 1.5;
 }
 
@@ -631,7 +657,7 @@ a {
   gap: var(--truber-space-md);
   width: 100%;
   max-width: 760px;
-  margin-top: auto;
+  margin-top: var(--truber-space-xl);
   padding: var(--truber-space-md);
   border: 1px solid var(--v2-hairline-dark);
   border-radius: var(--truber-radius-card);
