@@ -31,7 +31,7 @@ npx serve website
 | `motion.js` | IntersectionObserver reveals and pinned-scene switch. |
 | `forms.js` | Enables the contact and become-a-transporter demo forms, then blocks submission. |
 | `vercel.json` | Clean URLs, `/app` rewrite, redirects and security headers. |
-| `robots.txt` | Crawler rules; disallows `/app/` and points to the sitemap. |
+| `robots.txt` | Crawler rules; disallows `/app` and points to the sitemap. |
 | `sitemap.xml` | Indexable public pages. |
 | `site.webmanifest` | Web-app name, colours and icons. |
 | `favicon.ico`, `apple-touch-icon.png`, `assets/icon-*.png`, `og-image.png` | Icons and social image derived from the user-supplied `icon-black-tile.png`; `og-image.png` is 1200 × 630. |
@@ -68,9 +68,9 @@ All images are AI-generated with Grok Imagine, not photographs, and were upscale
 
 - `vercel.json` rewrites `/app` and `/app/:path*` to `https://truber-mobile-preview.vercel.app/app/...`. The app is owned by Mobile.
 - The site CSP and security headers apply to every path except `/app`, using the source pattern `/((?!app(?:/|$)).*)`, so the Flutter app’s own policy applies there.
-- `/sign-in`, `/sign-in.html`, `/register` and `/register.html` are permanent (308) redirects to `/app/`.
-- `robots.txt` disallows `/app/`.
-- The home quick-quote form is a native GET to `/app/?from=&to=` and shows no price. The CSP uses `form-action 'self'` for it.
+- `/sign-in`, `/sign-in.html`, `/register` and `/register.html` are permanent (308) redirects to `/app` (`trailingSlash: false` also 308s `/app/` to `/app`; `cleanUrls` first 308s `*.html` to the clean path).
+- `robots.txt` disallows `/app`.
+- The home quick-quote form is a native GET to `/app?from=&to=` and shows no price. The CSP uses `form-action 'self'` for it.
 - The contact and become-a-transporter forms are demos: `action="#"`, no network code, and `forms.js` prevents submission. Their meta CSP keeps `form-action 'none'`.
 
 ## Copy rules
@@ -113,7 +113,7 @@ python3 -c 'import re,hashlib,base64;s=re.search(r"<script>([^<]*)</script>",ope
 
 ## Search indexing
 
-The site is indexable. There is no robots `noindex` meta and no `X-Robots-Tag`. Canonical and social URLs use https://truber-web.vercel.app. `robots.txt` allows crawling, disallows `/app/` and points to `sitemap.xml`, which lists the seven indexable pages; `404.html` is excluded.
+The site is indexable. There is no robots `noindex` meta and no `X-Robots-Tag`. Canonical and social URLs use https://truber-web.vercel.app. `robots.txt` allows crawling, disallows `/app` and points to `sitemap.xml`, which lists the seven indexable pages; `404.html` is excluded.
 
 ## Checks
 

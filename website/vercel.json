@@ -3,10 +3,10 @@
   "cleanUrls": true,
   "trailingSlash": false,
   "redirects": [
-    { "source": "/sign-in", "destination": "/app/", "permanent": true },
-    { "source": "/sign-in.html", "destination": "/app/", "permanent": true },
-    { "source": "/register", "destination": "/app/", "permanent": true },
-    { "source": "/register.html", "destination": "/app/", "permanent": true }
+    { "source": "/sign-in", "destination": "/app", "permanent": true },
+    { "source": "/sign-in.html", "destination": "/app", "permanent": true },
+    { "source": "/register", "destination": "/app", "permanent": true },
+    { "source": "/register.html", "destination": "/app", "permanent": true }
   ],
   "rewrites": [
     { "source": "/app", "destination": "https://truber-mobile-preview.vercel.app/app" },

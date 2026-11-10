@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
-Disallow: /app/
+Disallow: /app
 Sitemap: https://truber-web.vercel.app/sitemap.xml
