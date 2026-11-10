@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { AuthController } from './auth/auth.controller';
 import { AuthService } from './auth/auth.service';
+import { BillingController } from './billing/billing.controller';
 import { CommissionGateService } from './billing/commission-gate.service';
 import { NoopPaymentProvider, PAYMENT_PROVIDER } from './billing/payment-provider';
 import { ReceivablesService } from './billing/receivables.service';
@@ -15,7 +16,7 @@ import { LoadsController } from './loads/loads.controller';
 import { LoadsService } from './loads/loads.service';
 
 @Module({
-  controllers: [AuthController, CompaniesController, LoadsController],
+  controllers: [AuthController, BillingController, CompaniesController, LoadsController],
   providers: [
     { provide: ENV, useFactory: () => loadEnv() },
     DbService,
