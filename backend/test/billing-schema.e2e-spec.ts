@@ -117,6 +117,41 @@ describe('billing schema constraints', () => {
     ).rejects.toThrow(/commission receivable financial terms are immutable/);
   });
 
+  it('rejects a commission receivable without a payment method', async () => {
+    await expect(
+      pool.query(
+        sql(
+          `INSERT INTO commission_receivables (
+             id, booking_id, transporter_company_id, currency, amount_minor, collected_minor,
+             remaining_minor, status, payment_method, recognised_at, created_at, updated_at
+           ) VALUES ($1, $2, $3, 'USD', 1000, 0, 1000, 'open', NULL, now(), now(), now())`,
+        ),
+        [randomUUID(), randomUUID(), companyId],
+      ),
+    ).rejects.toMatchObject({ code: '23502' });
+  });
+
+  it('hardens the receivable immutability trigger function', async () => {
+    const result = await pool.query<{
+      proconfig: string[] | null;
+      can_execute: boolean;
+    }>(
+      `SELECT p.proconfig,
+              has_function_privilege('public', format('%I.%I()', n.nspname, p.proname), 'EXECUTE') AS can_execute
+         FROM pg_proc p
+         JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname = $1
+          AND p.proname = 'billing_receivable_immutable'`,
+      [env.db.DB_SCHEMA],
+    );
+    const row = result.rows[0];
+    expect(row).toBeDefined();
+    expect(row.proconfig ?? []).toEqual(
+      expect.arrayContaining([expect.stringMatching(/^search_path=(?:""|'')$/)]),
+    );
+    expect(row.can_execute).toBe(false);
+  });
+
   it('allows only one non-voided receivable per booking', async () => {
     const bookingId = randomUUID();
     await insertReceivable({

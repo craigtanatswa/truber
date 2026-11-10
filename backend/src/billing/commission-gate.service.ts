@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PoolClient } from 'pg';
 import { ApiException } from '../common/api.exception';
+import { lockCommissionShared } from './commission-lock';
 import { Money } from './money';
 import { ReceivablesService } from './receivables.service';
 
@@ -13,11 +14,14 @@ export class CommissionGateService {
 
   /**
    * Blocks new work while any currency still has outstanding commission.
-   * Callers (quotation/booking handlers owned by Mark/Brian) must call the
-   * ACCOUNT_BANNED guard first, then this.
+   * Must be called inside the caller's transaction (the quotation/accept/confirm
+   * tx), after the ACCOUNT_BANNED guard. The shared lock is held until that tx
+   * ends, so a concurrent recognise for the same company waits for the new-work
+   * tx and vice versa.
    */
-  async assertCanTakeNewWork(companyId: string, client?: PoolClient): Promise<void> {
-    const outstandingByCurrency = await this.receivables.outstandingByCurrency(client ?? null, companyId);
+  async assertCanTakeNewWork(client: PoolClient, companyId: string): Promise<void> {
+    await lockCommissionShared(client, companyId);
+    const outstandingByCurrency = await this.receivables.outstandingByCurrency(client, companyId);
     if (outstandingByCurrency.length === 0) {
       return;
     }

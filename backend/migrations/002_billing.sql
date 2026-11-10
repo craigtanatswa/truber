@@ -110,7 +110,7 @@ CREATE TABLE IF NOT EXISTS commission_receivables (
   collected_minor bigint NOT NULL DEFAULT 0,
   remaining_minor bigint NOT NULL,
   status text NOT NULL,
-  payment_method text,
+  payment_method text NOT NULL,
   recognised_at timestamptz NOT NULL,
   settled_at timestamptz,
   voided_at timestamptz,
@@ -127,8 +127,7 @@ CREATE TABLE IF NOT EXISTS commission_receivables (
     status IN ('open', 'settled_on_release', 'collected', 'voided')
   ),
   CONSTRAINT commission_receivables_payment_method_check CHECK (
-    payment_method IS NULL
-    OR payment_method IN ('prepay', 'escrow', 'deposit_balance', 'cash', 'corporate_credit')
+    payment_method IN ('prepay', 'escrow', 'deposit_balance', 'cash', 'corporate_credit')
   ),
   CONSTRAINT commission_receivables_open_balance_check CHECK (
     status <> 'open' OR remaining_minor + collected_minor = amount_minor
@@ -155,6 +154,7 @@ CREATE INDEX IF NOT EXISTS commission_receivables_company_idx
 CREATE OR REPLACE FUNCTION billing_receivable_immutable()
 RETURNS trigger
 LANGUAGE plpgsql
+SET search_path = ''
 AS $$
 BEGIN
   IF NEW.amount_minor IS DISTINCT FROM OLD.amount_minor
@@ -166,6 +166,8 @@ BEGIN
   RETURN NEW;
 END;
 $$;
+
+REVOKE ALL ON FUNCTION billing_receivable_immutable() FROM PUBLIC;
 
 DROP TRIGGER IF EXISTS commission_receivables_immutable ON commission_receivables;
 CREATE TRIGGER commission_receivables_immutable

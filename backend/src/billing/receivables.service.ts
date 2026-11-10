@@ -6,6 +6,7 @@ import { iso, sha256 } from '../common/crypto';
 import { DbService } from '../db/db.service';
 import { DbUser } from '../domain';
 import { commissionFor, PaymentMethod } from './commission';
+import { lockCommissionExclusive } from './commission-lock';
 import { assertMoney, minorFromDb, Money } from './money';
 
 export type CommissionReceivableStatus = 'open' | 'settled_on_release' | 'collected' | 'voided';
@@ -68,7 +69,7 @@ interface ReceivableRow extends QueryResultRow {
   status: CommissionReceivableStatus;
   recognised_at: Date | string;
   settled_at: Date | string | null;
-  payment_method: PaymentMethod | null;
+  payment_method: PaymentMethod;
 }
 
 interface OpenReceivableRow extends QueryResultRow {
@@ -111,6 +112,10 @@ export class ReceivablesService {
   constructor(private readonly db: DbService) {}
 
   async recognise(client: PoolClient | null, input: RecogniseReceivableInput): Promise<CommissionReceivable> {
+    if (!client) {
+      return this.db.tx((tx) => this.recognise(tx, input));
+    }
+    await lockCommissionExclusive(client, input.transporterCompanyId);
     const amount = commissionFor(input.tripAmount);
     const recognisedAt = input.completedAt ?? new Date();
     const isZero = amount.amountMinor === 0;
@@ -181,7 +186,7 @@ export class ReceivablesService {
               updated_at = clock_timestamp()
         WHERE booking_id = $1
           AND status = 'open'
-          AND payment_method IS DISTINCT FROM 'cash'
+          AND payment_method <> 'cash'
         RETURNING *`,
       [bookingId],
     );
@@ -190,7 +195,7 @@ export class ReceivablesService {
       return presentCommissionReceivable(row);
     }
 
-    const existing = await this.query<{ status: CommissionReceivableStatus; payment_method: PaymentMethod | null }>(
+    const existing = await this.query<{ status: CommissionReceivableStatus; payment_method: PaymentMethod }>(
       client,
       `SELECT status, payment_method
          FROM commission_receivables
@@ -233,27 +238,30 @@ export class ReceivablesService {
   }
 
   async account(companyId: string): Promise<CommissionAccount> {
-    const outstandingByCurrency = await this.outstandingByCurrency(null, companyId);
-    const result = await this.query<ReceivableRow>(
-      null,
-      `SELECT *
-         FROM commission_receivables
-        WHERE transporter_company_id = $1
-        ORDER BY recognised_at ASC, id ASC`,
-      [companyId],
-    );
-    const account: CommissionAccount = {
-      companyId,
-      outstandingByCurrency,
-      receivables: result.rows.map((row) => presentCommissionReceivable(row)),
-    };
-    if (outstandingByCurrency.length === 1) {
-      account.outstandingAmount = outstandingByCurrency[0];
-    }
-    return account;
+    return this.db.tx(async (client) => {
+      await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
+      const outstandingByCurrency = await this.outstandingByCurrency(client, companyId);
+      const result = await this.query<ReceivableRow>(
+        client,
+        `SELECT *
+           FROM commission_receivables
+          WHERE transporter_company_id = $1
+          ORDER BY recognised_at ASC, id ASC`,
+        [companyId],
+      );
+      const account: CommissionAccount = {
+        companyId,
+        outstandingByCurrency,
+        receivables: result.rows.map((row) => presentCommissionReceivable(row)),
+      };
+      if (outstandingByCurrency.length === 1) {
+        account.outstandingAmount = outstandingByCurrency[0];
+      }
+      return account;
+    });
   }
 
-  async recordCollection(
+  private async recordCollection(
     actor: DbUser,
     companyId: string,
     input: RecordCollectionInput,
@@ -267,8 +275,11 @@ export class ReceivablesService {
   }
 
   async accountFor(actor: DbUser, companyId: string): Promise<CommissionAccount> {
-    const company = await this.db.query<{ id: string }>('SELECT id FROM companies WHERE id = $1', [companyId]);
-    if (!company.rows[0]) {
+    const company = await this.db.query<{ id: string; type: string }>(
+      'SELECT id, type FROM companies WHERE id = $1',
+      [companyId],
+    );
+    if (!company.rows[0] || company.rows[0].type !== 'transporter') {
       throw new ApiException(404, 'NOT_FOUND', 'Company not found.');
     }
     if (actor.role !== 'admin') {

@@ -39,6 +39,18 @@ describe('billing receivable services', () => {
     companyId = await insertCompany(db);
   });
 
+  async function gateCheck(): Promise<void> {
+    return db.tx((client) => gate.assertCanTakeNewWork(client, companyId));
+  }
+
+  async function collect(input: {
+    amount: Money;
+    externalReference?: string;
+    notes?: string;
+  }) {
+    return receivables.recordCollectionForAdmin(actor, companyId, input, `collection-${randomUUID()}`);
+  }
+
   async function recognise(input: {
     trip: Money;
     paymentMethod?: PaymentMethod;
@@ -57,7 +69,7 @@ describe('billing receivable services', () => {
   }
 
   it('passes the gate when nothing is owed', async () => {
-    await expect(gate.assertCanTakeNewWork(companyId)).resolves.toBeUndefined();
+    await expect(gateCheck()).resolves.toBeUndefined();
   });
 
   it('blocks new work in one currency with the pinned CommissionOutstandingError body', async () => {
@@ -65,7 +77,7 @@ describe('billing receivable services', () => {
     expect(recognised.receivable.amount).toEqual({ amountMinor: 5000, currency: 'USD' });
     expect(recognised.receivable.status).toBe('open');
 
-    const error = await capture(gate.assertCanTakeNewWork(companyId));
+    const error = await capture(gateCheck());
     expect(error.getStatus()).toBe(409);
     expect(error.code).toBe('COMMISSION_OUTSTANDING');
     expect(error.message).toBe(COMMISSION_OUTSTANDING_MESSAGE);
@@ -96,7 +108,7 @@ describe('billing receivable services', () => {
     await recognise({ trip: { amountMinor: 100000, currency: 'USD' } });
     await recognise({ trip: { amountMinor: 200000, currency: 'ZWG' } });
 
-    const error = await capture(gate.assertCanTakeNewWork(companyId));
+    const error = await capture(gateCheck());
     expect(error.getStatus()).toBe(409);
     expect(error.code).toBe('COMMISSION_OUTSTANDING');
     expect(error.details).toEqual({
@@ -129,7 +141,7 @@ describe('billing receivable services', () => {
       completedAt: new Date('2026-01-01T00:00:00.000Z'),
     });
 
-    const record = await receivables.recordCollection(actor, companyId, {
+    const record = await collect({
       amount: { amountMinor: 2500, currency: 'USD' },
       externalReference: 'BANK-001',
       notes: 'Partial collection',
@@ -180,7 +192,7 @@ describe('billing receivable services', () => {
     await recognise({ trip: { amountMinor: 100000, currency: 'USD' } });
 
     const exceeds = await capture(
-      receivables.recordCollection(actor, companyId, { amount: { amountMinor: 5001, currency: 'USD' } }),
+      collect({ amount: { amountMinor: 5001, currency: 'USD' } }),
     );
     expect(exceeds.getStatus()).toBe(409);
     expect(exceeds.code).toBe('COLLECTION_EXCEEDS_OUTSTANDING');
@@ -188,7 +200,7 @@ describe('billing receivable services', () => {
     expect(exceeds.details).toEqual({ outstandingAmount: { amountMinor: 5000, currency: 'USD' } });
 
     const noOwing = await capture(
-      receivables.recordCollection(actor, companyId, { amount: { amountMinor: 1, currency: 'ZWG' } }),
+      collect({ amount: { amountMinor: 1, currency: 'ZWG' } }),
     );
     expect(noOwing.getStatus()).toBe(409);
     expect(noOwing.code).toBe('COLLECTION_EXCEEDS_OUTSTANDING');
@@ -208,18 +220,18 @@ describe('billing receivable services', () => {
     await recognise({ trip: { amountMinor: 100000, currency: 'USD' } });
     await recognise({ trip: { amountMinor: 50000, currency: 'ZWG' } });
 
-    const usd = await receivables.recordCollection(actor, companyId, {
+    const usd = await collect({
       amount: { amountMinor: 5000, currency: 'USD' },
     });
     expect(usd.outstandingAmountAfter).toEqual({ amountMinor: 0, currency: 'USD' });
     expect(usd.outstandingByCurrencyAfter).toEqual([{ amountMinor: 2500, currency: 'ZWG' }]);
-    await expect(gate.assertCanTakeNewWork(companyId)).rejects.toBeInstanceOf(ApiException);
+    await expect(gateCheck()).rejects.toBeInstanceOf(ApiException);
 
-    const zwg = await receivables.recordCollection(actor, companyId, {
+    const zwg = await collect({
       amount: { amountMinor: 2500, currency: 'ZWG' },
     });
     expect(zwg.outstandingByCurrencyAfter).toEqual([]);
-    await expect(gate.assertCanTakeNewWork(companyId)).resolves.toBeUndefined();
+    await expect(gateCheck()).resolves.toBeUndefined();
   });
 
   it('voids an open receivable and keeps previously collected amounts when voiding a partial one', async () => {
@@ -228,10 +240,10 @@ describe('billing receivable services', () => {
     expect(voided.status).toBe('voided');
     expect(voided.remainingAmount).toEqual({ amountMinor: 0, currency: 'USD' });
     expect(voided.collectedAmount).toEqual({ amountMinor: 0, currency: 'USD' });
-    await expect(gate.assertCanTakeNewWork(companyId)).resolves.toBeUndefined();
+    await expect(gateCheck()).resolves.toBeUndefined();
 
     const partial = await recognise({ trip: { amountMinor: 100000, currency: 'USD' } });
-    await receivables.recordCollection(actor, companyId, {
+    await collect({
       amount: { amountMinor: 2000, currency: 'USD' },
     });
     const partialVoid = await receivables.voidForBooking(null, partial.bookingId);
@@ -241,7 +253,7 @@ describe('billing receivable services', () => {
 
     const account = await receivables.account(companyId);
     expect(account.outstandingByCurrency).toEqual([]);
-    await expect(gate.assertCanTakeNewWork(companyId)).resolves.toBeUndefined();
+    await expect(gateCheck()).resolves.toBeUndefined();
   });
 
   it('records zero commission as already collected and never blocks', async () => {
@@ -251,7 +263,7 @@ describe('billing receivable services', () => {
     expect(zero.receivable.remainingAmount).toEqual({ amountMinor: 0, currency: 'USD' });
     expect(zero.receivable.status).toBe('collected');
     expect(zero.receivable.settledAt).not.toBeNull();
-    await expect(gate.assertCanTakeNewWork(companyId)).resolves.toBeUndefined();
+    await expect(gateCheck()).resolves.toBeUndefined();
   });
 
   it('rejects a duplicate recognition and allows re-recognition after voiding', async () => {

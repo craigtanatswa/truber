@@ -103,6 +103,18 @@ describe('billing HTTP endpoints', () => {
     assertOperationResponse('getCompanyCommissionAccount', 200, asAdmin.body);
   });
 
+  it('returns 404 for a company that is not a transporter', async () => {
+    const shipper = await register(app, 'shipper');
+    const companyId = await createShipperCompany(app, shipper.token);
+
+    for (const token of [shipper.token, admin.token]) {
+      const response = await http(app, 'get', `/companies/${companyId}/commission-account`, { token });
+      expect(response.status).toBe(404);
+      assertOperationResponse('getCompanyCommissionAccount', 404, response.body);
+      expect(response.body.code).toBe('NOT_FOUND');
+    }
+  });
+
   it('records a collection oldest-first and reports the balances after it', async () => {
     const transporter = await register(app, 'transporter');
     const companyId = await createTransporterCompany(app, transporter.token);
@@ -363,7 +375,7 @@ describe('billing HTTP endpoints', () => {
 
     const gate = app.get(CommissionGateService);
     const filter = new ApiExceptionFilter();
-    const single = applyFilter(filter, await captureError(gate.assertCanTakeNewWork(companyId)));
+    const single = applyFilter(filter, await captureError(app.get(DbService).tx((client) => gate.assertCanTakeNewWork(client, companyId))));
     const singleBody = {
       code: 'COMMISSION_OUTSTANDING',
       message: COMMISSION_OUTSTANDING_MESSAGE,
@@ -381,7 +393,7 @@ describe('billing HTTP endpoints', () => {
     }
 
     await recognise(app, companyId, 200000, 'ZWG');
-    const multiple = applyFilter(filter, await captureError(gate.assertCanTakeNewWork(companyId)));
+    const multiple = applyFilter(filter, await captureError(app.get(DbService).tx((client) => gate.assertCanTakeNewWork(client, companyId))));
     const multipleBody = {
       code: 'COMMISSION_OUTSTANDING',
       message: COMMISSION_OUTSTANDING_MESSAGE,
@@ -461,6 +473,17 @@ async function createTransporterCompany(app: INestApplication, token: string): P
   const response = await http(app, 'post', '/companies', {
     token,
     body: { type: 'transporter', legalName: 'HTTP Billing Carrier' },
+  });
+  if (response.status !== 201) {
+    throw new Error(`create company failed ${response.status}`);
+  }
+  return response.body.id as string;
+}
+
+async function createShipperCompany(app: INestApplication, token: string): Promise<string> {
+  const response = await http(app, 'post', '/companies', {
+    token,
+    body: { type: 'shipper', legalName: 'HTTP Billing Shipper' },
   });
   if (response.status !== 201) {
     throw new Error(`create company failed ${response.status}`);
