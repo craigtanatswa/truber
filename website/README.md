@@ -22,35 +22,29 @@ python3 -m http.server -d website 8080
 | --- | --- |
 | `404.html` | Not-found page. |
 | `about.html` | About Truber. |
-| `apple-touch-icon.png` | iOS home-screen icon, resized from the supplied logo. |
-| `assets/icon-16.png` | 16 px favicon PNG. |
-| `assets/icon-32.png` | 32 px favicon PNG. |
-| `assets/icon-48.png` | 48 px icon PNG. |
-| `assets/icon-192.png` | 192 px web-app manifest icon. |
-| `assets/icon-512.png` | 512 px web-app manifest icon. |
-| `assets/logo/truber-icon-white@1x.png` | White Truber icon, 1x PNG. |
-| `assets/logo/truber-icon-white@1x.webp` | White Truber icon, 1x WebP. |
-| `assets/logo/truber-icon-white@2x.png` | White Truber icon, 2x PNG. |
-| `assets/logo/truber-icon-white@2x.webp` | White Truber icon, 2x WebP. |
-| `assets/logo/truber-wordmark-white@1x.png` | White Truber wordmark, 1x PNG. |
-| `assets/logo/truber-wordmark-white@1x.webp` | White Truber wordmark, 1x WebP. |
-| `assets/logo/truber-wordmark-white@2x.png` | White Truber wordmark, 2x PNG. |
-| `assets/logo/truber-wordmark-white@2x.webp` | White Truber wordmark, 2x WebP. |
+| `apple-touch-icon.png` | iOS home-screen icon; derived (resized from the user-supplied `icon-black-tile.png`). |
+| `assets/icon-16.png` | 16 px favicon PNG; derived (resized from the user-supplied `icon-black-tile.png`). |
+| `assets/icon-32.png` | 32 px favicon PNG; derived (resized from the user-supplied `icon-black-tile.png`). |
+| `assets/icon-48.png` | 48 px icon PNG; derived (resized from the user-supplied `icon-black-tile.png`). |
+| `assets/icon-192.png` | 192 px web-app manifest icon; derived (resized from the user-supplied `icon-black-tile.png`). |
+| `assets/icon-512.png` | 512 px web-app manifest icon; derived (resized from the user-supplied `icon-black-tile.png`). |
+| `assets/logo/icon-transparent.png` | User-supplied official T mark, byte-identical copy of the original; home hero. |
+| `assets/logo/wordmark-white-transparent.png` | User-supplied official wordmark, byte-identical copy of `design/website/assets/user-logos-2026-11-10/wordmark-white-transparent.png`; header and footer, sized in CSS. |
 | `become-a-transporter.html` | Transporter application page with a demo form. |
 | `contact.html` | Contact page with a demo enquiry form. |
-| `favicon.ico` | Browser tab icon, resized from the supplied logo. |
+| `favicon.ico` | Browser tab icon; derived (resized from the user-supplied `icon-black-tile.png`). |
 | `forms.js` | Enables demo submit buttons and blocks submission with a “Demo: not sent” message. |
 | `how-it-works.html` | Shipper and transporter flows. |
 | `index.html` | Home page. |
-| `og-image.png` | 1200 × 630 social image: supplied icon and wordmark on black with the tagline. |
+| `og-image.png` | 1200 × 630 social image; derived (composed from the user-supplied icon and wordmark on `#000000`), including the tagline. |
 | `README.md` | This guide, excluded from deploys. |
 | `register.html` | Account registration demo form. |
-| `robots.txt` | Search-crawler rules and sitemap URL. |
+| `robots.txt` | Search-crawler rules; currently blocks all crawling until launch. |
 | `safety.html` | Safety and trust information. |
 | `services.html` | Planned services cards. |
 | `sign-in.html` | Sign-in demo form. |
 | `site.webmanifest` | Web-app name, colours and icons. |
-| `sitemap.xml` | Public page URLs. |
+| `sitemap.xml` | Public page URLs, kept for launch. |
 | `styles.css` | Layout and component styles using design tokens only, with no hex values. |
 | `theme.js` | System/Light/Dark theme toggle. |
 | `tokens.css` | Colour and design tokens. |
@@ -64,21 +58,51 @@ Edit `services.html` only between `<!-- SERVICES DATA -->` and `<!-- END SERVICE
 
 `tokens.css` is a verbatim copy of Truber Design’s `design/website/tokens-2026-11-10.css` (confirmed by Design on 10 November 2026, 14:33 CAT). The user colour decision of 10 November 2026, 14:24 CAT was: “Blue bar #0035FE, White #FEFEFE, Background #000000”.
 
+`tokens.css` (the Design file, kept verbatim) lists `Inter` first, but no Inter files are shipped or loaded; browsers fall through to the `system-ui` stack, which is the real font.
+
 Dark mode uses `#6684FF` for links and small accent text, and `#99AEFF` for the focus ring. Primary buttons keep the `#0035FE` fill with a `#FEFEFE` edge ring on black. Raw `#0035FE` is never used as dark-mode text. `styles.css` uses tokens only and contains no hex values. The header and footer are black in both themes because the official wordmark is white.
 
 ## Logos
 
-`assets/logo/*`, `favicon.ico`, `apple-touch-icon.png` and `assets/icon-*.png` are resized-only derivatives of the user-supplied logos in `design/website/assets/user-logos-2026-11-10/`. They are never recoloured or redrawn. `og-image.png` places the user icon and wordmark on black with the tagline.
+The two logos shipped in the page — `assets/logo/wordmark-white-transparent.png` and `assets/logo/icon-transparent.png` — are the user originals, byte-identical to the supplied files. Verify with `sha256sum` against the Design kit's `design/website/assets/user-logos-2026-11-10/` (outside this repo):
+
+```sh
+sha256sum website/assets/logo/wordmark-white-transparent.png \
+  design/website/assets/user-logos-2026-11-10/wordmark-white-transparent.png
+sha256sum website/assets/logo/icon-transparent.png \
+  design/website/assets/user-logos-2026-11-10/icon-transparent.png
+```
+
+They are sized with CSS (`height: 32px` for the wordmark) plus `width`/`height` attributes at the intrinsic size (1046 × 292 for the wordmark, 948 × 604 for the T mark). Never recolour, redraw, stretch or replace them.
+
+`wordmark-black-tile.png` and `icon-black-tile.png` are not shipped as-is; `icon-black-tile.png` is the source of the derived favicons. `favicon.ico`, `apple-touch-icon.png` and `assets/icon-*.png` are resized-only derivatives of that file, and `og-image.png` is composed from the user icon and wordmark on `#000000`.
 
 ## Theme
 
-The site follows `prefers-color-scheme` with no JS. `theme.js` adds a System/Light/Dark toggle and stores the choice under the `truber-theme` localStorage key.
+With no stored choice, the site follows `prefers-color-scheme`. The `theme.js` toggle shows System/Light/Dark and stores the choice under the `truber-theme` localStorage key.
 
 The single inline head script prevents a flash and is allowed by its SHA-256 hash in the `vercel.json` CSP. If you change it, keep it byte-identical on every page and recompute the hash with:
 
 ```sh
 python3 -c 'import re,hashlib,base64;s=re.search(r"<script>([^<]*)</script>",open("website/index.html").read()).group(1);print("sha256-"+base64.b64encode(hashlib.sha256(s.encode()).digest()).decode())'
 ```
+
+## Header and navigation
+
+Desktop navigation shows from 1200px. Below that, a `<details>` Menu button keeps the header to one row from 640px.
+
+## Search indexing: noindex until launch
+
+Every page has `<meta name="robots" content="noindex, nofollow">`, `vercel.json` sends `X-Robots-Tag: noindex, nofollow`, and `robots.txt` is exactly `User-agent: *` followed by `Disallow: /`. `sitemap.xml` is kept for launch.
+
+### At launch: remove noindex, restore robots
+
+- [ ] Remove the robots meta (and its noindex comment) from every page.
+- [ ] Remove the `X-Robots-Tag` header from `vercel.json`.
+- [ ] Restore `robots.txt` to `User-agent: *`, `Allow: /` and `Sitemap: https://<production domain>/sitemap.xml`.
+- [ ] Set the production domain in canonical, `og:url`, `og:image`, `twitter:image` and `sitemap.xml`.
+- [ ] Replace `[support contact TBC]`.
+- [ ] Re-run Lighthouse (SEO should return to 100).
 
 ## Demo forms
 
@@ -97,15 +121,20 @@ Each marker below is a TBD endpoint per `api/openapi.yaml` and is not connected:
 
 ## Placeholders
 
-| Placeholder | Pages |
-| --- | --- |
-| Engineering-drafted copy, to be replaced by Truber Design | All ten HTML pages. |
-| Canonical domain not set; current value `https://truber-web.vercel.app` | All pages except `404.html`. |
-| Support contact “`[support contact TBC]`” | All ten HTML pages. |
-| Social links (coming soon, not links) | All ten HTML pages. |
-| Hero illustration (licensed photography TBC) | `index.html`. |
-| Demo forms | `become-a-transporter.html`, `contact.html`, `register.html`, `sign-in.html`. |
-| Truck type list | `become-a-transporter.html`. |
+There are 95 placeholder comments in the HTML (count with `grep -o "PLACEHOLDER" -r website --include="*.html" | wc -l`), by kind:
+
+| Kind | Count | Where |
+| --- | --- | --- |
+| Engineering-drafted copy | 48 | Content blocks across all ten HTML pages. |
+| Support contact | 12 | Repeated per page. |
+| Social accounts | 10 | Repeated per page. |
+| noindex until launch | 10 | Every HTML page. |
+| Canonical domain | 9 | Every page except `404.html`; current value `https://truber-web.vercel.app`. |
+| Demo form | 4 | `become-a-transporter.html`, `contact.html`, `register.html`, `sign-in.html`. |
+| Truck type list | 1 | `become-a-transporter.html`. |
+| Hero illustration | 1 | `index.html`; licensed photography TBC by Truber Design. |
+
+The 48 copy markers sit on content blocks. The support contact, social account, noindex and canonical markers (12, 10, 10 and 9) repeat on each page.
 
 Truber Design owns the final copy. Design-owned copy is marked `<!-- COPY: design/website/COPY.md -->`.
 
@@ -113,11 +142,13 @@ Truber Design owns the final copy. Design-owned copy is marked `<!-- COPY: desig
 
 The Vercel project is `truber-web` (under team `craigmudirira`’s projects), Git-linked to `craigtanatswa/truber`. Set the root directory to `website`, the framework preset to Other, and provide no build command, install command or environment variables. The production branch is `main`.
 
-`vercel.json` sets `cleanUrls` and security headers, including a strict CSP with no external origins. `README.md` is excluded from deploys via `.vercelignore`.
+`vercel.json` sets `cleanUrls` and security headers, including a strict CSP with no external origins and the temporary noindex header. `README.md` is excluded from deploys via `.vercelignore`.
+
+Vercel adds `Access-Control-Allow-Origin: *` to static files on its own; that is fine for a public static site with no private data.
 
 ## Checks
 
-Run Lighthouse mobile on every page and require all four categories to score at least 90. Also run:
+Run Lighthouse mobile on every page and require all four categories to score at least 90. While noindex is in place, the SEO score drops (the “Page is blocked from indexing” audit fails); this is expected until launch. Also run:
 
 - `html-validate` with `html-validate:recommended`.
 - axe-core via Playwright.

@@ -21,9 +21,11 @@
 
   function updateButtons() {
     var label = LABELS[mode];
+    var description = "Colour theme: " + label + ". Change theme";
     buttons.forEach(function (button) {
-      button.textContent = "Theme: " + label;
-      button.setAttribute("aria-label", "Colour theme: " + label + ". Change theme");
+      button.textContent = label;
+      button.setAttribute("aria-label", description);
+      button.setAttribute("title", description);
     });
   }
 
