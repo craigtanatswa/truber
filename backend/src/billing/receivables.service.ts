@@ -5,7 +5,7 @@ import { ApiException, isPgError } from '../common/api.exception';
 import { iso, sha256 } from '../common/crypto';
 import { DbService } from '../db/db.service';
 import { DbUser } from '../domain';
-import { commissionFor, PaymentMethod } from './commission';
+import { COMMISSION_RATE_BPS, commissionFor, PaymentMethod } from './commission';
 import { lockCommissionExclusive } from './commission-lock';
 import { assertMoney, minorFromDb, Money } from './money';
 
@@ -93,6 +93,7 @@ function safeMinor(value: bigint): number {
 
 export function presentCommissionReceivable(row: ReceivableRow): CommissionReceivable {
   const currency = String(row.currency);
+  // commissionRateBps is stored (commission_rate_bps) but not exposed until contract v0.5.0 is published.
   return {
     id: String(row.id),
     bookingId: String(row.booking_id),
@@ -127,8 +128,9 @@ export class ReceivablesService {
         client,
         `INSERT INTO commission_receivables (
            id, booking_id, transporter_company_id, currency, amount_minor, collected_minor,
-           remaining_minor, status, payment_method, recognised_at, settled_at, created_at, updated_at
-         ) VALUES ($1, $2, $3, $4, $5, 0, $6, $7, $8, $9, $10, $9, $9)
+           remaining_minor, status, payment_method, commission_rate_bps, recognised_at, settled_at,
+           created_at, updated_at
+         ) VALUES ($1, $2, $3, $4, $5, 0, $6, $7, $8, $9, $10, $11, $10, $10)
          RETURNING *`,
         [
           id,
@@ -139,6 +141,7 @@ export class ReceivablesService {
           isZero ? 0 : amount.amountMinor,
           status,
           input.paymentMethod,
+          COMMISSION_RATE_BPS,
           recognisedAt,
           isZero ? recognisedAt : null,
         ],

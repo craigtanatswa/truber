@@ -117,6 +117,61 @@ describe('billing schema constraints', () => {
     ).rejects.toThrow(/commission receivable financial terms are immutable/);
   });
 
+  it('defaults commission_rate_bps to 500 when omitted', async () => {
+    const receivableId = await insertReceivable({
+      bookingId: randomUUID(),
+      amountMinor: 1000,
+      collectedMinor: 0,
+      remainingMinor: 1000,
+      status: 'open',
+    });
+
+    const result = await pool.query<{ commission_rate_bps: number }>(
+      sql(`SELECT commission_rate_bps FROM commission_receivables WHERE id = $1`),
+      [receivableId],
+    );
+    expect(result.rows[0].commission_rate_bps).toBe(500);
+  });
+
+  it('rejects a commission rate other than the fixed MVP rate', async () => {
+    await expect(
+      pool.query(
+        sql(
+          `INSERT INTO commission_receivables (
+             id, booking_id, transporter_company_id, currency, amount_minor, collected_minor,
+             remaining_minor, status, payment_method, commission_rate_bps, recognised_at,
+             created_at, updated_at
+           ) VALUES ($1, $2, $3, 'USD', 1000, 0, 1000, 'open', 'prepay', 400, now(), now(), now())`,
+        ),
+        [randomUUID(), randomUUID(), companyId],
+      ),
+    ).rejects.toMatchObject({
+      code: '23514',
+      constraint: 'commission_receivables_rate_bps_check',
+    });
+  });
+
+  it('rejects changing commission_rate_bps on a receivable', async () => {
+    const receivableId = await insertReceivable({
+      bookingId: randomUUID(),
+      amountMinor: 1000,
+      collectedMinor: 0,
+      remainingMinor: 1000,
+      status: 'open',
+    });
+
+    await expect(
+      pool.query(
+        sql(
+          `UPDATE commission_receivables
+           SET commission_rate_bps = 400
+           WHERE id = $1`,
+        ),
+        [receivableId],
+      ),
+    ).rejects.toThrow(/commission receivable financial terms are immutable/);
+  });
+
   it('rejects a commission receivable without a payment method', async () => {
     await expect(
       pool.query(

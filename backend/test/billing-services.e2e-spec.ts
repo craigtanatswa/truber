@@ -266,6 +266,17 @@ describe('billing receivable services', () => {
     await expect(gateCheck()).resolves.toBeUndefined();
   });
 
+  it('stores commission_rate_bps without exposing it on the presented receivable', async () => {
+    const recognised = await recognise({ trip: { amountMinor: 100000, currency: 'USD' } });
+
+    const stored = await app.get(DbService).query<{ commission_rate_bps: number }>(
+      'SELECT commission_rate_bps FROM commission_receivables WHERE id = $1',
+      [recognised.receivable.id],
+    );
+    expect(stored.rows[0].commission_rate_bps).toBe(500);
+    expect('commissionRateBps' in recognised.receivable).toBe(false);
+  });
+
   it('rejects a duplicate recognition and allows re-recognition after voiding', async () => {
     const bookingId = randomUUID();
     const first = await recognise({ trip: { amountMinor: 20000, currency: 'USD' }, bookingId });

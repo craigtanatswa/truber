@@ -111,6 +111,7 @@ CREATE TABLE IF NOT EXISTS commission_receivables (
   remaining_minor bigint NOT NULL,
   status text NOT NULL,
   payment_method text NOT NULL,
+  commission_rate_bps integer NOT NULL DEFAULT 500,
   recognised_at timestamptz NOT NULL,
   settled_at timestamptz,
   voided_at timestamptz,
@@ -129,6 +130,7 @@ CREATE TABLE IF NOT EXISTS commission_receivables (
   CONSTRAINT commission_receivables_payment_method_check CHECK (
     payment_method IN ('prepay', 'escrow', 'deposit_balance', 'cash', 'corporate_credit')
   ),
+  CONSTRAINT commission_receivables_rate_bps_check CHECK (commission_rate_bps = 500),
   CONSTRAINT commission_receivables_open_balance_check CHECK (
     status <> 'open' OR remaining_minor + collected_minor = amount_minor
   ),
@@ -160,7 +162,8 @@ BEGIN
   IF NEW.amount_minor IS DISTINCT FROM OLD.amount_minor
      OR NEW.currency IS DISTINCT FROM OLD.currency
      OR NEW.booking_id IS DISTINCT FROM OLD.booking_id
-     OR NEW.transporter_company_id IS DISTINCT FROM OLD.transporter_company_id THEN
+     OR NEW.transporter_company_id IS DISTINCT FROM OLD.transporter_company_id
+     OR NEW.commission_rate_bps IS DISTINCT FROM OLD.commission_rate_bps THEN
     RAISE EXCEPTION 'commission receivable financial terms are immutable';
   END IF;
   RETURN NEW;
