@@ -78,7 +78,7 @@ All images are AI-generated with Grok Imagine, not photographs, and were upscale
 - Do not claim live bookings, live payments, GPS tracking or automated matching.
 - Cash is “Not protected”.
 - “Protected payment” is never “escrow”. It is planned and in testing; Truber does not hold funds.
-- Commission is 5% on completed trips; payment processing fees are separate.
+- Commission is 5% on completed trips; payment fees are separate.
 - No booking is confirmed without a confirmed payment arrangement.
 
 ## Placeholders
