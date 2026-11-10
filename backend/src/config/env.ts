@@ -17,6 +17,7 @@ const schema = z.object({
   DB_CONNECTION_MODE: z.enum(['direct', 'session', 'transaction']).default('direct'),
   DB_MIGRATION_CONNECTION_MODE: z.enum(['direct', 'session']).default('direct'),
   CLIENT_IP_SOURCE: z.enum(['socket', 'vercel']).default('socket'),
+  CORS_ALLOWED_ORIGINS: z.string().optional(),
   DB_POOL_MAX: z.coerce.number().int().min(1).max(20).default(10),
   DB_STATEMENT_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120_000).default(15_000),
   JWT_ACCESS_SECRET: z.string().min(32),
@@ -37,6 +38,8 @@ const schema = z.object({
 });
 
 export type Env = z.infer<typeof schema> & {
+  /** Exact browser origins allowed by CORS. Empty means CORS is off. */
+  corsOrigins: string[];
   migrationUrl: string;
   runtimeRole: string | null;
   db: DbSettings;
@@ -103,12 +106,33 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env, options: { purp
     DB_STATEMENT_TIMEOUT_MS: parsed.DB_STATEMENT_TIMEOUT_MS,
   };
   assertDbSettings(db);
-  return { ...parsed, DEV_BOOKING_FIXTURES_FILE: devBookingFixturesFile, migrationUrl, runtimeRole, db };
+  const corsOrigins = parseCorsOrigins(parsed.CORS_ALLOWED_ORIGINS);
+  return { ...parsed, DEV_BOOKING_FIXTURES_FILE: devBookingFixturesFile, corsOrigins, migrationUrl, runtimeRole, db };
+}
+
+/** Comma-separated exact https origins. No wildcards, paths, or credentials in the value. */
+export function parseCorsOrigins(raw: string | undefined): string[] {
+  if (raw === undefined || raw.trim() === '') {
+    return [];
+  }
+  const origins = raw.split(',').map((entry) => entry.trim()).filter((entry) => entry !== '');
+  for (const origin of origins) {
+    let url: URL | null = null;
+    try {
+      url = new URL(origin);
+    } catch {
+      url = null;
+    }
+    if (origin.includes('*') || url === null || url.protocol !== 'https:' || url.origin !== origin) {
+      throw new Error(`CORS_ALLOWED_ORIGINS entries must be exact https origins such as https://app.example.com (got "${origin}")`);
+    }
+  }
+  return [...new Set(origins)];
 }
 
 function blankToUndefined(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const copy: NodeJS.ProcessEnv = { ...source };
-  for (const key of ['DATABASE_MIGRATION_URL', 'DB_RUNTIME_ROLE', 'DB_SSL_CA_FILE', 'DB_SSL_CA']) {
+  for (const key of ['DATABASE_MIGRATION_URL', 'DB_RUNTIME_ROLE', 'DB_SSL_CA_FILE', 'DB_SSL_CA', 'CORS_ALLOWED_ORIGINS']) {
     if (copy[key] !== undefined && copy[key]?.trim() === '') {
       delete copy[key];
     }
