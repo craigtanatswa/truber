@@ -194,3 +194,34 @@ Do not copy `payload` into tickets or logs.
 ## Product rules left for later slices
 
 No confirmed payment arrangement is created, so no confirmed booking is created. Cash is not marked payment-protected. The 5% completion commission is not calculated. Processing fees are not charged. Release is not recorded and is not automatic. The service holds no float.
+
+## Test-environment seed (`npm run seed:test`) and cleanup (`npm run seed:cleanup`)
+
+`scripts/seed-test-env.ts` creates clearly fake test data through the running API:
+- TEST admin, shipper and transporter accounts (`@example.com`, fake `+2637…` numbers);
+- companies in verified, unverified and pending states;
+- six sample loads (posted, draft and cancelled);
+- one 14-day off-platform ban.
+
+Every row carries a seed batch id (`(seed <batchId>)` in names, `TEST-<batchId>-…` registration numbers, `TEST seed <batchId>` in load and off-platform text). Every created id is recorded in the gitignored `backend/.seed-output.json`, together with the test passwords. Passwords are printed once. Rerunning is idempotent.
+
+Steps with no API endpoint are written as reviewed, idempotent SQL to the gitignored `backend/.seed-sql/`:
+- `01-accounts` promotes the TEST admin (registered as a shipper) and marks seeded TEST users phone-verified, because SMS is off;
+- `02-ban` adds the ban scenario, because bookings don't exist yet;
+- `00-password-reset` is recovery only.
+
+In default mode (a local test DB via `DATABASE_URL`) the seed applies these itself. With `--http-only` it never reads database settings: it writes the file, saves progress, and exits with code 3. Run the file (for example via the Supabase MCP), then rerun the same command.
+
+Guards:
+- `SEED_TEST_ENV=yes` is always required. `NODE_ENV=production` is always refused.
+- By default, any URL containing the production project ref is refused.
+- The user-approved production target needs `SEED_ALLOW_PRODUCTION=user-approved-2026-11-10`, an https non-localhost `SEED_API_URL`, and `DATABASE_URL`/`DATABASE_MIGRATION_URL` unset. It always runs HTTP-only.
+
+`npm run seed:cleanup` reads the output file and writes `<batch>-90-cleanup.sql` and `<batch>-91-cleanup-verify.sql`. The cleanup is one atomic statement:
+- it deletes only rows whose recorded ids also carry the TEST markers, plus the dependent rows of those users and companies;
+- it deletes children first and returns per-table counts;
+- it aborts, deleting nothing, if non-batch data is entangled.
+
+### `TEST_OTP_CODE` (local and test databases only)
+
+When set to six digits, `/auth/otp/verify` also accepts that code, but only after `/auth/otp/request`. The server refuses to boot with it when `NODE_ENV=production` or when the database URL points at the production project. Do not set it on any public deployment.

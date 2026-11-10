@@ -1,5 +1,5 @@
 import 'reflect-metadata';
-import { INestApplication, LoggerService } from '@nestjs/common';
+import { INestApplication, Logger, LoggerService } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { Express, json } from 'express';
 import { AppModule } from './app.module';
@@ -14,6 +14,10 @@ export async function createApp(options?: { logger?: LoggerService | false }): P
     bodyParser: false,
   });
   const env = app.get<Env>(ENV);
+  if (env.TEST_OTP_CODE) {
+    const logger = new Logger('Bootstrap');
+    logger.warn('TEST_OTP_CODE is set: a fixed test OTP is accepted (test environments only)');
+  }
   if (env.CLIENT_IP_SOURCE === 'vercel') {
     // Vercel's edge overwrites X-Forwarded-For with the client address, so trust exactly one hop.
     (app.getHttpAdapter().getInstance() as Express).set('trust proxy', 1);

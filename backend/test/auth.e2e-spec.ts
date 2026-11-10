@@ -452,6 +452,42 @@ describe('auth API', () => {
     expect(me.body.accountStatus).toBe('active');
   });
 
+  it('accepts the fixed TEST_OTP_CODE only after an OTP request', async () => {
+    const previous = process.env.TEST_OTP_CODE;
+    process.env.TEST_OTP_CODE = '246810';
+    const testOtp = await createApp({ logger: false });
+    if (previous === undefined) {
+      delete process.env.TEST_OTP_CODE;
+    } else {
+      process.env.TEST_OTP_CODE = previous;
+    }
+    try {
+      const registered = await http(testOtp, 'post', '/auth/register', {
+        body: { email: uniqueEmail('test-otp'), password: 'test-otp-password', fullName: 'Test OTP', role: 'shipper' },
+      });
+      const token = registered.body.accessToken as string;
+      const requested = await http(testOtp, 'post', '/auth/otp/request', { token, body: { channel: 'email' } });
+      expect(requested.status).toBe(202);
+      const verified = await http(testOtp, 'post', '/auth/otp/verify', { token, body: { code: '246810' } });
+      expect(verified.status).toBe(200);
+      assertOperationResponse('verifyRegistrationOtp', 200, verified.body);
+      expect(verified.body.accountStatus).toBe('active');
+
+      const withoutRequest = await http(testOtp, 'post', '/auth/register', {
+        body: { email: uniqueEmail('test-otp-missing'), password: 'test-otp-password', fullName: 'No Request', role: 'shipper' },
+      });
+      const missing = await http(testOtp, 'post', '/auth/otp/verify', {
+        token: withoutRequest.body.accessToken as string,
+        body: { code: '246810' },
+      });
+      expect(missing.status).toBe(401);
+      assertOperationResponse('verifyRegistrationOtp', 401, missing.body);
+      expect(missing.body.code).toBe('OTP_INVALID');
+    } finally {
+      await testOtp.close();
+    }
+  });
+
   it('suppresses dev delivery when the adapter is disabled and still returns the generic reset body', async () => {
     const previous = process.env.DELIVERY_ADAPTER;
     process.env.DELIVERY_ADAPTER = 'disabled';

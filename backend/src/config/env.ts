@@ -34,6 +34,7 @@ const schema = z.object({
   OTP_SOURCE_WINDOW_SECONDS: z.coerce.number().int().min(1).max(86_400).default(600),
   OTP_VERIFY_MAX: z.coerce.number().int().min(1).max(100_000).default(5),
   OTP_VERIFY_WINDOW_SECONDS: z.coerce.number().int().min(1).max(86_400).default(600),
+  TEST_OTP_CODE: z.string().optional(),
 });
 
 export type Env = z.infer<typeof schema> & {
@@ -55,6 +56,21 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env, options: { purp
       throw new Error(`Invalid environment configuration: ${fields}`);
     }
     throw error;
+  }
+
+  if (parsed.TEST_OTP_CODE !== undefined) {
+    if (!/^\d{6}$/.test(parsed.TEST_OTP_CODE)) {
+      throw new Error('TEST_OTP_CODE must be exactly 6 digits');
+    }
+    if (parsed.NODE_ENV === 'production') {
+      throw new Error('TEST_OTP_CODE cannot be used when NODE_ENV=production');
+    }
+    const productionProject = 'nvejijeprejhtbsarehz';
+    const databaseUrl = parsed.DATABASE_URL.toLowerCase();
+    const migrationUrl = parsed.DATABASE_MIGRATION_URL?.toLowerCase() ?? '';
+    if (databaseUrl.includes(productionProject) || migrationUrl.includes(productionProject)) {
+      throw new Error('TEST_OTP_CODE cannot be used against the production Supabase project');
+    }
   }
 
   if (parsed.CLIENT_IP_SOURCE === 'vercel' && source.VERCEL !== '1') {
@@ -108,7 +124,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env, options: { purp
 
 function blankToUndefined(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const copy: NodeJS.ProcessEnv = { ...source };
-  for (const key of ['DATABASE_MIGRATION_URL', 'DB_RUNTIME_ROLE', 'DB_SSL_CA_FILE', 'DB_SSL_CA']) {
+  for (const key of ['DATABASE_MIGRATION_URL', 'DB_RUNTIME_ROLE', 'DB_SSL_CA_FILE', 'DB_SSL_CA', 'TEST_OTP_CODE']) {
     if (copy[key] !== undefined && copy[key]?.trim() === '') {
       delete copy[key];
     }
