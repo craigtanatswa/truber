@@ -7,10 +7,10 @@ Inspected project (read-only, 2026-11-07): `truber`, ref `nvejijeprejhtbsarehz`,
 ## What is ready in code
 
 - `DB_TARGET=local` keeps the current loopback workflow, including `DB_SSL_MODE=disable` only for a loopback host.
-- `DB_TARGET=supabase` requires `DB_SSL_MODE=verify-full`, `DB_SSL_CA_FILE`, a dedicated `DB_SCHEMA` (not `public` or a managed schema), a PostGIS schema of `gis` or `extensions`, a dedicated `DB_RUNTIME_ROLE`, and a `DATABASE_MIGRATION_URL` that is not the same string as `DATABASE_URL`.
+- `DB_TARGET=supabase` requires `DB_SSL_MODE=verify-full`, `DB_SSL_CA_FILE` or `DB_SSL_CA`, a dedicated `DB_SCHEMA` (not `public` or a managed schema), a PostGIS schema of `gis` or `extensions`, a dedicated `DB_RUNTIME_ROLE`, and, for migrations, a `DATABASE_MIGRATION_URL` that is not the same string as `DATABASE_URL`. The API process itself boots without `DATABASE_MIGRATION_URL`.
 - TLS uses the CA file plus Node hostname verification. `rejectUnauthorized` is not disabled.
 - The runtime pool is bounded (`DB_POOL_MAX`, 1 to 20, default 10) and sets `search_path` to `pg_catalog`. Application SQL qualifies tables and PostGIS functions.
-- `DB_CONNECTION_MODE` and `DB_MIGRATION_CONNECTION_MODE` accept `direct` or `session`. Port `6543` is refused because the transaction pooler does not support prepared statements or session state used by this service (parameterized queries, `search_path`, and advisory locks).
+- `DB_CONNECTION_MODE` accepts `direct`, `session`, or `transaction`. `transaction` is for the Supabase transaction pooler (port `6543`) used by the Vercel deployment: no startup parameters are sent, and every statement runs in a transaction that starts with `SET LOCAL search_path = pg_catalog` and `SET LOCAL statement_timeout`. Port `6543` is refused in any other mode. `DB_MIGRATION_CONNECTION_MODE` accepts only `direct` or `session`, because migrations take a session advisory lock. See the README section Deploying to Vercel.
 - `npm run migrate` is the only migration path. Server startup only checks that the schema and PostGIS namespace already exist.
 - Tables in the application schema get row-level security enabled, `PUBLIC` table privileges revoked, and privileges for `anon`, `authenticated`, and `service_role` revoked when those roles exist. A policy is created only for `DB_RUNTIME_ROLE`, and it does not call Supabase authentication helpers. The migration role owns the tables and is not the API login.
 - The migrate command does not create login roles or passwords.
@@ -23,7 +23,7 @@ Do not invent a pooler hostname. Copy the exact values from the project Dashboar
 | --- | --- |
 | `TRUBER_DATABASE_URL` | Runtime connection. Prefer the direct host on port 5432 when the network can reach it. If the network is IPv4-only and the direct host is not reachable, use the session-pooler URI from Dashboard Connect and set `DB_CONNECTION_MODE=session`. |
 | `TRUBER_DATABASE_MIGRATION_URL` | Migration connection for a role that can `CREATE EXTENSION` and own the application tables. Prefer direct port 5432. Do not use the transaction pooler. |
-| `TRUBER_DB_SSL_CA` | CA certificate downloaded from Dashboard Database Settings, mounted as a file. `DB_SSL_CA_FILE` points at that path. |
+| `TRUBER_DB_SSL_CA` | CA certificate downloaded from Dashboard Database Settings, mounted as a file that `DB_SSL_CA_FILE` points at, or supplied as PEM text in `DB_SSL_CA` where files cannot be mounted (Vercel). |
 | `TRUBER_DB_RUNTIME_ROLE` | Name of the non-owner login used by `TRUBER_DATABASE_URL`. Create this role in the SQL editor or a reviewed change before `npm run migrate`. |
 | `JWT_ACCESS_SECRET` | Existing API signing secret. Not a Supabase API key. |
 | `SEED_ADMIN_PASSWORD` | Only for a deliberate non-production seed. The seed command still refuses `NODE_ENV=production`. |
