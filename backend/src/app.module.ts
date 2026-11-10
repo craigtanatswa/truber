@@ -10,6 +10,7 @@ import { DeliveryService } from './delivery/delivery.service';
 import { RateLimitService } from './delivery/rate-limit.service';
 import { LoadsController } from './loads/loads.controller';
 import { LoadsService } from './loads/loads.service';
+import { OffPlatformBanService } from './offplatform/offplatform-ban.service';
 
 @Module({
   controllers: [AuthController, CompaniesController, LoadsController],
@@ -21,6 +22,7 @@ import { LoadsService } from './loads/loads.service';
     AuthService,
     CompaniesService,
     LoadsService,
+    OffPlatformBanService,
     JwtAuthGuard,
   ],
 })
