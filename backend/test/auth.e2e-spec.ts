@@ -34,8 +34,8 @@ describe('auth API', () => {
     lines.length = 0;
   });
 
-  it('publishes contract version 0.2.0', () => {
-    expect(contractVersion()).toBe('0.2.0');
+  it('publishes contract version 0.4.0', () => {
+    expect(contractVersion()).toBe('0.4.0');
   });
 
   it('registers a shipper or transporter, rejects admin and privilege fields, and persists optional city', async () => {

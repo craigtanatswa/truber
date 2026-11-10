@@ -57,7 +57,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
     throw new Error('JWT_ACCESS_TTL_SECONDS must be 1800 to match API v0.4.0');
   }
   if (parsed.RESET_TOKEN_TTL_SECONDS !== 1800) {
-    throw new Error('RESET_TOKEN_TTL_SECONDS must be 1800 to match API v0.2.0');
+    throw new Error('RESET_TOKEN_TTL_SECONDS must be 1800 to match API v0.4.0');
   }
   if (parsed.NODE_ENV === 'production' && parsed.DELIVERY_ADAPTER === 'dev') {
     throw new Error('DELIVERY_ADAPTER=dev cannot be used when NODE_ENV=production');

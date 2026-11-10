@@ -1,8 +1,8 @@
 {
   "name": "@truber/backend",
-  "version": "0.2.0",
+  "version": "0.4.0",
   "private": true,
-  "description": "Truber auth and loads API (contract v0.2.0 slice)",
+  "description": "Truber auth and loads API (contract v0.4.0 slice)",
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/main.js",
