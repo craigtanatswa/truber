@@ -23,6 +23,7 @@ const schema = z.object({
   REFRESH_TTL_SECONDS: z.coerce.number().int().min(3600).max(7_776_000).default(1_209_600),
   OTP_TTL_SECONDS: z.coerce.number().int().min(60).max(3600).default(600),
   DELIVERY_ADAPTER: z.enum(['dev', 'disabled']),
+  DEV_BOOKING_FIXTURES_FILE: z.string().optional(),
   RESET_SOURCE_MAX: z.coerce.number().int().min(1).max(100_000).default(10),
   RESET_SOURCE_WINDOW_SECONDS: z.coerce.number().int().min(1).max(86_400).default(600),
   CONFIRM_SOURCE_MAX: z.coerce.number().int().min(1).max(100_000).default(20),
@@ -62,6 +63,10 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
   if (parsed.NODE_ENV === 'production' && parsed.DELIVERY_ADAPTER === 'dev') {
     throw new Error('DELIVERY_ADAPTER=dev cannot be used when NODE_ENV=production');
   }
+  const devBookingFixturesFile = parsed.DEV_BOOKING_FIXTURES_FILE?.trim() || undefined;
+  if (parsed.NODE_ENV === 'production' && parsed.DEV_BOOKING_FIXTURES_FILE !== undefined) {
+    throw new Error('DEV_BOOKING_FIXTURES_FILE cannot be used when NODE_ENV=production');
+  }
 
   const migrationUrl = parsed.DATABASE_MIGRATION_URL || (parsed.DB_TARGET === 'local' ? parsed.DATABASE_URL : '');
   if (!migrationUrl) {
@@ -83,7 +88,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
     DB_STATEMENT_TIMEOUT_MS: parsed.DB_STATEMENT_TIMEOUT_MS,
   };
   assertDbSettings(db);
-  return { ...parsed, migrationUrl, runtimeRole, db };
+  return { ...parsed, DEV_BOOKING_FIXTURES_FILE: devBookingFixturesFile, migrationUrl, runtimeRole, db };
 }
 
 function blankToUndefined(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {

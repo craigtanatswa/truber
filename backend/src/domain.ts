@@ -120,4 +120,4 @@ export const TRANSPORTER_VISIBLE_STATUSES: LoadStatus[] = [
   'completed',
 ];
 
-export const CANCELLABLE_STATUSES: LoadStatus[] = ['draft', 'posted', 'quoting', 'booking_pending'];
+export const CANCELLABLE_STATUSES: LoadStatus[] = ['draft', 'posted', 'quoting'];
