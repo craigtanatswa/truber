@@ -1,16 +1,66 @@
 openapi: 3.0.3
 info:
   title: Truber API
-  version: 0.2.0
+  version: 0.4.0
   description: |
-    Truber API v0.2.0 — **authoritative** contract (published 2026-11-07 Africa/Harare).
-    User approval: publish card reply `Publish v0.2.0 as is` (Charlie transcript).
-    Scope includes MVP core plus password-reset, optional city (QA-026), and the Charlie
-    provisional package **as encoded in the approved draft** (now published with this version).
-    Historical approved draft snapshot: `api/releases/openapi-v0.2.0-draft-approved-snapshot.yaml`.
-    Previous v0.1.0 backup: `api/releases/openapi-v0.1.0.yaml`.
-    **Not implemented:** no NestJS runtime, no live Paynow/EcoCash/InnBucks/BuySafe integrations,
-    fee payer unresolved, repository access unresolved.
+    Truber API v0.4.0 — **authoritative** contract (published 2026-11-10 Africa/Harare).
+    User approval: publish card reply `Yes, publish v0.4.0` (Charlie transcript, 2026-11-10 09:35).
+    Published from reviewed draft SHA-256
+    `b731748ca23c7d0f5f6c145617cfafcc5a69dd4555018251aca8d4a6033fc38b` (Mark and Charlie sign-off).
+    Supersedes v0.3.0 (SHA-256 `f0a8a9164e72b17afac29f5b9792864def73808ca8d1c9a5e45333da696c2915`).
+    Approved draft snapshot: `api/releases/openapi-v0.4.0-draft-approved-snapshot.yaml`.
+    Previous v0.3.0 backup: `api/releases/openapi-v0.3.0.yaml`.
+
+    Adds off-platform cancellation safeguards (**user-approved 2026-11-10**, card reply in
+    Charlie's chat 09:09 Africa/Harare: "Yes, approve the rule with a 14-day ban"; proposal
+    `reports/off-platform-safeguards.md` with a 14-day ban instead of 30):
+    - After a quotation is accepted or a booking exists (including
+      `pending_payment_arrangement`), shippers and transporters cannot cancel the booking
+      themselves. Only admin records a cancellation, with an audited reason
+      (`cancelBooking`). Self-cancel paths (`cancelLoad` once a booking exists,
+      `withdrawQuotation` on an accepted quotation, a party calling `cancelBooking`) return
+      409 `SelfCancelNotAllowedError` (`code: SELF_CANCEL_NOT_ALLOWED`).
+    - Report-and-review: a booking party or ops/admin may report suspected off-platform
+      circumvention on a booking (`createOffPlatformReport`). Admin reviews and records a
+      finding (`confirmed` / `not_confirmed`) with a reason and audit record
+      (`recordOffPlatformFinding`). Nothing is automatic; legitimate cancels never ban anyone.
+    - A confirmed finding applies a ban (admin only) to each responsible user **and** their
+      company (shipper, transporter, or both). Duration is fixed at **14 days** from
+      application (`endsAt = startsAt + 14 days`); not client-configurable. Time-limited, not
+      permanent `disabled`; `accountStatus` is not changed by a ban.
+    - While banned, existing records stay visible, but `createLoad`, `postLoad`,
+      `createQuotation`, `acceptQuotation`, and `confirmBooking` return **409**
+      `AccountBannedError` (`code: ACCOUNT_BANNED`, required `details.bannedUntil`). Admin
+      `auditOverride` cannot bypass the ban.
+    - Admin may lift a ban early with an audited reason (`liftOffPlatformBan`). A ban expires
+      automatically at `endsAt`.
+    - Separate from the commission-owing gate (billing semantics unchanged). When both apply,
+      `ACCOUNT_BANNED` is returned first.
+
+    Also changes access-token lifetime to **1800 seconds (30 minutes)**
+    (**user-approved 2026-11-07**, "I approve them but increase sign in sessions to 30
+    minutes"; owner Mark). Password-reset TTL stays 30 minutes.
+
+    Retained from published v0.3.0 — user-approved billing rules (2026-11-09, user chat with Jensen):
+    - Shipper pays the agreed trip amount. Commission and recorded processing fees are
+      deducted from the transporter payout (not added on for the shipper).
+    - Commission 5% is recognised when the trip is completed (after proof of delivery is
+      confirmed), not when payment is released.
+    - On cash trips, the transporter still owes Truber the 5% as an amount collected later.
+    - A transporter with unpaid commission owing can view loads but cannot submit a
+      quotation (`createQuotation`), have a quotation accepted (`acceptQuotation`), or
+      confirm a booking (`confirmBooking`) until the owing is settled. The 409 is
+      `CommissionOutstandingError` and prompts payment first. Admin override cannot
+      bypass this gate. Already-confirmed bookings are unaffected.
+    - Owing and collections are per currency. The accept-block is not currency-scoped:
+      `createQuotation`, `acceptQuotation`, and `confirmBooking` are blocked whenever
+      any currency has remaining owing. An unreceipted `deposit_balance` remainder is
+      not payable (no Truber lending).
+
+    **Not implemented:** no NestJS runtime, no live Paynow/EcoCash/InnBucks/BuySafe integrations.
+    Live payment APIs remain unresolved. Access-token lifetime is 30 minutes in this contract
+    (user-approved 2026-11-07). Off-platform safeguards and 14-day bans are encoded in this
+    contract (user-approved 2026-11-10); no runtime enforcement exists yet.
 
     Hard rules retained/strengthened from v0.1.0:
     - Public signup never grants `admin`.
@@ -21,7 +71,9 @@ info:
     - Clients cannot self-confirm payment or protection.
     - Cash never protected. No Truber wallet/float. No live Paynow/EcoCash/InnBucks APIs.
     - Release is a manually recorded ops audit only; recording never claims funds moved.
-    - Commission 5% half-up to minor unit; processing fees separate (fee payer unresolved).
+    - Commission 5% half-up to minor unit; recognised at trip completion (user-approved 2026-11-09).
+    - Processing fees are recorded separately and deducted from the transporter payout
+      together with commission (user-approved 2026-11-09). Fee payer is the transporter.
     - Deposit splits are configurable (example 50/50); no fixed rate in the contract.
     - POD and shipper delivery confirmation are distinct; trip completion ≠ release.
 
@@ -53,7 +105,7 @@ tags:
   - name: Bookings
     description: Booking pending then confirm with payment arrangement
   - name: Payments
-    description: Payment arrangements and records (MVP records only)
+    description: Payment arrangements, commission receivables, and records (MVP records only)
   - name: ProofOfDelivery
     description: Transporter POD uploads
   - name: DeliveryConfirmation
@@ -62,6 +114,10 @@ tags:
     description: Post-completion ratings
   - name: Admin
     description: Restricted admin provisioning and ops release recording
+  - name: Safeguards
+    description: |
+      Off-platform circumvention reports, admin findings, and 14-day bans
+      (user-approved 2026-11-10).
 
 paths:
 
@@ -193,8 +249,11 @@ paths:
         Reset tokens have a **finite configured TTL**. Tokens are single-use and consumed
         atomically on successful confirm.
 
-        **Approved with API v0.2.0 publish (2026-11-07; originated as Charlie provisional):**
-        TTL = **30 minutes**. See AUTH-NOTES / release notes. Fee payer / live payment APIs remain unresolved.
+        **User-approved 2026-11-07:** password-reset token TTL = **30 minutes**.
+        Access-token (sign-in session) lifetime is **30 minutes** (`expiresIn` 1800,
+        user-approved 2026-11-07; encoded in v0.4.0). See AUTH-NOTES / release notes. Live payment APIs remain unresolved.
+        Fee payer is the transporter (user-approved 2026-11-09; billing change only — this
+        operation is unchanged).
       security: []
       requestBody:
         required: true
@@ -241,7 +300,8 @@ paths:
         - All **refresh sessions** for the user are revoked immediately on success.
         - **Access JWTs** are **not** immediately denylisted; they remain usable until
           natural expiry (`AuthTokenResponse.expiresIn`). **Residual access exposure**
-          therefore lasts until that access token expires (15 minutes — see `expiresIn`).
+          therefore lasts until that access token expires (30 minutes — see `expiresIn`;
+          user-approved 2026-11-07).
           Clients must not treat reset as instant access kill.
         - This endpoint still does not issue new session tokens; client must `/auth/login`
           afterward with the new password.
@@ -675,6 +735,11 @@ paths:
       summary: Create a load in draft (shipper)
       description: |
         Creates `draft` only. Posting requires verified shipper company (see `postLoad`, QA-006).
+        **Off-platform ban gate (user-approved 2026-11-10):** if the calling user or the shipper company (`companyId`) has an active
+        off-platform ban (`startsAt <= now < endsAt`, not lifted), return **409**
+        `AccountBannedError` (`code: ACCOUNT_BANNED`, required `details.bannedUntil`).
+        Existing records stay visible. Checked before the commission-owing gate.
+        Admin acting on behalf of the company is also blocked.
       security:
         - bearerAuth: []
       requestBody:
@@ -696,6 +761,8 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/AccountBannedOrConflict'
 
   /loads/{loadId}:
     get:
@@ -764,6 +831,11 @@ paths:
         Makes the load visible for transporter quotations.
         **Verification gate (QA-006):** shipper company `verificationStatus` must be `verified`
         and calling user's `accountStatus` must be `active`; otherwise 403 with verify-needed semantics.
+        **Off-platform ban gate (user-approved 2026-11-10):** if the calling user or the load's shipper company has an active
+        off-platform ban (`startsAt <= now < endsAt`, not lifted), return **409**
+        `AccountBannedError` (`code: ACCOUNT_BANNED`, required `details.bannedUntil`).
+        Existing records stay visible. Checked before the commission-owing gate.
+        ("Cannot post loads" covers both `createLoad` and this transition.)
       security:
         - bearerAuth: []
       parameters:
@@ -785,7 +857,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
-          $ref: '#/components/responses/Conflict'
+          $ref: '#/components/responses/AccountBannedOrConflict'
 
   /loads/{loadId}/cancel:
     post:
@@ -793,10 +865,15 @@ paths:
       tags: [Loads]
       summary: Cancel a load
       description: |
-        Allowed for shipper owner while no confirmed booking exists.
+        Allowed for shipper owner while no booking exists for the load (status `draft`,
+        `posted`, or `quoting`).
         After booking confirmation, use admin `POST /bookings/{bookingId}/cancel` to record
-        cancellation (QA-004 provisional Charlie policy — not user-approved). This load
-        endpoint returns 409 when a confirmed booking exists.
+        cancellation (QA-004 provisional Charlie policy — not user-approved).
+        **No self-cancel (user-approved 2026-11-10):** once a quotation is accepted or any
+        non-cancelled booking exists for the load (including `pending_payment_arrangement`,
+        i.e. load status `booking_pending` or later), this endpoint returns **409**
+        `SelfCancelNotAllowedError` (`code: SELF_CANCEL_NOT_ALLOWED`). Only admin may record
+        the booking cancellation, with an audited reason, via `cancelBooking`.
       security:
         - bearerAuth: []
       parameters:
@@ -822,7 +899,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
-          $ref: '#/components/responses/Conflict'
+          $ref: '#/components/responses/SelfCancelOrConflict'
 
   /loads/{loadId}/quotations:
     get:
@@ -859,6 +936,18 @@ paths:
         **Verification gate (QA-006):** transporter company must be `verified`, caller account
         `active`, and if `truckId` is supplied that truck must be `verified`; otherwise 403/409.
         Quotation `amount` must be strictly positive (QA-007).
+        **Commission owing gate (user-approved 2026-11-09):** if the transporter company has
+        unpaid commission remaining in any currency, return **409**
+        `CommissionOutstandingError` (pinned `code: COMMISSION_OUTSTANDING`; required
+        `details.outstandingByCurrency`; `details.outstandingAmount` also required when
+        owing is in exactly one currency). The transporter may
+        still list and view loads. The client should prompt them to settle the owing first.
+        Existing confirmed bookings are not blocked. Same gate as `acceptQuotation` and
+        `confirmBooking`.
+        **Off-platform ban gate (user-approved 2026-11-10):** if the calling user or the transporter company (`transporterCompanyId`) has an active
+        off-platform ban (`startsAt <= now < endsAt`, not lifted), return **409**
+        `AccountBannedError` (`code: ACCOUNT_BANNED`, required `details.bannedUntil`).
+        Existing records stay visible. Checked before the commission-owing gate.
       security:
         - bearerAuth: []
       parameters:
@@ -886,7 +975,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
-          $ref: '#/components/responses/Conflict'
+          $ref: '#/components/responses/NewWorkGateConflict'
 
   /quotations/{quotationId}:
     get:
@@ -916,6 +1005,13 @@ paths:
       operationId: withdrawQuotation
       tags: [Quotations]
       summary: Withdraw a quotation (transporter)
+      description: |
+        Transporter withdraws its own `submitted` quotation.
+        **No self-cancel (user-approved 2026-11-10):** an `accepted` quotation (a booking
+        exists, including `pending_payment_arrangement`) cannot be withdrawn. Return **409**
+        `SelfCancelNotAllowedError` (`code: SELF_CANCEL_NOT_ALLOWED`). Only admin may record
+        the booking cancellation via `cancelBooking`. Other non-withdrawable states
+        (`withdrawn`, `not_selected`, `rejected`, `expired`) use generic conflict errors.
       security:
         - bearerAuth: []
       parameters:
@@ -935,7 +1031,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
-          $ref: '#/components/responses/Conflict'
+          $ref: '#/components/responses/SelfCancelOrConflict'
 
   /quotations/{quotationId}/accept:
     post:
@@ -945,13 +1041,24 @@ paths:
       description: |
         Shipper owning the load accepts a `submitted` quotation. Server:
         1. Marks quotation `accepted` and sibling open quotations `not_selected`
-           (**provisional** Charlie policy / QA-002 — not user-approved). `not_selected`
+           (QA-002 quote restore — user-approved 2026-11-07). `not_selected`
            quotes are recoverable if the pending booking fails before confirmation
            (see `POST /loads/{loadId}/quotations/restore-not-selected`).
         2. Creates a booking in status `pending_payment_arrangement`.
         3. Moves load to `booking_pending`.
         Booking is **not** confirmed by this call. Confirmation requires a confirmed payment
         arrangement via `/bookings/{bookingId}/confirm`.
+        **Commission owing gate (user-approved 2026-11-09):** if the quotation's transporter
+        company has unpaid commission outstanding, return **409**
+        `CommissionOutstandingError` (same pinned schema as `createQuotation` and
+        `confirmBooking`). Do not create the booking. The transporter may
+        still view the load; settle owing before new work is accepted.
+        **Off-platform ban gate (user-approved 2026-11-10):** if the calling user, the shipper company, or the quotation's
+        transporter company (or the user who submitted the quotation) has an active
+        off-platform ban (`startsAt <= now < endsAt`, not lifted), return **409**
+        `AccountBannedError` (`code: ACCOUNT_BANNED`, required `details.bannedUntil`).
+        Existing records stay visible. Checked before the commission-owing gate.
+        Do not create the booking.
       security:
         - bearerAuth: []
       parameters:
@@ -979,7 +1086,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
-          $ref: '#/components/responses/Conflict'
+          $ref: '#/components/responses/NewWorkGateConflict'
 
   /bookings:
     get:
@@ -1100,6 +1207,21 @@ paths:
           independent-provider evidence (admin/ops recorded — not client claim).
 
         Clients cannot set payment/protection flags. Race-safe via Idempotency-Key.
+        **Commission owing gate (user-approved 2026-11-09):** if the booking's transporter
+        company has unpaid commission outstanding in any currency, return **409**
+        `CommissionOutstandingError` (pinned `code: COMMISSION_OUTSTANDING`; required
+        `details.outstandingByCurrency`; `details.outstandingAmount` also required when
+        owing is in exactly one currency). Do not confirm the booking. This blocks new
+        business for a transporter who still owes; existing already-confirmed bookings
+        are unaffected. Admin `auditOverride` cannot bypass this gate. Same gate as
+        `createQuotation` and `acceptQuotation`.
+        **Off-platform ban gate (user-approved 2026-11-10):** if the calling user, the booking's shipper company, or the
+        booking's transporter company has an active
+        off-platform ban (`startsAt <= now < endsAt`, not lifted), return **409**
+        `AccountBannedError` (`code: ACCOUNT_BANNED`, required `details.bannedUntil`).
+        Existing records stay visible. Checked before the commission-owing gate.
+        Admin `auditOverride` cannot bypass the ban. A pending booking blocked by a ban
+        stays `pending_payment_arrangement`; only admin may cancel it (`cancelBooking`).
       security:
         - bearerAuth: []
       parameters:
@@ -1127,11 +1249,22 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
-          description: Missing confirmed arrangement, escrow not protected, or invalid state
+          description: |
+            Missing confirmed arrangement, escrow not protected, invalid state, an active
+            off-platform ban, or unpaid commission owing. A ban must use
+            `AccountBannedError` (`code: ACCOUNT_BANNED`, required `details.bannedUntil`;
+            user-approved 2026-11-10). Owing must use `CommissionOutstandingError`
+            (`code: COMMISSION_OUTSTANDING`, required `details.outstandingByCurrency`;
+            `details.outstandingAmount` also required when owing is in one currency).
+            Other conflicts use `OtherConflictError` (generic `Error` shape with any code
+            except the pinned ones).
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                oneOf:
+                  - $ref: '#/components/schemas/CommissionOutstandingError'
+                  - $ref: '#/components/schemas/AccountBannedError'
+                  - $ref: '#/components/schemas/OtherConflictError'
 
   /bookings/{bookingId}/payment-arrangements:
     get:
@@ -1383,7 +1516,27 @@ paths:
         (future capability flag — recording still does not claim live integration or funds movement).
 
         **Never claims Truber moved funds. No float. No live provider API.** Commission 5%
-        half-up on positive `tripAmount`; processing fees separate (payer unresolved).
+        is server-computed, half-up on positive `tripAmount` (do not trust a client-supplied
+        commission figure). `processingFeesTotal` must equal the sum of already-recorded
+        transaction `processingFee` values on this arrangement in the same currency, or the
+        server returns 409; do not blindly trust a typed total. Mixed-currency amounts are
+        rejected (400/409). If commission + processing fees would make
+        `transporterNetAmount` negative, return 409.
+
+        `transporterNetAmount = tripAmount − commissionAmount − processingFeesTotal`
+        (integer minor units, same currency). The shipper paid (or owes) the agreed trip
+        amount; commission and recorded processing fees come out of the transporter payout.
+
+        Commission was already recognised at trip completion. For methods where trip funds
+        were held and this release deducts commission from those funds, this record settles
+        the open commission receivable (`settled_on_release`). For `cash`, this record must
+        **not** create a transporter payout due for the fare (Truber never held the money)
+        and must **not** settle the commission receivable — cash commission stays `open`
+        until `recordCommissionCollection`. Corporate-credit payout remains blocked until
+        the shipper payment is recorded (no Truber float). For `deposit_balance`, do not
+        treat an unreceipted balance remainder as payable and do not include it in a
+        transporter payout; only receipted amounts may be released. Paying an unreceipted
+        remainder would be lending.
       security:
         - bearerAuth: []
       parameters:
@@ -1505,6 +1658,12 @@ paths:
         **Preconditions:** at least one POD artifact must exist for the booking (409 otherwise).
         On `accepted`: `completionStatus` → `completed` (**provisional** Charlie policy —
         completion is separate from release). Does not move funds and does not record release.
+        **Commission recognition (user-approved 2026-11-09):** the server creates an open
+        commission receivable for the transporter company, amount = half-up 5% of
+        `booking.agreedAmount` (minor units, same currency). Recognition is at completion,
+        not at release. If an admin later voids that completion (cancel/refund), the
+        receivable is `voided` and recognised revenue is reversed. For `cash`, the
+        receivable remains a collect-later owing; no fare payout due is booked.
         On `disputed`: `completionStatus` → `disputed`; release endpoints return 409 until
         admin resolves the dispute via `POST /bookings/{bookingId}/disputes/resolve`.
       security:
@@ -1763,12 +1922,14 @@ paths:
     post:
       operationId: restoreNotSelectedQuotations
       tags: [Quotations]
-      summary: Restore not_selected quotations after pending booking failure (QA-002 provisional)
+      summary: Restore not_selected quotations after pending booking failure (QA-002)
       description: |
-        **Provisional Charlie policy — not user-approved.** When a booking in
+        **User-approved 2026-11-07** (quote restore rules). When a booking in
         `pending_payment_arrangement` is cancelled/expired without confirmation, admin or
         shipper may restore sibling quotations from `not_selected` back to `submitted`
         (eligibility/trigger details still partially open — see unresolved decisions).
+        Since 2026-11-10 (user-approved) only admin can cancel a pending booking
+        (`cancelBooking`); restoring siblings afterwards is not a self-cancel.
       security:
         - bearerAuth: []
       parameters:
@@ -1806,13 +1967,21 @@ paths:
     post:
       operationId: cancelBooking
       tags: [Bookings, Admin]
-      summary: Record post-confirm booking cancellation (QA-004 provisional)
+      summary: Admin-only booking cancellation record (QA-004 provisional)
       description: |
-        **Provisional Charlie policy — not user-approved.** Admin records cancellation of a
-        `confirmed` booking before collection (or per later terms). Creates an audit trail.
-        Does not automate refunds or move funds. Commission is not charged when cancelled
-        before completion. Pair with `POST /payment-arrangements/{id}/refunds` when a refund
-        audit record is required. Shipper load `cancel` remains 409 once booking is confirmed.
+        Admin records cancellation of a `confirmed` booking, including **after collection**
+        (user-approved 2026-11-07). Creates an audit trail.
+        **Admin-only, pending included (user-approved 2026-11-10):** after a quotation is
+        accepted, a booking (including `pending_payment_arrangement`) can only be cancelled
+        here, by an admin, with an audited `reason`. A shipper or transporter member of the
+        booking calling this endpoint receives **409** `SelfCancelNotAllowedError`
+        (`code: SELF_CANCEL_NOT_ALLOWED`); other non-admin callers get 403/404. Recording a
+        cancellation never creates an off-platform report, finding, or ban by itself — a
+        suspected circumvention is reported separately (`createOffPlatformReport`). Does not automate refunds or
+        move funds. Refund recording remains a separate path and is not retagged here.
+        Commission is not charged when cancelled before completion. Pair with
+        `POST /payment-arrangements/{id}/refunds` when a refund audit record is required.
+        Shipper load `cancel` remains 409 once booking is confirmed.
       security:
         - bearerAuth: []
       parameters:
@@ -1838,7 +2007,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
-          $ref: '#/components/responses/Conflict'
+          $ref: '#/components/responses/SelfCancelOrConflict'
 
   /bookings/{bookingId}/disputes/resolve:
     post:
@@ -1849,6 +2018,10 @@ paths:
         When `completionStatus=disputed`, admin resolves to `completed` or `cancelled`.
         Resolution is audited. Completing unlocks release recording eligibility; cancelling
         keeps release blocked. Does not move funds.
+        If resolved to `completed` and no commission receivable exists yet for the booking,
+        the server creates the same open 5% receivable as `confirmDelivery` accepted.
+        If resolved to `cancelled`, no commission is recognised; any open receivable for
+        this booking is `voided`.
       security:
         - bearerAuth: []
       parameters:
@@ -2010,6 +2183,323 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /companies/{companyId}/commission-account:
+    get:
+      operationId: getCompanyCommissionAccount
+      tags: [Companies, Payments]
+      summary: Get transporter commission owing and history
+      description: |
+        Returns the transporter company's commission receivables and outstanding
+        balances. `outstandingByCurrency` is the sum of `remainingAmount` on `open`
+        receivables, one entry per currency (not the original recognised `amount`).
+        Created at trip completion (user-approved 2026-11-09). Load search and view
+        remain allowed with outstanding owing; `createQuotation`, `acceptQuotation`,
+        and `confirmBooking` return 409 `CommissionOutstandingError` until there is
+        no remaining owing in any currency. Records only — this endpoint does not
+        collect funds. Collections are per currency. The accept-block is not
+        currency-scoped: all three operations are blocked whenever any currency
+        has remaining owing.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+      responses:
+        '200':
+          description: Commission account
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommissionAccount'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/companies/{companyId}/commission-collections:
+    post:
+      operationId: recordCommissionCollection
+      tags: [Admin, Payments]
+      summary: Record collection of outstanding commission (records only)
+      description: |
+        Admin/ops records that a transporter paid (or partially paid) outstanding
+        commission owing, typically for cash trips where Truber never held the fare
+        (user-approved 2026-11-09 — collect later). **Recording a collection is not
+        moving funds.** No live provider API and no automatic debit.
+
+        `amount` must be strictly positive and in one currency, and must not exceed
+        remaining outstanding in that same currency (409 otherwise). Applied only to
+        open receivables in that currency, oldest-first, updating each receivable's
+        `collectedAmount` and `remainingAmount`. When a receivable's `remainingAmount`
+        reaches zero, its status becomes `collected`. After this call, if
+        `outstandingByCurrency` is empty, `createQuotation`, `acceptQuotation`, and
+        `confirmBooking` are unblocked.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecordCommissionCollectionRequest'
+      responses:
+        '201':
+          description: Collection recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommissionCollectionRecord'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /bookings/{bookingId}/off-platform-reports:
+    post:
+      operationId: createOffPlatformReport
+      tags: [Safeguards, Bookings]
+      summary: Report suspected off-platform circumvention on a booking
+      description: |
+        **User-approved 2026-11-10.** A shipper or transporter member of the booking, or an
+        admin/ops user, reports that a party appears to have cancelled or walked away to
+        complete the same deal off Truber. Creates an `OffPlatformReport` in status `open`
+        with an audit record.
+
+        Filing a report never bans anyone, never changes the booking, and never blocks
+        either party. Only an admin finding (`recordOffPlatformFinding`) can lead to a ban.
+        The system does not detect circumvention automatically, and a legitimate cancel
+        (for example a breakdown or goods not ready) never creates a report by itself.
+        A banned user may still file a report. Non-parties get 403/404.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/BookingId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOffPlatformReportRequest'
+      responses:
+        '201':
+          description: Report filed (pending admin review)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OffPlatformReport'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /admin/off-platform-reports:
+    get:
+      operationId: listOffPlatformReports
+      tags: [Safeguards, Admin]
+      summary: List off-platform circumvention reports (admin)
+      description: Admin-only review queue (user-approved 2026-11-10). Records only.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/OffPlatformReportStatus'
+        - name: bookingId
+          in: query
+          schema:
+            $ref: '#/components/schemas/Uuid'
+        - name: companyId
+          in: query
+          description: Reports on bookings where this company is the shipper or transporter
+          schema:
+            $ref: '#/components/schemas/Uuid'
+      responses:
+        '200':
+          description: Paginated reports
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OffPlatformReportListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /admin/off-platform-reports/{reportId}:
+    get:
+      operationId: getOffPlatformReport
+      tags: [Safeguards, Admin]
+      summary: View one off-platform report with its finding and bans (admin)
+      description: Admin-only (user-approved 2026-11-10).
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ReportId'
+      responses:
+        '200':
+          description: Report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OffPlatformReport'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/off-platform-reports/{reportId}/finding:
+    post:
+      operationId: recordOffPlatformFinding
+      tags: [Safeguards, Admin]
+      summary: Record the admin finding on a report; a confirmed finding applies 14-day bans
+      description: |
+        **User-approved 2026-11-10.** Admin-only. Records the review outcome with a reason
+        and an audit record (`reviewedByUserId`, `reviewedAt`). One finding per report;
+        a second call returns 409.
+
+        - `not_confirmed`: no ban. Report status becomes `not_confirmed`.
+        - `confirmed`: `responsibleParties` is required (1 or 2 entries: shipper,
+          transporter, or both). In the same atomic step the server applies one
+          `OffPlatformBan` per responsible party, covering that **user and their company**.
+          Each ban runs **14 days from application**: `startsAt` = server time of this
+          call, `endsAt` = `startsAt` + 14 days. The duration is fixed by the server; the
+          request has no duration field and unknown fields are rejected (400). The
+          applying admin is `appliedByUserId`. Report status becomes `confirmed`.
+
+        Each responsible party's user must be a member of the named company, and the
+        company must be the booking's shipper or transporter company for the stated role
+        (400/409 otherwise). A ban never changes `accountStatus` and never hides existing
+        records.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ReportId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecordOffPlatformFindingRequest'
+      responses:
+        '201':
+          description: Finding recorded (with bans when confirmed)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OffPlatformFinding'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /admin/off-platform-bans:
+    get:
+      operationId: listOffPlatformBans
+      tags: [Safeguards, Admin]
+      summary: List off-platform bans (admin)
+      description: |
+        Admin-only (user-approved 2026-11-10). `status` is server-computed:
+        `active` while `startsAt <= now < endsAt` and not lifted; `expired` once
+        `now >= endsAt`; `lifted` when an admin lifted it early.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/OffPlatformBanStatus'
+        - name: userId
+          in: query
+          schema:
+            $ref: '#/components/schemas/Uuid'
+        - name: companyId
+          in: query
+          schema:
+            $ref: '#/components/schemas/Uuid'
+      responses:
+        '200':
+          description: Paginated bans
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OffPlatformBanListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /admin/off-platform-bans/{banId}/lift:
+    post:
+      operationId: liftOffPlatformBan
+      tags: [Safeguards, Admin]
+      summary: Lift an off-platform ban early (admin, audited)
+      description: |
+        **User-approved 2026-11-10.** Admin-only. Ends an `active` ban before `endsAt`
+        (for example when the finding was wrong). Requires `liftReason`; records
+        `liftedAt`, `liftedByUserId`, and `liftReason`. `endsAt` is kept as originally
+        applied. Lifting an `expired` or already `lifted` ban returns 409. The ban
+        otherwise expires automatically at `endsAt`; no call is needed.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/BanId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LiftOffPlatformBanRequest'
+      responses:
+        '200':
+          description: Ban lifted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OffPlatformBan'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+
 components:
   securitySchemes:
     bearerAuth:
@@ -2060,6 +2550,18 @@ components:
         $ref: '#/components/schemas/Uuid'
     ArrangementId:
       name: arrangementId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Uuid'
+    ReportId:
+      name: reportId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Uuid'
+    BanId:
+      name: banId
       in: path
       required: true
       schema:
@@ -2125,6 +2627,49 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
+    NewWorkGateConflict:
+      description: |
+        Conflict on a new-work operation (`createQuotation`, `acceptQuotation`).
+        Replaces v0.3.0 `CommissionOutstandingOrConflict` (same commission semantics).
+        - Active off-platform ban (user-approved 2026-11-10): body MUST be
+          `AccountBannedError` (`code: ACCOUNT_BANNED`, required `details.bannedUntil`).
+          Checked first.
+        - Unpaid commission owing (user-approved 2026-11-09): body MUST be
+          `CommissionOutstandingError` (pinned `code: COMMISSION_OUTSTANDING`, required
+          `details.outstandingByCurrency`; `details.outstandingAmount` also required
+          when owing is in exactly one currency).
+        - Other conflicts use `OtherConflictError`.
+        The three branches are mutually exclusive by `code`, so exactly one matches.
+      content:
+        application/json:
+          schema:
+            oneOf:
+              - $ref: '#/components/schemas/CommissionOutstandingError'
+              - $ref: '#/components/schemas/AccountBannedError'
+              - $ref: '#/components/schemas/OtherConflictError'
+    AccountBannedOrConflict:
+      description: |
+        Conflict on load posting (`createLoad`, `postLoad`). Active off-platform ban
+        (user-approved 2026-11-10) MUST use `AccountBannedError`; other conflicts use
+        `OtherConflictError`.
+      content:
+        application/json:
+          schema:
+            oneOf:
+              - $ref: '#/components/schemas/AccountBannedError'
+              - $ref: '#/components/schemas/OtherConflictError'
+    SelfCancelOrConflict:
+      description: |
+        Conflict on a cancel/withdraw path. A shipper or transporter trying to cancel
+        after a quotation is accepted or a booking exists (user-approved 2026-11-10)
+        MUST receive `SelfCancelNotAllowedError` (`code: SELF_CANCEL_NOT_ALLOWED`).
+        Other conflicts use `OtherConflictError`.
+      content:
+        application/json:
+          schema:
+            oneOf:
+              - $ref: '#/components/schemas/SelfCancelNotAllowedError'
+              - $ref: '#/components/schemas/OtherConflictError'
     UnprocessableEntity:
       description: Semantically invalid request
       content:
@@ -2152,8 +2697,9 @@ components:
       description: |
         Integer minor units plus ISO 4217 currency. Never floating-point.
         Prefer PositiveMoneyAmount / NonNegativeMoneyAmount on write paths.
-        Commission: half-up to minor unit at 500 bps (5%). Fees are separate fields
-        (fee payer unresolved — open question).
+        Commission: half-up to minor unit at 500 bps (5%), recognised at trip completion.
+        Fees are separate fields, deducted from the transporter payout (user-approved
+        2026-11-09). Server-compute commission; never use floating-point.
       required: [amountMinor, currency]
       properties:
         amountMinor:
@@ -2226,6 +2772,400 @@ components:
         requestId:
           type: string
 
+    CommissionOutstandingError:
+      type: object
+      additionalProperties: false
+      description: |
+        Pinned 409 body when a transporter cannot take new work because commission
+        is outstanding. Not the generic `Error` schema — `code` is the singleton
+        `COMMISSION_OUTSTANDING`. `details.outstandingByCurrency` is required (owing
+        is per currency). When owing is in exactly one currency, `details.outstandingAmount`
+        is also required and MUST equal that single entry. Used by `createQuotation`,
+        `acceptQuotation`, and `confirmBooking`.
+      required: [code, message, details]
+      properties:
+        code:
+          type: string
+          enum: [COMMISSION_OUTSTANDING]
+        message:
+          type: string
+          enum:
+            - Outstanding commission must be settled before taking new work.
+        details:
+          oneOf:
+            - type: object
+              additionalProperties: false
+              required: [outstandingAmount, outstandingByCurrency]
+              properties:
+                outstandingAmount:
+                  allOf:
+                    - $ref: '#/components/schemas/PositiveMoneyAmount'
+                  description: |
+                    Required when owing is in exactly one currency. MUST equal the
+                    sole `outstandingByCurrency` entry (sum of open `remainingAmount`
+                    in that currency).
+                outstandingByCurrency:
+                  type: array
+                  minItems: 1
+                  maxItems: 1
+                  items:
+                    $ref: '#/components/schemas/PositiveMoneyAmount'
+            - type: object
+              additionalProperties: false
+              required: [outstandingByCurrency]
+              properties:
+                outstandingByCurrency:
+                  type: array
+                  minItems: 2
+                  items:
+                    $ref: '#/components/schemas/PositiveMoneyAmount'
+                  description: |
+                    One positive amount per currency with unpaid remaining commission.
+                    Present when owing spans more than one currency; do not also send
+                    a single `outstandingAmount`.
+        requestId:
+          type: string
+
+    OtherConflictError:
+      description: |
+        Generic conflict body on responses that also carry a pinned error schema.
+        Same shape as `Error`, but `code` MUST NOT be one of the pinned codes
+        (`COMMISSION_OUTSTANDING`, `ACCOUNT_BANNED`, `SELF_CANCEL_NOT_ALLOWED`). This keeps
+        each shared 409 `oneOf` exclusive: a pinned body matches only its own schema.
+        (Fixes v0.3.0, where a valid `CommissionOutstandingError` body also matched
+        generic `Error` and so failed the `oneOf`.)
+      allOf:
+        - $ref: '#/components/schemas/Error'
+        - type: object
+          properties:
+            code:
+              not:
+                enum: [COMMISSION_OUTSTANDING, ACCOUNT_BANNED, SELF_CANCEL_NOT_ALLOWED]
+
+    AccountBannedError:
+      type: object
+      additionalProperties: false
+      description: |
+        Pinned 409 body (user-approved 2026-11-10) when a user or company with an active
+        off-platform ban tries `createLoad`, `postLoad`, `createQuotation`,
+        `acceptQuotation`, or `confirmBooking`. Distinct from `CommissionOutstandingError`
+        (`code` is the singleton `ACCOUNT_BANNED`). Admin `auditOverride` cannot bypass it.
+      required: [code, message, details]
+      properties:
+        code:
+          type: string
+          enum: [ACCOUNT_BANNED]
+        message:
+          type: string
+          enum:
+            - This account is temporarily banned from new work on Truber.
+        details:
+          type: object
+          additionalProperties: false
+          required: [bannedUntil, bannedParty]
+          properties:
+            bannedUntil:
+              allOf:
+                - $ref: '#/components/schemas/DateTime'
+              description: |
+                Latest `endsAt` among the active bans that block this request. The block
+                clears automatically at this time unless an admin lifts it earlier.
+            bannedParty:
+              type: string
+              enum: [caller, caller_company, counterparty_company]
+              description: |
+                Which party's ban blocks the request. `counterparty_company` is used when
+                the other side of the deal (for example the quotation's transporter on
+                `acceptQuotation`) is banned. Ban reasons are never disclosed here.
+        requestId:
+          type: string
+
+    SelfCancelNotAllowedError:
+      type: object
+      additionalProperties: false
+      description: |
+        Pinned 409 body (user-approved 2026-11-10) when a shipper or transporter tries to
+        cancel or walk away after a quotation is accepted or a booking exists (including
+        `pending_payment_arrangement`). Only admin can record the cancellation
+        (`cancelBooking`, audited reason).
+      required: [code, message, details]
+      properties:
+        code:
+          type: string
+          enum: [SELF_CANCEL_NOT_ALLOWED]
+        message:
+          type: string
+          enum:
+            - This booking can only be cancelled by Truber admin. Contact support.
+        details:
+          type: object
+          additionalProperties: false
+          required: [bookingId, bookingStatus]
+          properties:
+            bookingId:
+              $ref: '#/components/schemas/Uuid'
+            bookingStatus:
+              $ref: '#/components/schemas/BookingStatus'
+        requestId:
+          type: string
+
+    OffPlatformPartyRole:
+      type: string
+      enum: [shipper, transporter]
+
+    OffPlatformReportStatus:
+      type: string
+      enum: [open, confirmed, not_confirmed]
+      description: |
+        `open` until an admin records a finding. `confirmed` / `not_confirmed` mirror the
+        finding outcome (user-approved 2026-11-10).
+
+    CreateOffPlatformReportRequest:
+      type: object
+      additionalProperties: false
+      required: [suspectedParty, description]
+      properties:
+        suspectedParty:
+          type: string
+          enum: [shipper, transporter, both, unknown]
+        description:
+          type: string
+          minLength: 10
+          maxLength: 4000
+          description: What happened and why off-platform dealing is suspected.
+        evidenceUris:
+          type: array
+          maxItems: 20
+          items:
+            type: string
+            format: uri
+
+    OffPlatformReport:
+      type: object
+      required:
+        - id
+        - bookingId
+        - reportedByUserId
+        - suspectedParty
+        - description
+        - status
+        - createdAt
+      properties:
+        id:
+          $ref: '#/components/schemas/Uuid'
+        bookingId:
+          $ref: '#/components/schemas/Uuid'
+        reportedByUserId:
+          $ref: '#/components/schemas/Uuid'
+        reporterRole:
+          $ref: '#/components/schemas/UserRole'
+        suspectedParty:
+          type: string
+          enum: [shipper, transporter, both, unknown]
+        description:
+          type: string
+        evidenceUris:
+          type: array
+          items:
+            type: string
+            format: uri
+        status:
+          $ref: '#/components/schemas/OffPlatformReportStatus'
+        finding:
+          allOf:
+            - $ref: '#/components/schemas/OffPlatformFinding'
+          type: object
+          nullable: true
+          description: Present once an admin has recorded a finding. Admin views only.
+        createdAt:
+          $ref: '#/components/schemas/DateTime'
+
+    OffPlatformReportListResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/OffPlatformReport'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    OffPlatformResponsibleParty:
+      type: object
+      additionalProperties: false
+      required: [role, userId, companyId]
+      properties:
+        role:
+          $ref: '#/components/schemas/OffPlatformPartyRole'
+        userId:
+          $ref: '#/components/schemas/Uuid'
+        companyId:
+          $ref: '#/components/schemas/Uuid'
+
+    RecordOffPlatformFindingRequest:
+      type: object
+      additionalProperties: false
+      description: |
+        Admin finding (user-approved 2026-11-10). No duration field: a confirmed finding
+        always applies a 14-day ban per responsible party. Unknown fields are rejected.
+      required: [outcome, reason]
+      properties:
+        outcome:
+          type: string
+          enum: [confirmed, not_confirmed]
+        reason:
+          type: string
+          minLength: 8
+          maxLength: 4000
+          description: Audited reason for the outcome.
+        responsibleParties:
+          type: array
+          minItems: 1
+          maxItems: 2
+          items:
+            $ref: '#/components/schemas/OffPlatformResponsibleParty'
+          description: |
+            Required when `outcome=confirmed`; must be omitted when `not_confirmed`.
+            At most one entry per role (shipper, transporter, or both).
+      oneOf:
+        - required: [responsibleParties]
+          properties:
+            outcome:
+              enum: [confirmed]
+        - not:
+            type: object
+            required: [responsibleParties]
+            properties:
+              responsibleParties:
+                type: array
+          properties:
+            outcome:
+              enum: [not_confirmed]
+
+    OffPlatformFinding:
+      type: object
+      required: [id, reportId, bookingId, outcome, reason, reviewedByUserId, reviewedAt, bans]
+      properties:
+        id:
+          $ref: '#/components/schemas/Uuid'
+        reportId:
+          $ref: '#/components/schemas/Uuid'
+        bookingId:
+          $ref: '#/components/schemas/Uuid'
+        outcome:
+          type: string
+          enum: [confirmed, not_confirmed]
+        reason:
+          type: string
+        responsibleParties:
+          type: array
+          items:
+            $ref: '#/components/schemas/OffPlatformResponsibleParty'
+        reviewedByUserId:
+          $ref: '#/components/schemas/Uuid'
+        reviewedAt:
+          $ref: '#/components/schemas/DateTime'
+        bans:
+          type: array
+          description: Bans applied by this finding. Empty when `not_confirmed`.
+          items:
+            $ref: '#/components/schemas/OffPlatformBan'
+
+    OffPlatformBanStatus:
+      type: string
+      enum: [active, expired, lifted]
+      description: |
+        Server-computed. `active`: `startsAt <= now < endsAt` and not lifted. `expired`:
+        `now >= endsAt` (automatic; no call needed). `lifted`: admin lifted it early.
+
+    OffPlatformBan:
+      type: object
+      description: |
+        Time-limited ban (user-approved 2026-11-10) on one responsible user **and** their
+        company. While `active`, that user and any member acting for that company cannot
+        `createLoad`, `postLoad`, `createQuotation`, `acceptQuotation`, or `confirmBooking`
+        (409 `AccountBannedError`). Existing records stay visible; `accountStatus` is not
+        changed. Not permanent.
+      required:
+        - id
+        - findingId
+        - userId
+        - companyId
+        - partyRole
+        - status
+        - startsAt
+        - endsAt
+        - durationDays
+        - reason
+        - appliedByUserId
+      properties:
+        id:
+          $ref: '#/components/schemas/Uuid'
+        findingId:
+          $ref: '#/components/schemas/Uuid'
+        userId:
+          $ref: '#/components/schemas/Uuid'
+        companyId:
+          $ref: '#/components/schemas/Uuid'
+        partyRole:
+          $ref: '#/components/schemas/OffPlatformPartyRole'
+        status:
+          $ref: '#/components/schemas/OffPlatformBanStatus'
+        startsAt:
+          allOf:
+            - $ref: '#/components/schemas/DateTime'
+          description: Server time when the confirmed finding was recorded.
+        endsAt:
+          allOf:
+            - $ref: '#/components/schemas/DateTime'
+          description: Exactly `startsAt` + 14 days (336 hours). Never client-supplied.
+        durationDays:
+          type: integer
+          enum: [14]
+          readOnly: true
+          description: Fixed at 14 (user-approved 2026-11-10). Not configurable.
+        reason:
+          type: string
+          description: Copied from the confirmed finding's audited reason.
+        appliedByUserId:
+          $ref: '#/components/schemas/Uuid'
+        liftedAt:
+          allOf:
+            - $ref: '#/components/schemas/DateTime'
+          type: string
+          nullable: true
+        liftedByUserId:
+          allOf:
+            - $ref: '#/components/schemas/Uuid'
+          type: string
+          nullable: true
+        liftReason:
+          type: string
+          nullable: true
+
+    OffPlatformBanListResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/OffPlatformBan'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    LiftOffPlatformBanRequest:
+      type: object
+      additionalProperties: false
+      required: [liftReason]
+      properties:
+        liftReason:
+          type: string
+          minLength: 8
+          maxLength: 4000
+          description: Audited reason for lifting early.
+
     UserRole:
       type: string
       enum: [shipper, transporter, admin]
@@ -2274,8 +3214,8 @@ components:
           minLength: 1
           maxLength: 120
           description: |
-            Optional primary city (QA-026). Omit when unknown — absence is valid.
-            No fabricated default; not required for registration.
+            Optional primary city (QA-026, user-approved 2026-11-07). Omit when unknown —
+            absence is valid. No fabricated default; not required for registration.
         role:
           $ref: '#/components/schemas/PublicSignupRole'
 
@@ -2417,8 +3357,9 @@ components:
           minimum: 1
           description: |
             Access token lifetime in seconds from issuance.
-            **Approved with API v0.2.0 publish (2026-11-07; originated as Charlie provisional):**
-            **900** (15 minutes). After password reset, refresh is revoked but access JWTs
+            **User-approved 2026-11-07** ("I approve them but increase sign in sessions to 30
+            minutes"): **1800** (30 minutes), replacing the earlier 900 (15 minutes).
+            After password reset, refresh is revoked but access JWTs
             issued earlier remain valid until this natural expiry (residual exposure window).
             Do not treat other text as implying immediate access revocation.
         user:
@@ -2442,6 +3383,16 @@ components:
           $ref: '#/components/schemas/UserRole'
         accountStatus:
           $ref: '#/components/schemas/AccountStatus'
+        bannedUntil:
+          allOf:
+            - $ref: '#/components/schemas/DateTime'
+          type: string
+          nullable: true
+          readOnly: true
+          description: |
+            `endsAt` of the active off-platform ban on this user (user-approved 2026-11-10),
+            or null when none is active. Server-computed; not writable. Not an
+            `accountStatus` change.
         createdAt:
           $ref: '#/components/schemas/DateTime'
         updatedAt:
@@ -2502,9 +3453,20 @@ components:
           minLength: 1
           maxLength: 120
           description: |
-            Optional primary city (QA-026). Null/omitted when unknown — no fabricated default.
+            Optional primary city (QA-026, user-approved 2026-11-07). Null/omitted when
+            unknown — no fabricated default.
         verificationStatus:
           $ref: '#/components/schemas/VerificationStatus'
+        bannedUntil:
+          allOf:
+            - $ref: '#/components/schemas/DateTime'
+          type: string
+          nullable: true
+          readOnly: true
+          description: |
+            `endsAt` of the active off-platform ban on this company (user-approved 2026-11-10),
+            or null when none is active. Server-computed; not writable. Not an
+            `accountStatus` change.
         createdAt:
           $ref: '#/components/schemas/DateTime'
         updatedAt:
@@ -2537,7 +3499,8 @@ components:
           minLength: 1
           maxLength: 120
           description: |
-            Optional primary city (QA-026). Omit when unknown; absence is valid.
+            Optional primary city (QA-026, user-approved 2026-11-07). Omit when unknown;
+            absence is valid.
         ownerUserId:
           allOf:
             - $ref: '#/components/schemas/Uuid'
@@ -2568,8 +3531,8 @@ components:
           minLength: 1
           maxLength: 120
           description: |
-            Optional primary city (QA-026). Set null to clear; omit to leave unchanged.
-            No fabricated default when omitted.
+            Optional primary city (QA-026, user-approved 2026-11-07). Set null to clear;
+            omit to leave unchanged. No fabricated default when omitted.
         verificationStatus:
           allOf:
             - $ref: '#/components/schemas/VerificationStatus'
@@ -2926,7 +3889,7 @@ components:
       type: string
       enum: [submitted, withdrawn, accepted, not_selected, rejected, expired]
       description: |
-        `not_selected` (provisional Charlie policy, not user-approved): siblings when another
+        `not_selected` (QA-002 quote restore — user-approved 2026-11-07): siblings when another
         quote is accepted; recoverable if the pending booking fails before confirmation.
         `rejected` remains for explicit rejection paths distinct from non-selection.
 
@@ -3043,6 +4006,8 @@ components:
         (QA-003 provisional Charlie policy — not user-approved).
         On shipper delivery acceptance (with POD present), status becomes `completed`.
         Release remains a separate admin/ops recording step and must not redefine completion.
+        **Commission (user-approved 2026-11-09):** 5% is recognised when status becomes
+        `completed`, not when payment is released.
         `disputed` holds release until admin resolution (QA-005).
         `awaiting_release` was removed in v0.2.0 as unsafe conflation with completion.
 
@@ -3436,7 +4401,7 @@ components:
         commissionAmount:
           allOf:
             - $ref: '#/components/schemas/NonNegativeMoneyAmount'
-          description: 5% of tripAmount half-up to minor unit (provisional rounding).
+          description: 5% of tripAmount, half-up to the minor unit (approved rounding).
         commissionRateBps:
           type: integer
           enum: [500]
@@ -3450,8 +4415,11 @@ components:
           allOf:
             - $ref: '#/components/schemas/NonNegativeMoneyAmount'
           description: |
-            tripAmount minus commissionAmount before separately assigned processing fees
-            (fee payer unresolved).
+            Server-computed: tripAmount − commissionAmount − processingFeesTotal,
+            integer minor units, same currency. Shipper pays the agreed trip amount;
+            commission and recorded processing fees are deducted from the transporter
+            (user-approved 2026-11-09). For cash, do not book a fare payout due.
+            For `deposit_balance`, do not treat an unreceipted balance remainder as payable.
         externalReference:
           type: string
           nullable: true
@@ -3477,6 +4445,13 @@ components:
         audit — QA-001/QA-005). Release is held while `disputed`. Manually recorded only;
         never claims Truber moved funds; no float; no live provider API.
         `tripAmount` must be positive; `processingFeesTotal` may be zero (QA-007).
+        Server computes `commissionAmount` (half-up 5%). `processingFeesTotal`, if supplied,
+        must match the sum of recorded transaction processing fees in the same currency
+        (409 if it does not). Mixed currency rejected. 409 if commission + fees would
+        make net negative. Corporate-credit payout stays blocked until the shipper
+        payment is recorded. For cash, no fare payout due is created and commission
+        owing is not settled by this call. For `deposit_balance`, an unreceipted
+        balance remainder is not payable (no float / no lending).
       required: [releaseChannel, tripAmount]
       properties:
         releaseChannel:
@@ -3684,7 +4659,8 @@ components:
       type: object
       description: |
         Optional body. Admin override must include auditOverrideReason; shipper omit.
-        Override never bypasses payment gates.
+        Override never bypasses payment gates, the commission-owing gate, or an active
+        off-platform ban (user-approved 2026-11-10).
       properties:
         auditOverrideReason:
           type: string
@@ -3694,6 +4670,10 @@ components:
 
     CancelBookingRequest:
       type: object
+      description: |
+        Admin-only. `reason` is stored on the cancellation audit record
+        (user-approved 2026-11-10: only admin records booking cancellation after a
+        quotation is accepted, with an audited reason).
       required: [reason]
       properties:
         reason:
@@ -3703,7 +4683,9 @@ components:
         beforeCollection:
           type: boolean
           default: true
-          description: MVP path expects true; post-collection cancel policy unresolved.
+          description: |
+            `true` if cancelled before collection; `false` if cancelled after collection.
+            Post-collection admin-recorded cancellation is user-approved 2026-11-07.
 
     ResolveDisputeRequest:
       type: object
@@ -3978,4 +4960,172 @@ components:
             $ref: '#/components/schemas/VerificationDocument'
         meta:
           $ref: '#/components/schemas/PaginationMeta'
+
+
+    CommissionReceivableStatus:
+      type: string
+      enum: [open, settled_on_release, collected, voided]
+      description: |
+        `open`: recognised at completion, not yet settled or collected.
+        `settled_on_release`: commission deducted from held trip funds on a release record
+        (not used for cash fare payouts).
+        `collected`: ops recorded a later collection (cash / residual owing).
+        `voided`: the completion was later cancelled or refunded by admin; revenue reversed.
+
+    CommissionReceivable:
+      type: object
+      required:
+        - id
+        - bookingId
+        - transporterCompanyId
+        - amount
+        - collectedAmount
+        - remainingAmount
+        - status
+        - recognisedAt
+      properties:
+        id:
+          $ref: '#/components/schemas/Uuid'
+        bookingId:
+          $ref: '#/components/schemas/Uuid'
+        transporterCompanyId:
+          $ref: '#/components/schemas/Uuid'
+        amount:
+          allOf:
+            - $ref: '#/components/schemas/NonNegativeMoneyAmount'
+          description: Original recognised 5% of the booking agreed amount, half-up to minor unit. Immutable.
+        collectedAmount:
+          allOf:
+            - $ref: '#/components/schemas/NonNegativeMoneyAmount'
+          description: |
+            Sum of `recordCommissionCollection` amounts applied to this receivable
+            (oldest-first). Starts at zero. Does not include amounts settled on release.
+        remainingAmount:
+          allOf:
+            - $ref: '#/components/schemas/NonNegativeMoneyAmount'
+          description: |
+            Unpaid remainder on this receivable, visible after partial collections.
+            For `open`: remainingAmount + collectedAmount = amount.
+            For `collected`: remainingAmount is 0 and collectedAmount = amount.
+            For `settled_on_release`: remainingAmount is 0; any previously collected
+            amount stays in collectedAmount; the rest was settled by the release.
+            For `voided`: remainingAmount is 0; collectedAmount is left as already recorded.
+        status:
+          $ref: '#/components/schemas/CommissionReceivableStatus'
+        recognisedAt:
+          $ref: '#/components/schemas/DateTime'
+          description: Timestamp when the trip became completed.
+        settledAt:
+          allOf:
+            - $ref: '#/components/schemas/DateTime'
+          type: string
+          nullable: true
+        paymentMethod:
+          allOf:
+            - $ref: '#/components/schemas/PaymentMethod'
+          type: string
+          nullable: true
+
+    CommissionAccount:
+      type: object
+      required: [companyId, outstandingByCurrency, receivables]
+      properties:
+        companyId:
+          $ref: '#/components/schemas/Uuid'
+        outstandingByCurrency:
+          type: array
+          description: |
+            One entry per currency with unpaid owing. Each amount is the sum of
+            `remainingAmount` on `open` receivables in that currency — not the
+            original recognised `amount`. Empty when nothing is outstanding, which
+            unblocks `createQuotation`, `acceptQuotation`, and `confirmBooking`.
+            Owing and collections are per currency. The accept-block is not
+            currency-scoped: those three operations are blocked whenever this
+            array is non-empty.
+          items:
+            $ref: '#/components/schemas/PositiveMoneyAmount'
+        outstandingAmount:
+          allOf:
+            - $ref: '#/components/schemas/PositiveMoneyAmount'
+          type: object
+          nullable: true
+          description: |
+            Convenience copy when `outstandingByCurrency` has exactly one entry;
+            MUST equal that entry. Null or omitted when outstanding is empty or
+            spans more than one currency.
+        receivables:
+          type: array
+          items:
+            $ref: '#/components/schemas/CommissionReceivable'
+
+    RecordCommissionCollectionRequest:
+      type: object
+      description: |
+        Records a collection against open commission owing in the given currency.
+        Not a live charge. Amount must be positive and must not exceed the
+        outstanding remaining in that same currency (QA-007). Applied only to open
+        receivables in that currency, oldest-first. Mixed-currency collections
+        are rejected.
+      required: [amount]
+      properties:
+        amount:
+          $ref: '#/components/schemas/PositiveMoneyAmount'
+        externalReference:
+          type: string
+          maxLength: 200
+        notes:
+          type: string
+          maxLength: 2000
+
+    CommissionCollectionRecord:
+      type: object
+      required:
+        - id
+        - companyId
+        - amount
+        - outstandingAmountAfter
+        - outstandingByCurrencyAfter
+        - fundsMovementClaimedByTruber
+        - recordedAt
+        - recordedByUserId
+      properties:
+        id:
+          $ref: '#/components/schemas/Uuid'
+        companyId:
+          $ref: '#/components/schemas/Uuid'
+        amount:
+          $ref: '#/components/schemas/PositiveMoneyAmount'
+        outstandingAmountAfter:
+          allOf:
+            - $ref: '#/components/schemas/NonNegativeMoneyAmount'
+          description: |
+            Remaining open owing in the collection's currency after this record
+            is applied. `0` if that currency is cleared. Other currencies are
+            not included here; see `outstandingByCurrencyAfter`.
+        outstandingByCurrencyAfter:
+          type: array
+          description: |
+            Remaining open owing after this collection, one `PositiveMoneyAmount`
+            per currency that still has remaining owing. Empty if nothing remains
+            in any currency (which unblocks `createQuotation`, `acceptQuotation`,
+            and `confirmBooking`). Omits the collection currency when
+            `outstandingAmountAfter` is `0`.
+          items:
+            $ref: '#/components/schemas/PositiveMoneyAmount'
+        externalReference:
+          type: string
+          nullable: true
+          maxLength: 200
+        notes:
+          type: string
+          nullable: true
+          maxLength: 2000
+        fundsMovementClaimedByTruber:
+          type: boolean
+          enum: [false]
+          description: Always false. Collection records are audit/ops only in this contract.
+        recordedAt:
+          $ref: '#/components/schemas/DateTime'
+        recordedByUserId:
+          $ref: '#/components/schemas/Uuid'
 

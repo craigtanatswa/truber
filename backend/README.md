@@ -1,8 +1,8 @@
 # Truber backend (auth and loads)
 
-NestJS service for the published API v0.2.0 slice: registration and login, refresh sessions, password reset, OTP account verification, companies, and shipper loads. PostgreSQL with PostGIS stores the data. Nothing in this service moves money or sends email or SMS.
+NestJS service for the published API v0.4.0 slice: registration and login, refresh sessions, password reset, OTP account verification, companies, and shipper loads. PostgreSQL with PostGIS stores the data. Nothing in this service moves money or sends email or SMS.
 
-The OpenAPI file at `../api/openapi.yaml` is the published contract (SHA-256 `38d7b49463edd707cd0da0eb6ad977af67fc67cfef539de8219a060a01073e8e`). This slice does not change that file.
+The OpenAPI file at `../api/openapi.yaml` is the published contract (SHA-256 `7f44d228ba8129398a9d2790e3e08770efbfed381fab7be391bef592f38221f4`). This slice does not change that file.
 
 ## Implemented operations
 
@@ -56,6 +56,8 @@ docker compose -f backend/docker-compose.yml up -d db
 ```
 
 The image is `postgis/postgis:16-3.4`. This environment had no Docker daemon, so the checks below used Ubuntu packages `postgresql-16` and `postgresql-16-postgis-3` instead. GitHub Actions uses the PostGIS image.
+
+PostGIS version note: the compose file pins PostGIS 3.4. PGDG no longer ships a 3.4 build for PostgreSQL 16 on Debian trixie, so the local checks for API v0.4.0 ran on PostgreSQL 16.15 with PostGIS 3.7.0. The schema and tests only use basic `geography(Point,4326)` columns and casts.
 
 ```bash
 cd backend
