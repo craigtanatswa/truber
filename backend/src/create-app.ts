@@ -12,6 +12,8 @@ export async function createApp(options?: { logger?: LoggerService | false }): P
   const app = await NestFactory.create(AppModule, {
     logger: options?.logger ?? ['error', 'warn', 'log'],
     bodyParser: false,
+    // Throw on a failed boot instead of calling process.exit, so the serverless handler can answer 503.
+    abortOnError: false,
   });
   const env = app.get<Env>(ENV);
   if (env.CLIENT_IP_SOURCE === 'vercel') {

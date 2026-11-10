@@ -114,4 +114,26 @@ describe('serverless entry point', () => {
       expect(serverless[key].requestId).toBeTruthy();
     }
   });
+
+  it('answers 503 instead of exiting when the environment is invalid at boot', async () => {
+    await closeCachedApp();
+    const saved = process.env.JWT_ACCESS_SECRET;
+    const stderr = jest.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const exit = jest.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`process.exit(${code}) called`);
+    }) as never);
+    delete process.env.JWT_ACCESS_SECRET;
+    try {
+      const response = await request(server).get('/auth/me');
+      expect(response.status).toBe(503);
+      expect(response.body).toEqual({ code: 'SERVICE_UNAVAILABLE', message: 'Service temporarily unavailable' });
+      expect(exit).not.toHaveBeenCalled();
+    } finally {
+      process.env.JWT_ACCESS_SECRET = saved;
+      exit.mockRestore();
+      stderr.mockRestore();
+    }
+    // The failed boot is not cached: the next request boots normally.
+    expect((await request(server).get('/auth/me')).status).toBe(401);
+  });
 });
