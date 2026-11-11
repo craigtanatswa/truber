@@ -21,10 +21,4 @@
   <url>
     <loc>https://truber-web.vercel.app/contact</loc>
   </url>
-  <url>
-    <loc>https://truber-web.vercel.app/sign-in</loc>
-  </url>
-  <url>
-    <loc>https://truber-web.vercel.app/register</loc>
-  </url>
 </urlset>
