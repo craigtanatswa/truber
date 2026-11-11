@@ -729,16 +729,13 @@ a {
   height: 100%;
   object-fit: cover;
   object-position: 50% 60%;
-  opacity: 0;
+  opacity: 1;
   transition: opacity 400ms linear;
   pointer-events: none;
 }
 
-.hero-video.is-playing {
-  opacity: 1;
-}
-
-.hero-video.is-looping {
+.hero-video.is-looping,
+.hero-video.is-paused {
   opacity: 0;
 }
 

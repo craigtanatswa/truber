@@ -24,10 +24,12 @@ raf = 0;
 function hide() {
 v.pause();
 v.classList.remove("is-playing", "is-looping");
+v.classList.add("is-paused");
 stop();
 }
 
 function play() {
+v.classList.remove("is-paused");
 var p = v.play();
 if (p && p.catch) p.catch(hide);
 }
