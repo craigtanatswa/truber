@@ -27,12 +27,10 @@
 <link rel="icon" type="image/png" sizes="32x32" href="/assets/icon-32.png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="manifest" href="/site.webmanifest">
-<script>try{var t=localStorage.getItem("truber-theme");if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
 <link rel="preload" href="/assets/fonts/InterVariable-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/tokens.css">
 <link rel="stylesheet" href="/tokens-web-v2.css">
 <link rel="stylesheet" href="/styles.css">
-<script src="/theme.js" defer></script>
 <script src="/motion.js" defer></script>
 </head>
 <body>
@@ -66,7 +64,6 @@
       </ul>
     </nav>
     <div class="header-actions">
-      <div id="theme-toggle-slot"></div>
       <a class="btn btn-primary header-cta" href="/app">Open web app</a>
     </div>
   </div>
@@ -190,7 +187,7 @@
       <div class="section-actions">
         <div class="btn-row">
           <a class="btn btn-primary" href="/app">Post a load</a>
-          <a class="btn btn-secondary" href="/become-a-transporter">Become a transporter</a>
+          <a class="btn btn-primary" href="/become-a-transporter">Become a transporter</a>
         </div>
       </div>
     </div>

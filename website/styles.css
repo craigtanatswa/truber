@@ -24,46 +24,43 @@
   --v2-glass-text: rgb(254 254 254);
   --v2-glass-text-muted: rgba(254,254,254,.72);
   --v2-glass-text-inverse: rgb(0 0 0);
-  --v2-btn-radius: 8px;
+  --v2-btn-radius: 999px;
   --v2-btn-primary-hover: #002FE0;
   --v2-btn-primary-active: #002ACB;
-  --v2-btn-secondary-bg: #282828;
-  --v2-btn-secondary-hover: #333333;
-  --v2-btn-secondary-active: #3D3D3D;
-  --v2-btn-secondary-text: #FEFEFE;
   --v2-focus-ring: rgb(153 174 255);
 }
 
-[data-theme="light"] {
-  --v2-glass-bg: rgba(254,254,254,.72);
-  --v2-glass-border: rgba(0,0,0,.08);
-  --v2-glass-fallback: rgba(254,254,254,.72);
-  --v2-header-bg: rgba(254,254,254,.46);
-  --v2-glass-text: rgb(0 0 0);
-  --v2-glass-text-muted: rgba(0,0,0,.62);
-  --v2-glass-text-inverse: rgb(254 254 254);
-  --v2-btn-secondary-bg: #EEEEEE;
-  --v2-btn-secondary-hover: #E2E2E2;
-  --v2-btn-secondary-active: #D6D6D6;
-  --v2-btn-secondary-text: #000000;
-  --v2-focus-ring: #0035FE;
-}
-
-@media (prefers-color-scheme: light) {
-  :root:not([data-theme="dark"]) {
-    --v2-glass-bg: rgba(254,254,254,.72);
-    --v2-glass-border: rgba(0,0,0,.08);
-    --v2-glass-fallback: rgba(254,254,254,.72);
-    --v2-header-bg: rgba(254,254,254,.46);
-    --v2-glass-text: rgb(0 0 0);
-    --v2-glass-text-muted: rgba(0,0,0,.62);
-    --v2-glass-text-inverse: rgb(254 254 254);
-    --v2-btn-secondary-bg: #EEEEEE;
-    --v2-btn-secondary-hover: #E2E2E2;
-    --v2-btn-secondary-active: #D6D6D6;
-    --v2-btn-secondary-text: #000000;
-    --v2-focus-ring: #0035FE;
-  }
+/* The website is dark only: pin the tokens.css dark palette regardless of system theme. */
+:root {
+  color-scheme: dark;
+  --truber-primary: #0035FE;
+  --truber-primary-pressed: #002ACB;
+  --truber-primary-soft: #0D1630;
+  --truber-on-primary: #FEFEFE;
+  --truber-link: #6684FF;
+  --truber-nav-active: #6684FF;
+  --truber-ring: #99AEFF;
+  --truber-sidebar: #000000;
+  --truber-bg: #000000;
+  --truber-card: #1A1A1A;
+  --truber-surface-muted: #111111;
+  --truber-text: #FEFEFE;
+  --truber-text-secondary: #B0B0B0;
+  --truber-text-muted: #9A9AA3;
+  --truber-text-inverse: #FEFEFE;
+  --truber-border: #2A2A2A;
+  --truber-border-strong: #545454;
+  --truber-success: #2DD4BF;
+  --truber-success-soft: #0F2E2B;
+  --truber-warning: #E0A800;
+  --truber-warning-soft: #2E2400;
+  --truber-error: #F04438;
+  --truber-error-soft: #2E1210;
+  --truber-cash: #B8B8C0;
+  --truber-cash-soft: #3A3A40;
+  --truber-payment-protected: #000000;
+  --truber-payment-protected-soft: #2A2A2E;
+  --truber-focus-ring: 2px solid var(--truber-ring);
 }
 
 .band-light {
@@ -76,6 +73,7 @@
   --truber-link: var(--v2-light-primary);
   --truber-ring: var(--v2-light-primary);
   --truber-surface-muted: var(--v2-light-surface);
+  --v2-focus-ring: var(--v2-light-primary);
   background: var(--truber-bg);
   color: var(--truber-text);
   color-scheme: light;
@@ -237,19 +235,6 @@ a {
   background: var(--v2-btn-primary-active);
 }
 
-.btn-secondary {
-  background: var(--v2-btn-secondary-bg);
-  color: var(--v2-btn-secondary-text);
-}
-
-.btn-secondary:hover {
-  background: var(--v2-btn-secondary-hover);
-}
-
-.btn-secondary:active {
-  background: var(--v2-btn-secondary-active);
-}
-
 .site-header {
   position: sticky;
   top: 0;
@@ -286,20 +271,6 @@ a {
 .logo-picture {
   display: block;
   flex: none;
-}
-
-[data-theme="light"] .site-header .site-brand {
-  background: var(--v2-black);
-  border-radius: var(--truber-radius-pill);
-  padding: 6px 12px;
-}
-
-@media (prefers-color-scheme: light) {
-  :root:not([data-theme="dark"]) .site-header .site-brand {
-    background: var(--v2-black);
-    border-radius: var(--truber-radius-pill);
-    padding: 6px 12px;
-  }
 }
 
 .nav-desktop {
@@ -418,53 +389,6 @@ a {
   align-items: center;
   gap: var(--truber-space-sm);
   margin-left: auto;
-}
-
-/* Reserve the toggle's size before theme.js inserts it (CLS 0) */
-#theme-toggle-slot {
-  display: block;
-  flex: none;
-  width: 40px;
-  height: 40px;
-}
-
-.theme-toggle {
-  position: relative;
-  display: inline-grid;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  padding: 0;
-  border: 1px solid var(--v2-glass-border);
-  border-radius: var(--truber-radius-pill);
-  background: transparent;
-  color: var(--v2-glass-text);
-  cursor: pointer;
-}
-
-.theme-toggle:hover {
-  background: var(--v2-glass-border);
-}
-
-.theme-icon {
-  grid-area: 1 / 1;
-  opacity: 0;
-  transform: rotate(-90deg);
-  transition:
-    opacity 240ms var(--truber-ease-out, ease-out),
-    transform 240ms var(--truber-ease-out, ease-out);
-}
-
-.theme-toggle[data-theme-state="light"] .theme-icon--moon,
-.theme-toggle[data-theme-state="dark"] .theme-icon--sun {
-  opacity: 1;
-  transform: none;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .theme-icon {
-    transition: none;
-  }
 }
 
 .header-cta {
@@ -773,16 +697,6 @@ a {
   flex-wrap: wrap;
   gap: var(--truber-space-md);
   margin: var(--truber-space-xl) 0 0;
-}
-
-.hero-secondary {
-  border-color: var(--v2-on-image);
-  background: transparent;
-  color: var(--v2-on-image);
-}
-
-.hero-secondary:hover {
-  background: var(--v2-hairline-dark);
 }
 
 @keyframes hero-grow {
@@ -1177,6 +1091,7 @@ html.js li[data-reveal]:nth-child(6) {
   --truber-link: var(--v2-light-primary);
   --truber-ring: var(--v2-light-primary);
   --truber-surface-muted: var(--v2-light-surface);
+  --v2-focus-ring: var(--v2-light-primary);
   background: var(--truber-bg);
   color: var(--truber-text);
   color-scheme: light;
@@ -1331,16 +1246,6 @@ main > section.hero {
   color: var(--v2-on-image);
 }
 
-.page-hero .btn-secondary {
-  border-color: var(--v2-on-image);
-  background: transparent;
-  color: var(--v2-on-image);
-}
-
-.page-hero .btn-secondary:hover {
-  background: var(--v2-hairline-dark);
-}
-
 .page-hero :focus-visible {
   outline: 2px solid var(--v2-on-image);
   outline-offset: var(--truber-focus-offset);
@@ -1383,7 +1288,7 @@ main > section.hero {
 
 .btn[disabled],
 .btn:disabled {
-  opacity: 0.52;
+  opacity: 0.72;
   cursor: not-allowed;
   transform: none;
 }
@@ -1391,12 +1296,6 @@ main > section.hero {
 .btn-primary[disabled]:hover,
 .btn-primary:disabled:hover {
   background: var(--truber-primary);
-  transform: none;
-}
-
-.btn-secondary[disabled]:hover,
-.btn-secondary:disabled:hover {
-  background: var(--v2-btn-secondary-bg);
   transform: none;
 }
 
