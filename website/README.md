@@ -27,7 +27,6 @@ npx serve website
 | `styles.css` | Layout and component styles; design tokens only, no hex values. |
 | `tokens.css` | Colour and type tokens; verbatim Design file. |
 | `tokens-web-v2.css` | Design v2 tokens; verbatim; loaded after `tokens.css`. |
-| `theme.js` | System/Light/Dark theme toggle. |
 | `motion.js` | IntersectionObserver reveals and pinned-scene switch. |
 | `forms.js` | Enables the contact and become-a-transporter demo forms, then blocks submission. |
 | `vercel.json` | Clean URLs, `/app` rewrite, redirects and security headers. |
@@ -42,10 +41,10 @@ npx serve website
 ## Design system
 
 - Twelve-column grid within a 1200 px container.
-- 64 px sticky black header: centred pill nav, theme toggle and an “Open web app” pill. Desktop nav shows from 1100 px; below that a `<details>` Menu keeps the header to one row from 640 px.
+- 64 px sticky black header: centred pill nav and an “Open web app” pill. Desktop nav shows from 1100 px; below that a `<details>` Menu keeps the header to one row from 640 px.
 - One light band only: pricing. Every other section stays on the dark scaffold.
 - No grain. Hairline dividers between sections.
-- Header and footer stay black in both themes because the wordmark is white.
+- Header and footer stay black because the wordmark is white.
 
 ## Motion
 
@@ -103,13 +102,7 @@ Truber Design owns the final copy.
 
 ## Theme
 
-With no stored choice, the site follows `prefers-color-scheme`. The toggle cycles System, Light and Dark and stores the choice under the `truber-theme` localStorage key.
-
-The inline head script prevents a theme flash and is allowed by its SHA-256 hash in the `vercel.json` CSP: `sha256-haQ8sxFQgLVxzeyUjSEeIk0t5h6vpPco7B0chcsUgSw=`. Keep the script byte-identical on every page. If it changes, recompute the hash with:
-
-```sh
-python3 -c 'import re,hashlib,base64;s=re.search(r"<script>([^<]*)</script>",open("website/index.html").read()).group(1);print("sha256-"+base64.b64encode(hashlib.sha256(s.encode()).digest()).decode())'
-```
+The website is dark only. There is no theme toggle and no inline script; styles.css pins the dark palette from tokens.css, and the CSP allows scripts from 'self' only. The light/dark toggle lives in the web app (/app).
 
 ## Search indexing
 
