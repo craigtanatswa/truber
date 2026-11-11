@@ -27,6 +27,10 @@
   --v2-btn-radius: 999px;
   --v2-btn-primary-hover: #002FE0;
   --v2-btn-primary-active: #002ACB;
+  --v2-btn-secondary-bg: #282828;
+  --v2-btn-secondary-hover: #333333;
+  --v2-btn-secondary-active: #3D3D3D;
+  --v2-btn-secondary-text: #FEFEFE;
   --v2-focus-ring: rgb(153 174 255);
 }
 
@@ -233,6 +237,20 @@ a {
 
 .btn-primary:active {
   background: var(--v2-btn-primary-active);
+}
+
+.btn-secondary {
+  border-radius: 8px;
+  background: var(--v2-btn-secondary-bg);
+  color: var(--v2-btn-secondary-text);
+}
+
+.btn-secondary:hover {
+  background: var(--v2-btn-secondary-hover);
+}
+
+.btn-secondary:active {
+  background: var(--v2-btn-secondary-active);
 }
 
 .site-header {
@@ -697,6 +715,16 @@ a {
   flex-wrap: wrap;
   gap: var(--truber-space-md);
   margin: var(--truber-space-xl) 0 0;
+}
+
+.hero-secondary {
+  border-color: var(--v2-on-image);
+  background: transparent;
+  color: var(--v2-on-image);
+}
+
+.hero-secondary:hover {
+  background: var(--v2-hairline-dark);
 }
 
 @keyframes hero-grow {
@@ -1246,6 +1274,16 @@ main > section.hero {
   color: var(--v2-on-image);
 }
 
+.page-hero .btn-secondary {
+  border-color: var(--v2-on-image);
+  background: transparent;
+  color: var(--v2-on-image);
+}
+
+.page-hero .btn-secondary:hover {
+  background: var(--v2-hairline-dark);
+}
+
 .page-hero :focus-visible {
   outline: 2px solid var(--v2-on-image);
   outline-offset: var(--truber-focus-offset);
@@ -1296,6 +1334,12 @@ main > section.hero {
 .btn-primary[disabled]:hover,
 .btn-primary:disabled:hover {
   background: var(--truber-primary);
+  transform: none;
+}
+
+.btn-secondary[disabled]:hover,
+.btn-secondary:disabled:hover {
+  background: var(--v2-btn-secondary-bg);
   transform: none;
 }
 
