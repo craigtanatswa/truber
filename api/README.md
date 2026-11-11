@@ -1,21 +1,13 @@
 # Truber API contract
 
-**Installed file:** [`openapi.yaml`](./openapi.yaml)  
-**Version:** 0.2.0  
-**SHA-256:** `38d7b49463edd707cd0da0eb6ad977af67fc67cfef539de8219a060a01073e8e`
+**Installed file:** [`openapi.yaml`](./openapi.yaml)
+**Version:** 0.5.0 (published 2026-11-11 Africa/Harare)
+**SHA-256:** `8839f1d4afebb3ceda9683d4c83604866ed80c31d094be31afb415fc08460b4a` (also in `SHA256SUMS`)
 
-This file is a byte-for-byte copy of the published contract supplied for this
-implementation (the attachment matching the publisher's authoritative
-`openapi.yaml`). It was compared with `cmp` before any backend code was written.
-The repository did not already contain an API spec, so nothing was overwritten.
+Byte-for-byte copy of the authoritative contract published by Mark (box path
+`/home/box/truber/api/openapi.yaml`). Supersedes v0.4.0
+(`7f44d228ba8129398a9d2790e3e08770efbfed381fab7be391bef592f38221f4`). What changed: [`CHANGELOG.md`](./CHANGELOG.md).
 
-No path, schema, or semantic change was made in this slice. `info.version`
-remains `0.2.0`.
-
-The publisher README refers to validation scripts and release snapshots that are
-not part of this checkout (`api/scripts/`, `api/proposals/`, `api/releases/`).
-Those files were not invented here.
-
-Backend operation coverage against this contract is listed in
+The backend implements only part of this contract; coverage is listed in
 [`../backend/README.md`](../backend/README.md). Unimplemented operations are
 absent from the server (HTTP 404), not stubbed as success.
