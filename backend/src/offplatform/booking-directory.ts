@@ -39,17 +39,3 @@ export class DevFixtureBookingDirectory extends BookingDirectory {
     return parsed as BookingParties[];
   }
 }
-
-export class UnavailableBookingDirectory extends BookingDirectory {
-  override async findById(_client: PoolClient | DbService, _bookingId: string): Promise<BookingParties | null> {
-    // Bookings are not implemented in main yet. When the bookings domain lands it
-    // supplies a real BookingDirectory implementation through the AppModule provider.
-    return null;
-  }
-
-  override async findActiveForLoad(_client: PoolClient | DbService, _loadId: string): Promise<BookingParties | null> {
-    // Bookings are not implemented in main yet. When the bookings domain lands it
-    // supplies a real BookingDirectory implementation through the AppModule provider.
-    return null;
-  }
-}

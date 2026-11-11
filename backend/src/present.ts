@@ -1,5 +1,12 @@
 import { QueryResultRow } from 'pg';
-import { CompanyResponse, DbUser, GeoPointResponse, LoadResponse, UserResponse } from './domain';
+import {
+  CompanyResponse,
+  DbUser,
+  GeoPointResponse,
+  LoadResponse,
+  QuotationResponse,
+  UserResponse,
+} from './domain';
 import { iso } from './common/crypto';
 
 export function presentUser(user: DbUser): UserResponse {
@@ -105,4 +112,39 @@ export const LOAD_RETURNING = `
   l.currency,
   l.created_at AS "createdAt",
   l.updated_at AS "updatedAt"
+`;
+
+export function presentQuotation(row: QueryResultRow): QuotationResponse {
+  return {
+    id: String(row.id),
+    loadId: String(row.loadId),
+    transporterCompanyId: String(row.transporterCompanyId),
+    truckId: row.truckId == null ? null : String(row.truckId),
+    amount: {
+      amountMinor: Number(row.amountMinor),
+      currency: String(row.currency),
+    },
+    status: row.status as QuotationResponse['status'],
+    notes: nullableString(row.notes),
+    validUntil: iso(asTimestamp(row.validUntil)),
+    createdAt: iso(asTimestamp(row.createdAt)),
+    updatedAt: iso(asTimestamp(row.updatedAt)),
+  };
+}
+
+export const QUOTATION_RETURNING = `
+  q.id,
+  q.load_id AS "loadId",
+  q.transporter_company_id AS "transporterCompanyId",
+  q.truck_id AS "truckId",
+  q.amount_minor AS "amountMinor",
+  q.currency,
+  CASE
+    WHEN q.status = 'submitted' AND q.valid_until <= clock_timestamp() THEN 'expired'
+    ELSE q.status
+  END AS status,
+  q.notes,
+  q.valid_until AS "validUntil",
+  q.created_at AS "createdAt",
+  q.updated_at AS "updatedAt"
 `;
