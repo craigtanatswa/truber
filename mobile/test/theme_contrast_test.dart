@@ -1,7 +1,9 @@
 // WCAG 2.x contrast for every text/background pair the app actually uses,
 // in both themes, using the shipped ThemeData (TruberAppTheme) and
 // truber_design tokens. Colours are NOT changed here: a known failure is
-// listed in [_knownFailures] and its test is skipped with the reason.
+// listed in [_knownFailures] and its test is skipped with the reason. A pair
+// WCAG does not require to meet 3:1 is listed in [_exempt]; its test still
+// runs and checks the condition that makes it exempt.
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -193,21 +195,22 @@ List<Pair> pairsFor(Brightness b) {
 }
 
 /// Pairs that fail today. Colours are Design's; not changed here.
-const _knownFailures = <String, String>{
+/// Pairs that fail and are not exempt. Empty since Design's 11 Nov token
+/// update (inputBorder / inputBorderDark, focusRingDark).
+const _knownFailures = <String, String>{};
+
+/// WCAG 1.4.11 (Non-text Contrast) exemption: a button's border doesn't need
+/// 3:1 when the control is identified by its label. Maps the border pair to
+/// the label pair that must then meet 4.5:1.
+const _wcag1411 =
+    'Exempt under WCAG 1.4.11: the outlined button is identified by its label, '
+    'not its border, so the border needs no minimum contrast. The label must '
+    'still meet 4.5:1.';
+const _exempt = <String, String>{
   'light · button · outlined border vs scaffold':
-      'Outlined (secondary) buttons are unchanged by request; Design token borderStrong #D0D0D0 on scaffold #F6F6F6. Needs Design.',
+      'light · button · outlined label on scaffold',
   'dark · button · outlined border vs scaffold':
-      'Outlined (secondary) buttons are unchanged by request; Design token borderStrongDark #545454 on scaffoldDark #141416. Needs Design.',
-  'light · input · enabled border vs fill':
-      'Design token border #EEEEEE on white input fill; WCAG 1.4.11 needs 3:1 for component boundaries. Needs Design.',
-  'light · input · enabled border vs scaffold':
-      'Design token border #EEEEEE on scaffold #F6F6F6. Needs Design.',
-  'dark · input · enabled border vs fill':
-      'Design token borderDark #3A3A40 on surfaceMutedDark #1C1C20. Needs Design.',
-  'dark · input · enabled border vs scaffold':
-      'Design token borderDark #3A3A40 on scaffoldDark #141416. Needs Design.',
-  'dark · input · focused border vs fill':
-      'Design theme uses primaryDark (#0035FE since the 11 Nov brand change) for the dark focused input border; 2.38:1 on surfaceMutedDark #1C1C20. Needs Design.',
+      'dark · button · outlined label on scaffold',
 };
 
 void main() {
@@ -221,7 +224,7 @@ void main() {
       b.writeln(
           '| ${p.theme} | ${p.group} | ${p.name} | ${_hex(p.fg)} | ${_hex(p.bg)} | '
           '${p.ratio.toStringAsFixed(2)}:1 | ${_min(p.kind).toStringAsFixed(1)} | '
-          '${ok ? 'pass' : (_knownFailures.containsKey(p.id) ? 'FAIL (known, skipped)' : 'FAIL')} |');
+          '${ok ? 'pass' : _exempt.containsKey(p.id) ? 'exempt (WCAG 1.4.11)' : (_knownFailures.containsKey(p.id) ? 'FAIL (known, skipped)' : 'FAIL')} |');
     }
     // ignore: avoid_print
     print(b);
@@ -235,6 +238,16 @@ void main() {
   });
 
   for (final p in all) {
+    final label = _exempt[p.id];
+    if (label != null) {
+      test('${p.id}: $_wcag1411', () {
+        final l = all.firstWhere((x) => x.id == label);
+        expect(l.kind, Kind.text);
+        expect(l.ratio, greaterThanOrEqualTo(4.5),
+            reason: '$label = ${l.ratio.toStringAsFixed(2)}:1');
+      });
+      continue;
+    }
     final reason = _knownFailures[p.id];
     test('${p.id} ≥ ${_min(p.kind)}:1', () {
       expect(p.ratio, greaterThanOrEqualTo(_min(p.kind)),
@@ -245,6 +258,13 @@ void main() {
             ? false
             : 'Known failure, colours unchanged: $reason');
   }
+
+  test('exempt list has no stale entries', () {
+    final ids = {for (final p in all) p.id};
+    for (final e in _exempt.entries) {
+      expect(ids, containsAll([e.key, e.value]), reason: 'stale key ${e.key}');
+    }
+  });
 
   test('known-failure list has no stale entries', () {
     final ids = {for (final p in all) p.id};

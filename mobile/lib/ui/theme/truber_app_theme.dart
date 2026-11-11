@@ -1,19 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:truber_design/truber_design.dart';
 
-/// Values from Design's primary-button spec (2026-11-11) with no exact
-/// truber_design token yet. **Pending tokens**: Design to add these to
-/// `design/lib/tokens/colors.dart`, then replace each use with the token.
-/// This is the only place in the app with hex colour literals.
-abstract final class TruberPendingTokens {
-  /// Primary button pressed fill. Pending token. Nearest existing token is
-  /// `TruberColors.primaryPressed` / `cobalt700` = #002ACC (1 step off).
-  static const Color primaryPressed = Color(0xFF002ACB);
-
-  /// Dark-mode focus ring for primary buttons. Pending token.
-  static const Color focusRingDark = Color(0xFF99AEFF);
-}
-
 /// Colours a primary (blue-filled) button can use, per brightness. Shared by
 /// the theme and test/theme_contrast_test.dart.
 @immutable
@@ -36,20 +23,20 @@ class TruberPrimaryButtonPalette {
 
   static const light = TruberPrimaryButtonPalette._(
     primary: TruberColors.primary,
-    pressed: TruberPendingTokens.primaryPressed,
+    pressed: TruberColors.primaryPressed, // #002ACB
     onPrimary: TruberColors.onPrimary,
     disabledFill: TruberColors.surfaceSunken, // #EEEEEE
     disabledLabel: TruberColors.grey600, // #545454
-    focusRing: TruberColors.primary,
+    focusRing: TruberColors.focusRing,
   );
 
   static const dark = TruberPrimaryButtonPalette._(
     primary: TruberColors.primaryDark,
-    pressed: TruberPendingTokens.primaryPressed,
+    pressed: TruberColors.primaryDarkPressed, // #002ACB
     onPrimary: TruberColors.onPrimaryDark,
     disabledFill: TruberColors.surfaceMutedDark,
     disabledLabel: TruberColors.textMutedDark,
-    focusRing: TruberPendingTokens.focusRingDark,
+    focusRing: TruberColors.focusRingDark, // #99AEFF
   );
 
   static TruberPrimaryButtonPalette of(Brightness b) =>

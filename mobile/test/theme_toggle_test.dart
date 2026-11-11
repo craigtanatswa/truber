@@ -245,7 +245,7 @@ void main() {
         final style = Theme.of(tester.element(f)).elevatedButtonTheme.style!;
         expect(style.splashFactory, NoSplash.splashFactory);
         expect(style.backgroundColor!.resolve({WidgetState.pressed}),
-            TruberPendingTokens.primaryPressed);
+            TruberColors.primaryPressed);
         expect(
             style.backgroundColor!.resolve({WidgetState.disabled}),
             b == Brightness.dark
