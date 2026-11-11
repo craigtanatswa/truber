@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:truber_app/ui/theme/truber_app_theme.dart';
 import 'package:provider/provider.dart';
 import 'package:truber_design/truber_design.dart';
 
@@ -162,6 +163,7 @@ class _QuotationsScreenState extends State<QuotationsScreen> {
                                     ],
                                     const SizedBox(height: TruberSpacing.md),
                                     ElevatedButton(
+                                      style: TruberAppTheme.fullWidthCta,
                                       key: Key('select_quote_${q.id}'),
                                       onPressed: _busy ||
                                               blocked ||

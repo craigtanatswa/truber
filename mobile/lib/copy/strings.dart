@@ -107,6 +107,8 @@ abstract final class TruberCopy {
   static const themeSystem = 'System';
   static const themeLight = 'Light';
   static const themeDark = 'Dark';
+  static const themeSwitchDark = 'Switch to dark theme';
+  static const themeSwitchLight = 'Switch to light theme';
 
   static const logout = 'Log out';
 

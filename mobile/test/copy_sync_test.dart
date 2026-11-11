@@ -162,4 +162,18 @@ void main() {
             '| `pay.deposit_balance_help` | ${TruberCopy.payDepositBalanceHelp} |'));
     expect(TruberCopy.payDepositBalanceHelp, contains('\u2019'));
   });
+
+  test('settings.theme_* (Appearance + pre-sign-in toggle) match Design', () {
+    final md = File('../design/copy/microcopy.md').readAsStringSync();
+    const rows = {
+      'settings.theme_system': TruberCopy.themeSystem,
+      'settings.theme_light': TruberCopy.themeLight,
+      'settings.theme_dark': TruberCopy.themeDark,
+      'settings.theme_switch_dark': TruberCopy.themeSwitchDark,
+      'settings.theme_switch_light': TruberCopy.themeSwitchLight,
+    };
+    for (final e in rows.entries) {
+      expect(md, contains('| `${e.key}` | ${e.value} |'), reason: e.key);
+    }
+  });
 }

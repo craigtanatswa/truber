@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:truber_app/ui/theme/truber_app_theme.dart';
 import 'package:provider/provider.dart';
 import 'package:truber_design/truber_design.dart';
 
@@ -152,6 +153,7 @@ class _SubmitQuoteScreenState extends State<SubmitQuoteScreen> {
           ),
           const SizedBox(height: TruberSpacing.xl),
           ElevatedButton(
+            style: TruberAppTheme.fullWidthCta,
             key: const Key('quote_submit'),
             onPressed: _busy ? null : _submit,
             child: _busy

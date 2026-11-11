@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:truber_app/ui/theme/truber_app_theme.dart';
 import 'package:provider/provider.dart';
 import 'package:truber_design/truber_design.dart';
 
@@ -263,6 +264,7 @@ class _PaymentChoiceScreenState extends State<PaymentChoiceScreen> {
           ],
           const SizedBox(height: TruberSpacing.lg),
           ElevatedButton(
+            style: TruberAppTheme.fullWidthCta,
             key: const Key('propose_payment_cta'),
             onPressed: _busy ? null : _submit,
             child: _busy

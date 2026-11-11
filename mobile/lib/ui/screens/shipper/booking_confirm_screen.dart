@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:truber_app/ui/theme/truber_app_theme.dart';
 import 'package:provider/provider.dart';
 import 'package:truber_design/truber_design.dart';
 
@@ -182,6 +183,7 @@ class _BookingConfirmScreenState extends State<BookingConfirmScreen> {
           const SizedBox(height: TruberSpacing.lg),
           if (_arrangement == null)
             ElevatedButton(
+              style: TruberAppTheme.fullWidthCta,
               key: const Key('choose_payment_cta'),
               onPressed: _openPayment,
               child: const Text(TruberCopy.bookingContinuePayment),
@@ -210,6 +212,7 @@ class _BookingConfirmScreenState extends State<BookingConfirmScreen> {
           ],
           const SizedBox(height: TruberSpacing.xl),
           ElevatedButton(
+            style: TruberAppTheme.fullWidthCta,
             key: const Key('confirm_booking_cta'),
             onPressed: canConfirm && !_busy ? _confirmBooking : null,
             child: _busy

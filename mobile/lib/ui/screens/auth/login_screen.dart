@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:truber_app/ui/theme/truber_app_theme.dart';
+import '../../widgets/theme_toggle_button.dart';
 import '../../widgets/truber_brand_logo.dart';
 import 'package:provider/provider.dart';
 import 'package:truber_design/truber_design.dart';
@@ -65,6 +67,7 @@ class _LoginScreenState extends State<LoginScreen> {
           child: TruberBrandLogo(style: TruberBrandStyle.appBarMark),
         ),
         title: const Text(TruberCopy.loginTitle),
+        actions: const [ThemeToggleButton()],
       ),
       body: ListView(
         padding: const EdgeInsets.all(TruberSpacing.xl),
@@ -139,6 +142,7 @@ class _LoginScreenState extends State<LoginScreen> {
           ],
           const SizedBox(height: TruberSpacing.xl),
           ElevatedButton(
+            style: TruberAppTheme.fullWidthCta,
             key: const Key('login_submit'),
             onPressed: _busy ? null : _submit,
             child: _busy
