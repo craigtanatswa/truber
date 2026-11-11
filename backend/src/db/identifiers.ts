@@ -1,4 +1,5 @@
 export const APP_TABLES = [
+  'bookings',
   'company_members',
   'companies',
   'delivery_outbox',
@@ -9,6 +10,7 @@ export const APP_TABLES = [
   'off_platform_reports',
   'otp_challenges',
   'password_reset_tokens',
+  'quotations',
   'rate_limit_buckets',
   'refresh_sessions',
   'schema_migrations',

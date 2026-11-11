@@ -19,6 +19,7 @@ export async function truncate(): Promise<void> {
       qualifyAppSql(
         `TRUNCATE delivery_outbox, idempotency_records, rate_limit_buckets, otp_challenges,
                 password_reset_tokens, refresh_sessions,
+                bookings, quotations,
                 off_platform_bans, off_platform_findings, off_platform_reports,
                 loads, company_members, companies, users
          RESTART IDENTITY CASCADE`,

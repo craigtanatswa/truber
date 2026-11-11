@@ -1,6 +1,6 @@
 # Truber backend (auth and loads)
 
-NestJS service for the published API v0.4.0 slice: registration and login, refresh sessions, password reset, OTP account verification, companies, and shipper loads. PostgreSQL with PostGIS stores the data. Nothing in this service moves money or sends email or SMS.
+NestJS service for the published API v0.4.0 slice: registration and login, refresh sessions, password reset, OTP account verification, companies, shipper loads, and quotations. PostgreSQL with PostGIS stores the data. Nothing in this service moves money or sends email or SMS.
 
 The OpenAPI file at `../api/openapi.yaml` is the published contract (SHA-256 `7f44d228ba8129398a9d2790e3e08770efbfed381fab7be391bef592f38221f4`). This slice does not change that file.
 
@@ -21,7 +21,11 @@ The OpenAPI file at `../api/openapi.yaml` is the published contract (SHA-256 `7f
 | GET, POST | `/loads` | Shippers see their own loads. Transporters see posted and later non-cancelled loads. Create is always `draft`. |
 | GET, PATCH | `/loads/{loadId}` | Owner edit while `draft` or `posted`. |
 | POST | `/loads/{loadId}/post` | Requires `accountStatus=active` and company `verificationStatus=verified`. |
-| POST | `/loads/{loadId}/cancel` | Owner cancel while no confirmed booking state exists. |
+| POST | `/loads/{loadId}/cancel` | Owner cancel while no confirmed booking state exists. Once a quotation is accepted a real booking exists, so this returns 409 `SELF_CANCEL_NOT_ALLOWED`. |
+| GET, POST | `/loads/{loadId}/quotations` | Shipper owner and admin see all quotations; transporters see only their own. Create requires an active account, a verified transporter company, and no active ban. Duplicate open quotations return 409. The commission gate is a seam with no records in this slice. |
+| GET | `/quotations/{quotationId}` | Visibility follows the load and owning transporter company. Expired submissions are presented as `expired`. |
+| POST | `/quotations/{quotationId}/withdraw` | Transporter withdraws its own submitted quotation. An accepted quotation cannot be withdrawn (409 `SELF_CANCEL_NOT_ALLOWED`). Revision is withdraw plus resubmit. |
+| POST | `/quotations/{quotationId}/accept` | Shipper owner accepts a submitted quotation, siblings become `not_selected`, and the load moves to `booking_pending`. The booking is created only as `pending_payment_arrangement`; it is never confirmed here. |
 
 Responses used by the tests are validated against the operation schemas in `api/openapi.yaml`.
 
@@ -32,9 +36,11 @@ These routes are absent. They respond with 404 and the shared error body. They a
 - `POST /admin/users` — no HTTP path creates an admin. The only bootstrap is the non-production seed below.
 - `GET` and `PATCH /users/{userId}` — not required for this slice. Account activation is OTP. Company verification is the admin company patch.
 - Verification document list, upload, and admin review. The contract leaves multi-document completion rules open. Documents are not pretended to be approved.
-- Trucks, quotations, bookings, payment arrangements, transactions, releases, refunds, deposit receipts, credit accounts, POD, delivery confirmation, ratings, dispute resolution.
+- `POST /loads/{loadId}/quotations/restore-not-selected` — eligibility is still open in the contract, so this stays an absent route.
+- Trucks, bookings endpoints, billing endpoints and commission records, payment arrangements, transactions, releases, refunds, deposit receipts, credit accounts, POD, delivery confirmation, ratings, dispute resolution.
+- The commission owing gate and truck quote check are seams. This slice binds no commission records and no trucks module, so there is no commission calculation and any supplied `truckId` currently returns 404 `NOT_FOUND`.
 
-Booking and payment rules are not implemented and are not functional: no confirmed arrangement, no confirmed booking, cash is not payment-protected, commission is not calculated, release is not recorded, and there is no Truber float. Fee payer and BuySafe behaviour are unchanged because those flows do not exist here.
+Booking and payment rules are not implemented and are not functional: `acceptQuotation` creates a `pending_payment_arrangement` booking only. No confirmed arrangement or confirmed booking is created, cash is not payment-protected, commission is not calculated, release is not recorded, and there is no Truber float. Fee payer and BuySafe behaviour are unchanged because those flows do not exist here.
 
 ## Verification path used by posting
 
@@ -193,4 +199,4 @@ Do not copy `payload` into tickets or logs.
 
 ## Product rules left for later slices
 
-No confirmed payment arrangement is created, so no confirmed booking is created. Cash is not marked payment-protected. The 5% completion commission is not calculated. Processing fees are not charged. Release is not recorded and is not automatic. The service holds no float.
+Accepting a quotation creates a `pending_payment_arrangement` booking only; there is no flow to confirm it. No confirmed payment arrangement is created, so no confirmed booking is created. Cash is not marked payment-protected. The 5% completion commission is not calculated. Processing fees are not charged. Release is not recorded and is not automatic. The service holds no float.
