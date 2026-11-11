@@ -16,6 +16,15 @@ function allowed() {
 return !reduce.matches && !lowData();
 }
 
+function setPoster() {
+var img = v.parentNode.querySelector("picture img");
+var src = img && img.currentSrc;
+if (!src || v.getAttribute("poster")) return;
+v.setAttribute("poster", src);
+v.classList.add("has-poster");
+}
+if (allowed()) setPoster();
+
 function stop() {
 if (raf) cancelAnimationFrame(raf);
 raf = 0;
@@ -46,6 +55,7 @@ raf = requestAnimationFrame(tick);
 
 function attach() {
 if (attached || !allowed()) return;
+setPoster();
 attached = true;
 v.src = v.getAttribute("data-src");
 play();

@@ -80,12 +80,10 @@
   function updateButtons() {
     var theme = effectiveTheme();
     var label = theme === "light" ? "Switch to dark theme" : "Switch to light theme";
-    var pressed = theme === "dark" ? "true" : "false";
     buttons.forEach(function (button) {
       button.setAttribute("data-theme-state", theme);
       button.setAttribute("aria-label", label);
       button.setAttribute("title", label);
-      button.setAttribute("aria-pressed", pressed);
     });
   }
 
@@ -116,23 +114,4 @@
     }
   });
 
-  if (
-    window.matchMedia("(hover: hover) and (pointer: fine)").matches &&
-    !window.matchMedia("(prefers-reduced-motion: reduce)").matches
-  ) {
-    document.addEventListener(
-      "pointermove",
-      function (event) {
-        var target = event.target;
-        var button = target && target.closest ? target.closest(".btn") : null;
-        if (!button) {
-          return;
-        }
-        var rect = button.getBoundingClientRect();
-        button.style.setProperty("--mx", event.clientX - rect.left + "px");
-        button.style.setProperty("--my", event.clientY - rect.top + "px");
-      },
-      { passive: true }
-    );
-  }
 })();
