@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:truber_app/ui/theme/truber_app_theme.dart';
 import '../../widgets/truber_brand_logo.dart';
 import 'package:provider/provider.dart';
 import 'package:truber_design/truber_design.dart';
@@ -90,6 +91,7 @@ class _ResetPasswordConfirmScreenState
             Text(TruberCopy.resetSuccess, style: theme.textTheme.bodyLarge),
             const SizedBox(height: TruberSpacing.xl),
             ElevatedButton(
+              style: TruberAppTheme.fullWidthCta,
               key: const Key('reset_confirm_back_login'),
               onPressed: () {
                 Navigator.of(context).pushAndRemoveUntil(
@@ -220,6 +222,7 @@ class _ResetPasswordConfirmScreenState
           ],
           const SizedBox(height: TruberSpacing.xl),
           ElevatedButton(
+            style: TruberAppTheme.fullWidthCta,
             key: const Key('reset_confirm_submit'),
             onPressed: _busy ? null : _submit,
             child: _busy

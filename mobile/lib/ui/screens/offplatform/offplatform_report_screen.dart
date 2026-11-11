@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:truber_app/ui/theme/truber_app_theme.dart';
 import 'package:provider/provider.dart';
 import 'package:truber_design/truber_design.dart';
 
@@ -128,6 +129,7 @@ class _OffPlatformReportScreenState extends State<OffPlatformReportScreen> {
           ),
           const SizedBox(height: TruberSpacing.lg),
           ElevatedButton(
+            style: TruberAppTheme.fullWidthCta,
             key: const Key('offplatform_submit'),
             onPressed: _busy || _party == null ? null : _submit,
             child: _busy

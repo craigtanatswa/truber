@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'ui/theme/truber_app_theme.dart';
 import 'package:provider/provider.dart';
-import 'package:truber_design/truber_design.dart';
 
 import 'config/flags.dart';
 import 'data/live/api_client.dart';
@@ -139,8 +139,8 @@ class TruberApp extends StatelessWidget {
           return MaterialApp(
             title: 'Truber',
             debugShowCheckedModeBanner: false,
-            theme: TruberTheme.light(),
-            darkTheme: TruberTheme.dark(),
+            theme: TruberAppTheme.light(),
+            darkTheme: TruberAppTheme.dark(),
             themeMode: themes.mode,
             home: _DemoHome(demo: demo),
           );
