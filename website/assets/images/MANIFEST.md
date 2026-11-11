@@ -87,3 +87,13 @@ All four images were AI-generated with Grok Imagine by Brian on 10 Nov 2026, at 
 | `scene-3-delivered-2560.webp` | 159416 | `d0685e1e87f5f16f83e5bea6691acd520b491b722af720a7ed933ff0ff4b3cbf` |
 | `scene-3-delivered-640.avif` | 15489 | `755f9380b10807a3fdd9f95ca2c2c5d31a5c84add59bc5bf2d00f708b81d281e` |
 | `scene-3-delivered-640.webp` | 19230 | `f8cfee408221ad496ef4d3055f9dd026d5511bc1f45a664d2657f9c87a9791c9` |
+
+## Video: hero-truck-drive
+- Use: Home hero background video, attached by /hero-video.js after window load; muted, playsinline, loop, preload="none", no autoplay attribute. Still (and LCP) is the existing hero-highway `<picture>`, which matches the video's first frame closely, so no separate poster is shipped.
+- Source: AI-generated with Grok Imagine from the hero-highway still (image-to-video). Prompt: per Design (not recorded in design/website/video-v2/). Delivered by Design as design/website/video-v2/hero-truck-drive-1280.mp4 (H.264, 1280x720, 24 fps, 8.04 s, no audio, faststart), sha256 fcedf3b908e8a71a5960d80f06ed355b4e2df6f0db277b9ebcfeee6278b458e9.
+- Content: unbranded white truck with covered trailer on a two-lane highway through bushveld with granite kopjes. No real brands, logos, readable plates, signage or people (frames checked at 1 s intervals and the last frame).
+- Processing: metadata stripped with ffmpeg 7 (`-map_metadata -1 -map_chapters -1 -c copy -bsf:v filter_units=remove_types=6 -fflags +bitexact -movflags +faststart`); no re-encode. SEI user data (encoder settings) removed; video stream bit-identical otherwise.
+
+| File | Bytes | sha256 |
+|---|---|---|
+| `assets/video/hero-truck-drive-1280.mp4` | 926463 | `b4d9f05e60e7b6dce9c3bae5063b2f4fed88fd8b04f6eac665167c6fecadef98` |
