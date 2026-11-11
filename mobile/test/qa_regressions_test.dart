@@ -450,7 +450,7 @@ void main() {
     expect(style.fg, TruberColors.info);
     expect(style.bg, TruberColors.infoSoft);
     expect(style.fg, TruberColors.primary); // info == cobalt brand
-    expect(TruberColors.primary, const Color(0xFF0035FF));
+    expect(TruberColors.primary, TruberColors.cobalt600); // brand blue token
     final protected = StatusChipStyle.of(StatusChipTone.protected);
     expect(protected.bg, TruberColors.paymentProtected);
     expect(protected.bg, TruberColors.black); // v3 black chip
