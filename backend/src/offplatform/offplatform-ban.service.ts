@@ -18,6 +18,7 @@ import {
 
 export interface AssertNotBannedOptions {
   counterpartyCompanyId?: string | null;
+  counterpartyUserId?: string | null;
   client?: PoolClient;
 }
 
@@ -70,6 +71,7 @@ export class OffPlatformBanService {
   ): Promise<void> {
     const callerCompanyId = companyId;
     const counterpartyCompanyId = options.counterpartyCompanyId ?? null;
+    const counterpartyUserId = options.counterpartyUserId ?? null;
     const result = await run<{ bannedUntil: Date | string | null; bannedParty: BannedParty | null }>(
       options.client ?? this.db,
       `WITH server_clock AS (SELECT clock_timestamp() AS at)
@@ -79,13 +81,14 @@ export class OffPlatformBanService {
            WHEN bool_or(user_id = $1) THEN 'caller'
            WHEN bool_or(company_id = $2) THEN 'caller_company'
            WHEN bool_or(company_id = $3) THEN 'counterparty_company'
+           WHEN bool_or(user_id = $4) THEN 'counterparty_company'
          END AS "bannedParty"
        FROM off_platform_bans, server_clock
        WHERE starts_at <= server_clock.at
          AND server_clock.at < ends_at
          AND lifted_at IS NULL
-         AND (user_id = $1 OR company_id = $2 OR company_id = $3)`,
-      [userId, callerCompanyId, counterpartyCompanyId],
+         AND (user_id = $1 OR company_id = $2 OR company_id = $3 OR user_id = $4)`,
+      [userId, callerCompanyId, counterpartyCompanyId, counterpartyUserId],
     );
     const row = result.rows[0];
     if (!row || row.bannedUntil == null || !row.bannedParty) {
