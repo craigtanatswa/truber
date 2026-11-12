@@ -1,8 +1,8 @@
-# Truber backend (auth and loads)
+# Truber backend (auth, companies, loads, billing)
 
-NestJS service for the published API v0.4.0 slice: registration and login, refresh sessions, password reset, OTP account verification, companies, and shipper loads. PostgreSQL with PostGIS stores the data. Nothing in this service moves money or sends email or SMS.
+NestJS service for the published API v0.4.0 slice: registration and login, refresh sessions, password reset, OTP account verification, companies, shipper loads, and billing slice 1 (commission receivables and collections). PostgreSQL with PostGIS stores the data. Nothing in this service moves money or sends email or SMS.
 
-The OpenAPI file at `../api/openapi.yaml` is the published contract (SHA-256 `7f44d228ba8129398a9d2790e3e08770efbfed381fab7be391bef592f38221f4`). This slice does not change that file.
+The OpenAPI file at `../api/openapi.yaml` is the published contract (SHA-256 `7f44d228ba8129398a9d2790e3e08770efbfed381fab7be391bef592f38221f4`, v0.4.0). This slice does not change that file.
 
 ## Implemented operations
 
@@ -22,8 +22,23 @@ The OpenAPI file at `../api/openapi.yaml` is the published contract (SHA-256 `7f
 | GET, PATCH | `/loads/{loadId}` | Owner edit while `draft` or `posted`. |
 | POST | `/loads/{loadId}/post` | Requires `accountStatus=active` and company `verificationStatus=verified`. |
 | POST | `/loads/{loadId}/cancel` | Owner cancel while no confirmed booking state exists. |
+| GET | `/companies/{companyId}/commission-account` | Members and admins; non-members and non-transporter companies get 404. `outstandingByCurrency` is the per-currency sum of `remainingAmount` on `open` receivables, `[]` when nothing is owed. `outstandingAmount` is present only when exactly one currency is owed. |
+| POST | `/admin/companies/{companyId}/commission-collections` | Admin only, transporter companies, `Idempotency-Key` required. Replay returns the original 201; a different body with the same key is 409. Applied oldest-first in that currency only; over-collection is 409 `COLLECTION_EXCEEDS_OUTSTANDING`. Records only, `fundsMovementClaimedByTruber: false`. |
 
 Responses used by the tests are validated against the operation schemas in `api/openapi.yaml`.
+
+## Billing (slice 1)
+
+- Code: `src/billing/money.ts`, `commission.ts` (pure), `receivables.service.ts`, `commission-gate.service.ts`, `payment-provider.ts`, `billing.controller.ts`; migration `migrations/002_billing.sql` (`payment_arrangements`, `payment_records`, `commission_receivables`, `commission_collections`, `commission_collection_allocations`, `payouts`). `booking_id` has no foreign key until bookings land.
+- Money rules: integer minor units plus ISO 4217 currency; mixed currency is 409 `CURRENCY_MISMATCH`. Commission is 5% (500 bps) rounded half-up with BigInt, calculated by the server, and recognised at trip completion. Voiding the completion voids its receivable. Net = trip − commission − recorded fees; 409 `NET_PAYOUT_NEGATIVE` when negative and `FEE_TOTAL_MISMATCH` when the typed fee total differs. The transporter pays fees out of the payout.
+- Payment methods: cash is a receivable only. It has no fare payout, is never payment-protected, and is not settled by a release. Corporate credit payout is blocked until the shipper payment is recorded (`CREDIT_PAYMENT_NOT_RECORDED`). The unreceipted `deposit_balance` remainder is not payable (`BALANCE_NOT_RECEIPTED`). Prepay and escrow pay out only once shipper funds are recorded (`FUNDS_NOT_RECEIVED`). Truber never lends. No confirmed arrangement means no confirmed booking (`assertBookingConfirmable`, domain only).
+- Zero commission (trips under 10 minor units) is recorded as `collected` with 0, so it never blocks.
+- Gate: `CommissionGateService.assertCanTakeNewWork(client, companyId)` throws the pinned 409 `CommissionOutstandingError` (`COMMISSION_OUTSTANDING`, message "Outstanding commission must be settled before taking new work."). Single-currency details carry `outstandingAmount` and a one-entry `outstandingByCurrency`; multi-currency details carry only `outstandingByCurrency`. The gate is not currency-scoped and has no override. It takes a shared per-company advisory lock and `recognise` takes the exclusive one, so the gate and recognition for the same company serialize; the caller must pass its transaction client. Quotation and booking handlers (not built yet; owned by Mark and Brian) must call the `ACCOUNT_BANNED` guard first, then this. No HTTP route exposes the gate in this slice. Tests prove the wire body through `ApiExceptionFilter` against the createQuotation/acceptQuotation/confirmBooking 409 schemas.
+- Gate caller rules:
+  1. Call `assertCanTakeNewWork` only in a READ COMMITTED transaction. Under REPEATABLE READ or SERIALIZABLE the snapshot can be taken before the lock is granted, even when the gate is the first statement, so it can miss a receivable that committed in between.
+  2. The shared lock is held until the caller's transaction ends, so a long quotation, accept or confirm transaction delays trip-completion `recognise` for that company. Keep those transactions short.
+- Providers: `PaymentProvider` interface and `NoopPaymentProvider` only. Paynow, EcoCash, and InnBucks are candidates, not integrations. No network calls and no real money.
+- Tests need a local PostGIS database; point `DATABASE_URL` at it (any free port).
 
 ## Not implemented
 
@@ -32,9 +47,10 @@ These routes are absent. They respond with 404 and the shared error body. They a
 - `POST /admin/users` — no HTTP path creates an admin. The only bootstrap is the non-production seed below.
 - `GET` and `PATCH /users/{userId}` — not required for this slice. Account activation is OTP. Company verification is the admin company patch.
 - Verification document list, upload, and admin review. The contract leaves multi-document completion rules open. Documents are not pretended to be approved.
-- Trucks, quotations, bookings, payment arrangements, transactions, releases, refunds, deposit receipts, credit accounts, POD, delivery confirmation, ratings, dispute resolution.
+- Trucks, quotations, bookings, POD, delivery confirmation, ratings, dispute resolution, and off-platform safeguards are absent.
+- These billing operations are absent too: `listPaymentArrangements`, `createPaymentArrangement`, `getPaymentArrangement`, `confirmPaymentArrangement`, `recordProtectionEvidence`, `listPaymentTransactions`, `recordPaymentTransaction`, `recordPaymentRelease`, `recordDepositReceipt`, `recordPaymentRefund`, `getCompanyCreditAccount`, and `upsertCompanyCreditAccount`. The arrangement and transaction operations need booking rows. Credit accounts are outside slice 1.
 
-Booking and payment rules are not implemented and are not functional: no confirmed arrangement, no confirmed booking, cash is not payment-protected, commission is not calculated, release is not recorded, and there is no Truber float. Fee payer and BuySafe behaviour are unchanged because those flows do not exist here.
+Booking flows are not implemented: no confirmed arrangement is created, so no confirmed booking is created. Cash is not marked payment-protected, release is not recorded, and the service holds no float. Commission is calculated in the domain and recorded as receivables, but no booking flow calls it yet. Fee payer and BuySafe behaviour are unchanged because those flows do not exist here.
 
 ## Verification path used by posting
 
@@ -190,7 +206,11 @@ Do not copy `payload` into tickets or logs.
 - The post verification gate is applied only to `POST /loads/{loadId}/post`, which is the operation that states it. Patch of a draft or posted load does not add a second gate.
 - Cancel reasons are stored in `loads.cancel_reason` and are not part of the `Load` response.
 - No `/health` route was added, so the contract did not need a new path.
+- `CommissionReceivable` with `amount` 0 (trip under 10 minor units) has no defined status; this service uses `collected`.
+- `recordCommissionCollection` declares `Idempotency-Key` optional; the server requires it for this money record.
+- `outstandingAmount` on `CommissionAccount` is omitted (not null) when not exactly one currency is owed.
+- A void after collection keeps `collectedAmount`. The contract does not say whether collected commission is refunded to the transporter, and this service does not refund.
 
 ## Product rules left for later slices
 
-No confirmed payment arrangement is created, so no confirmed booking is created. Cash is not marked payment-protected. The 5% completion commission is not calculated. Processing fees are not charged. Release is not recorded and is not automatic. The service holds no float.
+No confirmed payment arrangement is created, so no confirmed booking is created. Cash is not marked payment-protected. Commission is calculated in the domain and recorded as receivables, but no booking flow calls it yet. Processing fees are not charged. Release is not recorded and is not automatic. The service holds no float.

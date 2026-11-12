@@ -1,6 +1,10 @@
 import { Module } from '@nestjs/common';
 import { AuthController } from './auth/auth.controller';
 import { AuthService } from './auth/auth.service';
+import { BillingController } from './billing/billing.controller';
+import { CommissionGateService } from './billing/commission-gate.service';
+import { NoopPaymentProvider, PAYMENT_PROVIDER } from './billing/payment-provider';
+import { ReceivablesService } from './billing/receivables.service';
 import { AdminOnlyGuard } from './common/admin-only.guard';
 import { JwtAuthGuard } from './common/jwt-auth.guard';
 import { CompaniesController } from './companies/companies.controller';
@@ -26,6 +30,7 @@ import { OffPlatformReportService } from './offplatform/offplatform-report.servi
 @Module({
   controllers: [
     AuthController,
+    BillingController,
     CompaniesController,
     LoadsController,
     BookingOffPlatformReportsController,
@@ -39,6 +44,9 @@ import { OffPlatformReportService } from './offplatform/offplatform-report.servi
     AuthService,
     CompaniesService,
     LoadsService,
+    ReceivablesService,
+    CommissionGateService,
+    { provide: PAYMENT_PROVIDER, useClass: NoopPaymentProvider },
     OffPlatformBanService,
     OffPlatformReportService,
     {
