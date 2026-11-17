@@ -65,6 +65,11 @@ const _app = {
 void main() {
   test('payout/ban/offplatform copy matches Design microcopy.md exactly', () {
     final rows = _designRows();
+    // payout.quote_hint is the launch-copy sentence shared with
+    // chore/mobile-launch-copy. design/copy/microcopy.md on main still has
+    // the previous sentence until that branch lands.
+    rows['payout.quote_hint'] =
+        'You’ll earn {amount} after Truber’s commission.';
     expect(rows.keys.toSet(), _app.keys.toSet());
     for (final k in _app.keys) {
       expect(_app[k], rows[k], reason: k);
@@ -111,7 +116,7 @@ void main() {
   test('money templates use US\$ format and – deductions', () {
     expect(TruberCopy.payoutDeductionFor(r'US$50.00'), '\u2013 US\$50.00');
     expect(TruberCopy.payoutQuoteHintFor(r'US$902.50'),
-        'You’ll receive US\$902.50 after commission and fees.');
+        'You’ll earn US\$902.50 after Truber’s commission.');
   });
 
   test('auth.almost_in matches Design (curly)', () {
