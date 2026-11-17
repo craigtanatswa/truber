@@ -202,7 +202,18 @@ class ApiClient {
       req.headers['Authorization'] = 'Bearer ${tokens.accessToken}';
     }
     if (headers != null) req.headers.addAll(headers);
-    return _http.send(req).then(http.Response.fromStream).timeout(timeout);
+    return _sendGuarded(req);
+  }
+
+  /// Listens to the HTTP future before applying the timeout. A browser
+  /// `fetch` rejection that arrives after the timeout must not become an
+  /// unhandled promise rejection in the web console.
+  Future<http.Response> _sendGuarded(http.Request req) {
+    final sent = _http.send(req);
+    sent.catchError((Object _) {
+      return http.StreamedResponse(const Stream<List<int>>.empty(), 599);
+    });
+    return sent.timeout(timeout).then(http.Response.fromStream);
   }
 
   dynamic _decode(http.Response res) {

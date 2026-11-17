@@ -19,6 +19,12 @@ import '../models/company.dart';
 import 'ban.dart';
 import '../models/user.dart';
 
+/// Runs [future] without leaving an unhandled rejection if it fails.
+/// Callers that only start work (cold start, retry, log out) use this.
+void guardAsync(Future<void> future) {
+  future.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+}
+
 class SessionController extends ChangeNotifier {
   SessionController({
     required this.auth,
@@ -349,6 +355,8 @@ class SessionController extends ChangeNotifier {
     _expiryTimer?.cancel();
     _expiryTimer = null;
     sessionExpiresAt = null;
+    restorePending = false;
+    error = null;
     await auth.logout();
     user = null;
     accessToken = null;

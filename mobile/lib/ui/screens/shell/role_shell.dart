@@ -23,7 +23,10 @@ class RoleShell extends StatelessWidget {
       return SessionRestoreRetry(
         message: session.error ?? '',
         onRetry: () {
-          session.bootstrap();
+          guardAsync(session.bootstrap());
+        },
+        onLogout: () {
+          guardAsync(session.logout());
         },
       );
     }
