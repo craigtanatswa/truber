@@ -18,6 +18,7 @@ const schema = z.object({
   DB_MIGRATION_CONNECTION_MODE: z.enum(['direct', 'session']).default('direct'),
   CLIENT_IP_SOURCE: z.enum(['socket', 'vercel']).default('socket'),
   CORS_ALLOWED_ORIGINS: z.string().optional(),
+  VERIFICATION_DOC_URI_HOSTS: z.string().optional(),
   DB_POOL_MAX: z.coerce.number().int().min(1).max(20).default(10),
   DB_STATEMENT_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120_000).default(15_000),
   JWT_ACCESS_SECRET: z.string().min(32),
@@ -40,6 +41,8 @@ const schema = z.object({
 export type Env = z.infer<typeof schema> & {
   /** Exact browser origins allowed by CORS. Empty means CORS is off. */
   corsOrigins: string[];
+  /** Bare file-host DNS names allowed in verification document links. Empty rejects every link. */
+  verificationDocUriHosts: string[];
   migrationUrl: string;
   runtimeRole: string | null;
   db: DbSettings;
@@ -107,7 +110,16 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env, options: { purp
   };
   assertDbSettings(db);
   const corsOrigins = parseCorsOrigins(parsed.CORS_ALLOWED_ORIGINS);
-  return { ...parsed, DEV_BOOKING_FIXTURES_FILE: devBookingFixturesFile, corsOrigins, migrationUrl, runtimeRole, db };
+  const verificationDocUriHosts = parseVerificationDocUriHosts(parsed.VERIFICATION_DOC_URI_HOSTS);
+  return {
+    ...parsed,
+    DEV_BOOKING_FIXTURES_FILE: devBookingFixturesFile,
+    corsOrigins,
+    verificationDocUriHosts,
+    migrationUrl,
+    runtimeRole,
+    db,
+  };
 }
 
 /** Comma-separated exact https origins. No wildcards, paths, or credentials in the value. */
@@ -130,9 +142,39 @@ export function parseCorsOrigins(raw: string | undefined): string[] {
   return [...new Set(origins)];
 }
 
+const DOCUMENT_URI_HOST_RE =
+  /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/;
+
+/** Comma-separated bare DNS hostnames. Empty rejects every document link. */
+export function parseVerificationDocUriHosts(raw: string | undefined): string[] {
+  if (raw === undefined || raw.trim() === '') {
+    return [];
+  }
+  const hosts = raw
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry !== '')
+    .map((entry) => entry.toLowerCase());
+  for (const host of hosts) {
+    if (!DOCUMENT_URI_HOST_RE.test(host)) {
+      throw new Error(
+        `VERIFICATION_DOC_URI_HOSTS entries must be bare hostnames such as files.example.com (got "${host}")`,
+      );
+    }
+  }
+  return [...new Set(hosts)];
+}
+
 function blankToUndefined(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const copy: NodeJS.ProcessEnv = { ...source };
-  for (const key of ['DATABASE_MIGRATION_URL', 'DB_RUNTIME_ROLE', 'DB_SSL_CA_FILE', 'DB_SSL_CA', 'CORS_ALLOWED_ORIGINS']) {
+  for (const key of [
+    'DATABASE_MIGRATION_URL',
+    'DB_RUNTIME_ROLE',
+    'DB_SSL_CA_FILE',
+    'DB_SSL_CA',
+    'CORS_ALLOWED_ORIGINS',
+    'VERIFICATION_DOC_URI_HOSTS',
+  ]) {
     if (copy[key] !== undefined && copy[key]?.trim() === '') {
       delete copy[key];
     }
