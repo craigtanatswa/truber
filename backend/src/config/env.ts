@@ -116,7 +116,13 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env, options: { purp
 
 function blankToUndefined(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const copy: NodeJS.ProcessEnv = { ...source };
-  for (const key of ['DATABASE_MIGRATION_URL', 'DB_RUNTIME_ROLE', 'DB_SSL_CA_FILE', 'DB_SSL_CA']) {
+  for (const key of [
+    'DATABASE_MIGRATION_URL',
+    'DB_RUNTIME_ROLE',
+    'DB_SSL_CA_FILE',
+    'DB_SSL_CA',
+    'BILLING_CREDIT_OFFSETS_EXISTING',
+  ]) {
     if (copy[key] !== undefined && copy[key]?.trim() === '') {
       delete copy[key];
     }

@@ -30,6 +30,15 @@ describe('environment configuration', () => {
     expect(loadEnv(base).BILLING_CREDIT_OFFSETS_EXISTING).toBe(true);
   });
 
+  it('treats a blank BILLING_CREDIT_OFFSETS_EXISTING as unset', () => {
+    for (const value of ['', '  ']) {
+      expect(
+        loadEnv({ ...base, BILLING_CREDIT_OFFSETS_EXISTING: value })
+          .BILLING_CREDIT_OFFSETS_EXISTING,
+      ).toBe(true);
+    }
+  });
+
   it('parses BILLING_CREDIT_OFFSETS_EXISTING from true/false and 1/0', () => {
     for (const value of ['true', '1']) {
       expect(
@@ -46,8 +55,10 @@ describe('environment configuration', () => {
   });
 
   it('rejects an invalid BILLING_CREDIT_OFFSETS_EXISTING value', () => {
-    expect(() =>
-      loadEnv({ ...base, BILLING_CREDIT_OFFSETS_EXISTING: 'nope' }),
-    ).toThrow(/Invalid environment configuration/);
+    for (const value of ['nope', 'yes']) {
+      expect(() =>
+        loadEnv({ ...base, BILLING_CREDIT_OFFSETS_EXISTING: value }),
+      ).toThrow(/Invalid environment configuration/);
+    }
   });
 });
