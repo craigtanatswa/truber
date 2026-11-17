@@ -4,6 +4,8 @@ import { AuthService } from './auth/auth.service';
 import { BillingController } from './billing/billing.controller';
 import { CommissionGateService } from './billing/commission-gate.service';
 import { NoopPaymentProvider, PAYMENT_PROVIDER } from './billing/payment-provider';
+import { PayoutPreviewController } from './billing/payout-preview.controller';
+import { PayoutPreviewService } from './billing/payout-preview.service';
 import { ReceivablesService } from './billing/receivables.service';
 import { AdminOnlyGuard } from './common/admin-only.guard';
 import { JwtAuthGuard } from './common/jwt-auth.guard';
@@ -35,6 +37,7 @@ import { OffPlatformReportService } from './offplatform/offplatform-report.servi
     LoadsController,
     BookingOffPlatformReportsController,
     OffPlatformAdminController,
+    PayoutPreviewController,
   ],
   providers: [
     { provide: ENV, useFactory: () => loadEnv(process.env, { purpose: 'api' }) },
@@ -46,6 +49,7 @@ import { OffPlatformReportService } from './offplatform/offplatform-report.servi
     LoadsService,
     ReceivablesService,
     CommissionGateService,
+    PayoutPreviewService,
     { provide: PAYMENT_PROVIDER, useClass: NoopPaymentProvider },
     OffPlatformBanService,
     OffPlatformReportService,
