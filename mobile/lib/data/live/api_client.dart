@@ -55,7 +55,7 @@ class TokenStore {
       'TokenStore(hasAccess: ${accessToken != null}, hasRefresh: ${refreshToken != null})';
 }
 
-/// Thin JSON-over-HTTP client for the Truber API (OpenAPI v0.4.0).
+/// Thin JSON-over-HTTP client for the Truber API (OpenAPI v0.5.0).
 ///
 /// Access lifetime is `expiresIn` from each token response. Before an authed
 /// request the client refreshes when the token is within [refreshLeeway] of
@@ -64,8 +64,9 @@ class TokenStore {
 ///
 /// Refresh tokens rotate. A 401 from `/auth/refresh` re-reads [TokenStore.vault]
 /// once and retries with a newer token (another tab may have rotated first)
-/// before the session is cleared. If refresh fails, storage is wiped and
-/// [onSessionExpired] fires.
+/// before the session is cleared. Only a refresh 401 clears the stored
+/// token. Offline, timeout, and 5xx leave it in place. [onSessionExpired]
+/// fires when the token is rejected or another tab logs out.
 class ApiClient {
   ApiClient({
     required String baseUrl,
@@ -79,7 +80,9 @@ class ApiClient {
             : baseUrl),
         _http = httpClient ?? http.Client(),
         _clock = clock ?? DateTime.now,
-        tokens = TokenStore(vault: refreshTokens);
+        tokens = TokenStore(vault: refreshTokens) {
+    tokens.vault.listenForRemoval(_onRemoteLogout);
+  }
 
   final Uri _base;
   final http.Client _http;
@@ -88,10 +91,14 @@ class ApiClient {
   final Duration refreshLeeway;
   final TokenStore tokens;
 
-  /// Called once when an access token was in memory and can no longer be
-  /// refreshed. Not called for a cold start that never obtained one.
+  /// Called when an access token was in memory and the refresh token was
+  /// rejected, or another tab removed the stored token.
   void Function()? onSessionExpired;
 
+  /// Set when the last refresh failed without deleting the stored token.
+  Object? lastRefreshError;
+
+  bool _persistAllowed = true;
   Future<void>? _refreshing;
 
   DateTime now() => _clock();
@@ -106,7 +113,16 @@ class ApiClient {
 
   /// Stores tokens from an AuthTokenResponse JSON body.
   /// The access token stays in memory; only the refresh token is persisted.
-  Future<void> saveTokens(Map<String, dynamic> body) async {
+  ///
+  /// [establish] is for login and register. A refresh must not pass it: after
+  /// logout, [_persistAllowed] is false and the in-memory token is not written
+  /// back over a cleared store.
+  Future<void> saveTokens(
+    Map<String, dynamic> body, {
+    bool establish = false,
+  }) async {
+    if (establish) _persistAllowed = true;
+    if (!_persistAllowed) return;
     final refresh = body['refreshToken'] as String;
     tokens.apply(
       access: body['accessToken'] as String,
@@ -115,6 +131,19 @@ class ApiClient {
       now: now(),
     );
     await tokens.vault.write(refresh);
+    if (!_persistAllowed) {
+      tokens.accessToken = null;
+      tokens.refreshToken = null;
+      tokens.accessExpiresAt = null;
+      await tokens.vault.clear();
+    }
+  }
+
+  /// Drops memory and storage. Further refreshes do not write a token back
+  /// until the next [saveTokens] with `establish: true`.
+  Future<void> abandonSession() async {
+    _persistAllowed = false;
+    await tokens.clear();
   }
 
   /// Cold start. When a refresh token is stored and there is no access token,
@@ -215,43 +244,76 @@ class ApiClient {
     final done = Completer<void>();
     _refreshing = done.future;
     try {
-      try {
-        final claimed = await tokens.vault.claimRefresh(tokens.refreshToken);
-        if (claimed == null || claimed.isEmpty) {
-          await _failSession();
-          return false;
-        }
-        try {
-          await _exchange(claimed);
-          return true;
-        } on ApiException catch (e) {
-          if (e.statusCode == 401) {
-            final stored = await tokens.vault.read();
-            if (stored != null && stored.isNotEmpty && stored != claimed) {
-              try {
-                await _exchange(stored);
-                return true;
-              } catch (_) {
-                await _failSession();
-                return false;
-              }
-            }
-          }
-          await _failSession();
-          return false;
-        } catch (_) {
-          await _failSession();
-          return false;
-        }
-      } catch (_) {
-        await _failSession();
-        return false;
-      }
+      return await tokens.vault.runLocked(_refreshLeader);
     } finally {
       await tokens.vault.finishRefresh();
       _refreshing = null;
       if (!done.isCompleted) done.complete();
     }
+  }
+
+  Future<bool> _refreshLeader() async {
+    try {
+      final claimed = await tokens.vault.claimRefresh(tokens.refreshToken);
+      if (claimed == null || claimed.isEmpty) {
+        if (tokens.refreshToken != null || tokens.hasSession) {
+          await _forgetLocalSession();
+        }
+        return false;
+      }
+      try {
+        await _exchange(claimed);
+        lastRefreshError = null;
+        return true;
+      } on ApiException catch (e) {
+        if (e.statusCode == 401) {
+          final stored = await tokens.vault.read();
+          if (stored != null && stored.isNotEmpty && stored != claimed) {
+            try {
+              await _exchange(stored);
+              lastRefreshError = null;
+              return true;
+            } on ApiException catch (retry) {
+              lastRefreshError = retry;
+              if (retry.statusCode == 401) await _failSession();
+              return false;
+            } catch (retry) {
+              lastRefreshError = retry;
+              return false;
+            }
+          }
+          lastRefreshError = e;
+          await _failSession();
+          return false;
+        }
+        lastRefreshError = e;
+        return false;
+      } catch (e) {
+        lastRefreshError = e;
+        return false;
+      }
+    } catch (e) {
+      lastRefreshError = e;
+      return false;
+    }
+  }
+
+  void _onRemoteLogout() {
+    _persistAllowed = false;
+    final had = tokens.hasSession || tokens.refreshToken != null;
+    tokens.accessToken = null;
+    tokens.refreshToken = null;
+    tokens.accessExpiresAt = null;
+    if (had) onSessionExpired?.call();
+  }
+
+  Future<void> _forgetLocalSession() async {
+    _persistAllowed = false;
+    final had = tokens.hasSession || tokens.refreshToken != null;
+    tokens.accessToken = null;
+    tokens.refreshToken = null;
+    tokens.accessExpiresAt = null;
+    if (had) onSessionExpired?.call();
   }
 
   Future<void> _exchange(String refreshToken) async {
@@ -272,7 +334,7 @@ class ApiClient {
 
   Future<void> _failSession() async {
     final hadAccess = tokens.hasSession;
-    await tokens.clear();
+    await abandonSession();
     if (hadAccess) onSessionExpired?.call();
   }
 }

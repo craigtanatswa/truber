@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import '../copy/strings.dart';
 
+import '../data/live/restore_pending.dart';
 import '../ui/errors/error_messages.dart';
 import '../data/mock/mock_seed.dart';
 import '../data/repositories/auth_repository.dart';
@@ -106,6 +107,10 @@ class SessionController extends ChangeNotifier {
   TruberUser? user;
   String? accessToken;
   bool bootstrapping = true;
+
+  /// A stored refresh token could not be exchanged (offline, timeout, 5xx).
+  /// The token is still stored. Welcome is not shown.
+  bool restorePending = false;
   String? error;
 
   final Map<String, String> _userCompanies = Map.of(seedUserCompanies());
@@ -124,6 +129,8 @@ class SessionController extends ChangeNotifier {
 
   Future<void> bootstrap() async {
     bootstrapping = true;
+    restorePending = false;
+    error = null;
     notifyListeners();
     try {
       user = await auth.currentUser();
@@ -132,6 +139,10 @@ class SessionController extends ChangeNotifier {
         if (companies != null) _refreshable = true;
         await _resolveCompany();
       }
+    } on RestorePendingException catch (e) {
+      user = null;
+      restorePending = true;
+      error = mapErrorMessage(e.error);
     } catch (_) {
       user = null;
     }

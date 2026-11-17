@@ -8,6 +8,7 @@ import '../repositories/company_repository.dart';
 import '../repositories/load_repository.dart';
 import 'api_client.dart';
 import 'live_json.dart';
+import 'restore_pending.dart';
 
 /// Random UUID v4 for Idempotency-Key headers.
 String newIdempotencyKey([Random? random]) {
@@ -36,7 +37,15 @@ class LiveAuthRepository implements AuthRepository {
   Future<TruberUser?> currentUser() async {
     if (!api.tokens.hasSession) {
       final restored = await api.restoreSession();
-      if (!restored) return null;
+      if (!restored) {
+        final kept = await api.tokens.vault.read();
+        if (kept != null && kept.isNotEmpty) {
+          throw RestorePendingException(
+            api.lastRefreshError ?? ApiException(0, 'OFFLINE'),
+          );
+        }
+        return null;
+      }
     }
     final j = await api.get('/auth/me') as Map<String, dynamic>;
     return userFromJson(j);
@@ -44,7 +53,7 @@ class LiveAuthRepository implements AuthRepository {
 
   Future<AuthTokenResponse> _session(dynamic body) async {
     final j = body as Map<String, dynamic>;
-    await api.saveTokens(j);
+    await api.saveTokens(j, establish: true);
     return tokensFromJson(j);
   }
 
@@ -114,10 +123,11 @@ class LiveAuthRepository implements AuthRepository {
     return userFromJson(j);
   }
 
-  /// OpenAPI v0.4.0 has no logout endpoint: drop tokens locally.
+  /// OpenAPI v0.5.0 has no logout endpoint: drop tokens locally.
   /// Clears the in-memory access token and the persisted refresh token.
+  /// Later refreshes do not write the in-memory token back.
   @override
-  Future<void> logout() => api.tokens.clear();
+  Future<void> logout() => api.abandonSession();
 }
 
 class LiveCompanyRepository implements CompanyRepository {

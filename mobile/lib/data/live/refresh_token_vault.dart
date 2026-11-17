@@ -1,22 +1,38 @@
 /// Persists the opaque refresh token only. The access token stays in memory
 /// and is never written here.
 abstract class RefreshTokenVault {
+  final List<void Function()> _removalListeners = [];
+
   Future<String?> read();
 
   Future<void> write(String refreshToken);
 
   Future<void> clear();
 
+  /// Fires when another tab removes the stored refresh token (logout).
+  /// The tab that called [clear] is not notified.
+  void listenForRemoval(void Function() onRemoved) {
+    _removalListeners.add(onRemoved);
+  }
+
+  void notifyRefreshTokenRemoved() {
+    for (final listener in List<void Function()>.of(_removalListeners)) {
+      listener();
+    }
+  }
+
+  /// Serialises a refresh. The default runs [action] immediately.
+  /// Web uses `navigator.locks` when the browser has it.
+  Future<T> runLocked<T>(Future<T> Function() action) => action();
+
   /// Token to present to `/auth/refresh`.
   ///
-  /// Re-reads storage so a peer that already rotated wins. Web overrides this
-  /// to take a cross-tab lock first.
+  /// Storage is the source of truth. A missing value means logout: the
+  /// in-memory [current] token is never returned, so it cannot be written back.
   Future<String?> claimRefresh(String? current) async {
     final stored = await read();
-    if (stored != null && stored.isNotEmpty && stored != current) return stored;
-    final token = (current != null && current.isNotEmpty) ? current : stored;
-    if (token == null || token.isEmpty) return null;
-    return token;
+    if (stored == null || stored.isEmpty) return null;
+    return stored;
   }
 
   /// Drops this caller's cross-tab lock, if it holds one.

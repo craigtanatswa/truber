@@ -71,7 +71,7 @@ SessionController createDefaultSession() {
   );
 }
 
-/// Live: auth, companies and loads over HTTP (OpenAPI v0.4.0). Quotations,
+/// Live: auth, companies and loads over HTTP (OpenAPI v0.5.0). Quotations,
 /// bookings and payment arrangements are not served by the test backend yet:
 /// they fail visibly (error.server) rather than faking success on mocks.
 SessionController createLiveSession(

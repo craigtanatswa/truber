@@ -324,11 +324,13 @@ void main() {
         board.open(),
         ownerId: 'tab-a',
         clock: () => now,
+        lockTtl: const Duration(seconds: 10),
       );
       final b = CoordinatedRefreshVault(
         board.open(),
         ownerId: 'tab-b',
         clock: () => now,
+        lockTtl: const Duration(seconds: 10),
       );
       expect(a.tryAcquire(), isTrue);
       expect(b.tryAcquire(), isFalse);
@@ -503,7 +505,194 @@ void main() {
     });
   });
 
+  group('refresh keeps the token unless it is rejected', () {
+    test('offline cold start keeps the token', () async {
+      final vault = RecordingRefreshTokenVault('refresh-kept');
+      final session = createLiveSession(
+        _base,
+        refreshTokens: vault,
+        httpClient: MockClient((req) async {
+          throw http.ClientException('offline');
+        }),
+      );
+      await session.bootstrap();
+      expect(session.user, isNull);
+      expect(session.restorePending, isTrue);
+      expect(session.error, TruberCopy.errorNetwork);
+      expect(await vault.read(), 'refresh-kept');
+      session.dispose();
+    });
+
+    test('503 keeps the stored refresh token', () async {
+      final vault = RecordingRefreshTokenVault('refresh-kept');
+      var expired = 0;
+      final api = ApiClient(
+        baseUrl: _base,
+        refreshTokens: vault,
+        httpClient: MockClient((req) async {
+          return _json({'code': 'SERVICE_UNAVAILABLE', 'message': 'down'}, 503);
+        }),
+      )..onSessionExpired = () => expired++;
+      final ok = await api.restoreSession();
+      expect(ok, isFalse);
+      expect(expired, 0);
+      expect(await vault.read(), 'refresh-kept');
+      expect(api.tokens.refreshToken, 'refresh-kept');
+    });
+
+    test('timeout keeps the stored refresh token', () async {
+      final vault = RecordingRefreshTokenVault('refresh-kept');
+      var expired = 0;
+      final api = ApiClient(
+        baseUrl: _base,
+        refreshTokens: vault,
+        timeout: const Duration(milliseconds: 20),
+        httpClient: MockClient((req) async {
+          await Future<void>.delayed(const Duration(seconds: 2));
+          return _json(_tokenBody(access: 'access-late', refresh: 'refresh-late'));
+        }),
+      )..onSessionExpired = () => expired++;
+      final ok = await api.restoreSession();
+      expect(ok, isFalse);
+      expect(expired, 0);
+      expect(await vault.read(), 'refresh-kept');
+      expect(api.tokens.refreshToken, 'refresh-kept');
+    });
+
+    test('401 still clears the stored refresh token', () async {
+      final vault = RecordingRefreshTokenVault('refresh-dead');
+      var expired = 0;
+      final api = ApiClient(
+        baseUrl: _base,
+        refreshTokens: vault,
+        httpClient: MockClient((req) async {
+          return _json({'code': 'UNAUTHORIZED', 'message': 'x'}, 401);
+        }),
+      )..onSessionExpired = () => expired++;
+      final ok = await api.restoreSession();
+      expect(ok, isFalse);
+      expect(await vault.read(), isNull);
+      expect(api.tokens.refreshToken, isNull);
+      expect(expired, 0);
+    });
+  });
+
+  group('logout in one tab', () {
+    test('storage lock outlasts the 20s HTTP timeout', () {
+      final vault = CoordinatedRefreshVault(SharedTabBoard().open());
+      expect(vault.lockTtl, greaterThan(const Duration(seconds: 20)));
+      expect(
+        CoordinatedRefreshVault.defaultWaitTimeout,
+        greaterThan(const Duration(seconds: 20)),
+      );
+    });
+
+    test('a cleared store is not replaced by the other tab\'s memory token',
+        () async {
+      final board = SharedTabBoard();
+      final tabA = CoordinatedRefreshVault(board.open(), ownerId: 'tab-a');
+      final tabB = CoordinatedRefreshVault(board.open(), ownerId: 'tab-b');
+      await tabA.write('refresh-live');
+      expect(await tabB.claimRefresh('refresh-live'), 'refresh-live');
+      await tabA.clear();
+      expect(await tabB.claimRefresh('refresh-live'), isNull);
+      expect(await tabB.read(), isNull);
+
+      var loggedOut = 0;
+      final apiB = ApiClient(
+        baseUrl: _base,
+        refreshTokens: tabB,
+        httpClient: MockClient((req) async {
+          return _json(_tokenBody(
+            access: 'access-rewritten',
+            refresh: 'refresh-rewritten',
+          ));
+        }),
+      )..onSessionExpired = () => loggedOut++;
+      apiB.tokens.apply(
+        access: 'access-live',
+        refresh: 'refresh-live',
+        expiresInSeconds: 500,
+        now: DateTime.utc(2026, 11, 10),
+      );
+      await tabA.write('refresh-live');
+      await tabA.clear();
+      await Future<void>.delayed(Duration.zero);
+      expect(loggedOut, 1);
+      expect(apiB.tokens.accessToken, isNull);
+      expect(apiB.tokens.refreshToken, isNull);
+      await apiB.saveTokens(_tokenBody(
+        access: 'access-rewritten',
+        refresh: 'refresh-rewritten',
+      ));
+      expect(await tabB.read(), isNull);
+      expect(board.data.containsKey(CoordinatedRefreshVault.tokenKey), isFalse);
+    });
+  });
+
   group('cold start widgets', () {
+    testWidgets(
+        'offline cold start keeps the token, shows retry, then signs in',
+        (tester) async {
+      final vault = RecordingRefreshTokenVault('refresh-stored');
+      var refreshes = 0;
+      final session = createLiveSession(
+        _base,
+        refreshTokens: vault,
+        httpClient: MockClient((req) async {
+          if (req.url.path == '/auth/refresh') {
+            refreshes++;
+            if (refreshes == 1) throw http.ClientException('offline');
+            return _json(_tokenBody(
+              access: 'access-live',
+              refresh: 'refresh-live',
+              role: 'shipper',
+            ));
+          }
+          return _roleApi(req, 'shipper');
+        }),
+      );
+      await tester.pumpWidget(TruberApp(session: session));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('session_restore_retry')), findsOneWidget);
+      expect(find.text(TruberCopy.offlineTitle), findsOneWidget);
+      expect(find.text(TruberCopy.offlineLoginBody), findsOneWidget);
+      expect(find.text(TruberCopy.ctaRetry), findsOneWidget);
+      expect(find.text(TruberCopy.getStarted), findsNothing);
+      expect(await vault.read(), 'refresh-stored');
+
+      await tester.tap(find.text(TruberCopy.ctaRetry));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('nav_shipper_home')), findsOneWidget);
+      expect(find.text(TruberCopy.getStarted), findsNothing);
+      expect(await vault.read(), 'refresh-live');
+      expect(refreshes, 2);
+    });
+
+    testWidgets('logout in another tab returns this tab to welcome',
+        (tester) async {
+      final board = SharedTabBoard();
+      final otherTab = CoordinatedRefreshVault(board.open(), ownerId: 'tab-a');
+      final thisTab = CoordinatedRefreshVault(board.open(), ownerId: 'tab-b');
+      await thisTab.write('refresh-stored');
+      final session = createLiveSession(
+        _base,
+        refreshTokens: thisTab,
+        httpClient: MockClient((req) => _roleApi(req, 'shipper')),
+      );
+      await tester.pumpWidget(TruberApp(session: session));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('nav_shipper_home')), findsOneWidget);
+
+      await otherTab.clear();
+      await tester.pumpAndSettle();
+      expect(find.text(TruberCopy.getStarted), findsOneWidget);
+      expect(find.text(TruberCopy.tagline), findsOneWidget);
+      expect(find.byKey(const Key('nav_shipper_home')), findsNothing);
+      expect(await thisTab.read(), isNull);
+      expect(board.data.containsKey(CoordinatedRefreshVault.tokenKey), isFalse);
+    });
+
     testWidgets(
         'stored refresh token shows a splash then the shipper home; logout restart is welcome',
         (tester) async {

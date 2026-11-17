@@ -56,15 +56,36 @@ class MemoryTabBus implements TabBus {
 ///
 /// Storage holds only the refresh token under [tokenKey]. The lock under
 /// [lockKey] is an owner id plus an expiry, never a token.
+/// Holds a cross-tab refresh so only one tab rotates at a time.
+abstract class RefreshLocker {
+  Future<T> run<T>(Future<T> Function() action);
+}
+
 class CoordinatedRefreshVault extends RefreshTokenVault {
   CoordinatedRefreshVault(
     this.bus, {
     String? ownerId,
     DateTime Function()? clock,
-    this.lockTtl = const Duration(seconds: 10),
-    this.waitTimeout = const Duration(seconds: 5),
+    this.lockTtl = defaultLockTtl,
+    this.waitTimeout = defaultWaitTimeout,
+    this.locker,
+    bool? storageLock,
   })  : ownerId = ownerId ?? newRefreshOwnerId(),
-        clock = clock ?? DateTime.now;
+        clock = clock ?? DateTime.now,
+        useStorageLock = storageLock ?? locker == null {
+    bus.changes.listen((key) {
+      if (key != tokenKey) return;
+      final value = bus.read(tokenKey);
+      if (value == null || value.isEmpty) notifyRefreshTokenRemoved();
+    });
+  }
+
+  /// Longer than [ApiClient]'s 20s HTTP timeout so the lock does not expire
+  /// while a refresh request is still in flight.
+  static const defaultLockTtl = Duration(seconds: 30);
+
+  /// Waiters sit out the in-flight request instead of refreshing with a stale token.
+  static const defaultWaitTimeout = Duration(seconds: 25);
 
   static const tokenKey = 'truber.refresh.token';
   static const lockKey = 'truber.refresh.lock';
@@ -74,8 +95,19 @@ class CoordinatedRefreshVault extends RefreshTokenVault {
   final DateTime Function() clock;
   final Duration lockTtl;
   final Duration waitTimeout;
+  final RefreshLocker? locker;
+
+  /// When [locker] is `navigator.locks`, the storage lock is the fallback only.
+  final bool useStorageLock;
 
   bool _holding = false;
+
+  @override
+  Future<T> runLocked<T>(Future<T> Function() action) {
+    final held = locker;
+    if (held == null) return action();
+    return held.run(action);
+  }
 
   @override
   Future<String?> read() async => bus.read(tokenKey);
@@ -120,16 +152,21 @@ class CoordinatedRefreshVault extends RefreshTokenVault {
 
   @override
   Future<String?> claimRefresh(String? current) async {
+    if (!useStorageLock) {
+      final stored = bus.read(tokenKey);
+      if (stored == null || stored.isEmpty) return null;
+      return stored;
+    }
     final deadline = clock().add(waitTimeout);
     while (true) {
       final stored = bus.read(tokenKey);
-      if (stored != null && stored.isNotEmpty && stored != current) {
-        return stored;
-      }
-      if (tryAcquire()) return _present(stored, current);
+      // Removal is logout. Never fall back to the in-memory token.
+      if (stored == null || stored.isEmpty) return null;
+      if (stored != current) return stored;
+      if (tryAcquire()) return _present(stored);
 
       if (!clock().isBefore(deadline)) {
-        return _present(bus.read(tokenKey), current);
+        return _present(bus.read(tokenKey));
       }
 
       final signal = Completer<void>();
@@ -138,8 +175,9 @@ class CoordinatedRefreshVault extends RefreshTokenVault {
       });
       try {
         final again = bus.read(tokenKey);
-        if (again != null && again.isNotEmpty && again != current) return again;
-        if (tryAcquire()) return _present(again, current);
+        if (again == null || again.isEmpty) return null;
+        if (again != current) return again;
+        if (tryAcquire()) return _present(again);
         await signal.future.timeout(const Duration(milliseconds: 50));
       } on TimeoutException {
         // Poll so a stale lock can be taken once [clock] moves past it.
@@ -149,12 +187,10 @@ class CoordinatedRefreshVault extends RefreshTokenVault {
     }
   }
 
-  String? _present(String? stored, String? current) {
-    if (stored != null && stored.isNotEmpty) {
-      if (current == null || current.isEmpty || stored != current) return stored;
-    }
-    if (current != null && current.isNotEmpty) return current;
-    return null;
+  /// An empty store is logout. The in-memory token is not substituted.
+  String? _present(String? stored) {
+    if (stored == null || stored.isEmpty) return null;
+    return stored;
   }
 }
 

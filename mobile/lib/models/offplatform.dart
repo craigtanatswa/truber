@@ -1,4 +1,4 @@
-/// OpenAPI v0.4.0 off-platform report (party-facing fields only; `finding`
+/// OpenAPI v0.5.0 off-platform report (party-facing fields only; `finding`
 /// is admin-only and its reason is never shown to parties).
 enum SuspectedParty { shipper, transporter, both, unknown }
 

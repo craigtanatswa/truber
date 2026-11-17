@@ -8,7 +8,7 @@ abstract class OffPlatformReportRepository {
     required String description,
   });
 
-  /// Reports this user filed on the booking. OpenAPI v0.4.0 has no
+  /// Reports this user filed on the booking. OpenAPI v0.5.0 has no
   /// party-facing read endpoint, so live returns only reports created in
   /// this session (status as returned at creation).
   Future<List<OffPlatformReport>> forBooking(String bookingId);
