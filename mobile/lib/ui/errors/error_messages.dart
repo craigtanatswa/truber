@@ -94,6 +94,24 @@ String _mapApi(ApiException e) {
             formatDisplayDate(until.toLocal()));
       }
       return TruberCopy.errorForbidden;
+    // Commission gate and quotation conflicts. Existing error.validation copy;
+    // amounts in details are never interpolated into the message.
+    case 'COMMISSION_OUTSTANDING':
+    case 'VALIDATION_ERROR':
+    case 'CURRENCY_MISMATCH':
+    case 'SELF_CANCEL_NOT_ALLOWED':
+    case 'QUOTATION_ALREADY_OPEN':
+    case 'QUOTATION_NOT_WITHDRAWABLE':
+    case 'QUOTATION_NOT_ACCEPTABLE':
+    case 'QUOTATION_EXPIRED':
+    case 'LOAD_NOT_OPEN_FOR_QUOTES':
+    case 'BOOKING_ALREADY_EXISTS':
+      return TruberCopy.errorValidation;
+    case 'ROLE_NOT_PERMITTED':
+    case 'COMPANY_TYPE_MISMATCH':
+      return TruberCopy.errorForbidden;
+    case 'NOT_FOUND':
+      return TruberCopy.errorNotFound;
   }
   final s = e.statusCode;
   if (s == 401) return TruberCopy.errorUnauthorized;

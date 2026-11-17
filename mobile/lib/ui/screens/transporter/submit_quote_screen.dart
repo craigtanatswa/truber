@@ -7,11 +7,13 @@ import '../../../copy/strings.dart';
 import '../../../models/load.dart';
 import '../../../models/money.dart';
 import '../../../models/quotation.dart';
+import '../../../models/user.dart';
 import '../../../state/session.dart';
 import '../../errors/error_messages.dart';
 import '../../format/money_input.dart';
 import '../../widgets/ban_banner.dart';
 import '../../widgets/load_card.dart';
+import '../../widgets/quote_payout_hint.dart';
 
 class SubmitQuoteScreen extends StatefulWidget {
   const SubmitQuoteScreen({super.key, required this.load});
@@ -27,6 +29,7 @@ class _SubmitQuoteScreenState extends State<SubmitQuoteScreen> {
   final _notes = TextEditingController();
   bool _busy = false;
   MoneyAmount? _netPreview;
+  List<SubmissionBlocker> _blockers = const [];
   bool _rateInvalid = false;
   int _previewSeq = 0;
 
@@ -36,30 +39,53 @@ class _SubmitQuoteScreenState extends State<SubmitQuoteScreen> {
     _rate.addListener(_updatePreview);
   }
 
-  /// Net comes from PayoutRepository (server / mock); never computed here.
+  /// Net comes from POST /quotations/payout-preview. Never computed here.
+  /// Shippers do not call the endpoint.
   Future<void> _updatePreview() async {
     final seq = ++_previewSeq;
-    final repo = context.read<SessionController>().payouts;
+    final session = context.read<SessionController>();
     final minor = parseMoneyInputMinor(_rate.text);
-    // QA-039: no hint until the input is a valid amount.
-    if (minor == null || repo == null) {
-      if (!mounted) return;
-      setState(() => _netPreview = null);
+    final transporter = session.user?.role == UserRole.transporter;
+    final companyId = session.currentCompanyId;
+    if (_rateInvalid && minor != null && mounted) {
+      setState(() => _rateInvalid = false);
     }
-    if (_rateInvalid && minor != null) setState(() => _rateInvalid = false);
+    if (!transporter || minor == null || companyId == null) {
+      if (!mounted || seq != _previewSeq) return;
+      setState(() {
+        _netPreview = null;
+        _blockers = const [];
+      });
+      return;
+    }
     MoneyAmount? net;
-    if (repo != null && minor != null) {
-      net = await repo.quoteNetPreview(
-        widget.load.id,
-        MoneyAmount(amountMinor: minor, currency: widget.load.currency),
+    var blockers = const <SubmissionBlocker>[];
+    try {
+      final preview = await session.quotations.previewPayout(
+        PayoutPreviewRequest(
+          transporterCompanyId: companyId,
+          loadId: widget.load.id,
+          amount: MoneyAmount(
+            amountMinor: minor,
+            currency: widget.load.currency,
+          ),
+        ),
       );
+      net = preview.netPayoutBeforeUnknownFees;
+      blockers = preview.submissionBlockers;
+    } catch (_) {
+      net = null;
     }
     if (!mounted || seq != _previewSeq) return;
-    setState(() => _netPreview = net);
+    setState(() {
+      _netPreview = net;
+      _blockers = blockers;
+    });
   }
 
   @override
   void dispose() {
+    _rate.removeListener(_updatePreview);
     _rate.dispose();
     _notes.dispose();
     super.dispose();
@@ -135,15 +161,21 @@ class _SubmitQuoteScreenState extends State<SubmitQuoteScreen> {
               errorMaxLines: 3,
             ),
           ),
-          if (_netPreview != null) ...[
-            const SizedBox(height: TruberSpacing.sm),
-            Text(
-              TruberCopy.payoutQuoteHintFor(_netPreview!.display),
-              key: const Key('quote_payout_hint'),
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant),
-            ),
-          ],
+          const SizedBox(height: TruberSpacing.sm),
+          QuotePayoutHint(
+            role: context.watch<SessionController>().user?.role,
+            net: _netPreview,
+          ),
+          for (final blocker in _blockers)
+            if (submissionBlockerMessage(blocker) != null) ...[
+              const SizedBox(height: TruberSpacing.xs),
+              Text(
+                submissionBlockerMessage(blocker)!,
+                key: Key('quote_submission_blocker_${blocker.code}'),
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant),
+              ),
+            ],
           const SizedBox(height: TruberSpacing.lg),
           TextField(
             controller: _notes,

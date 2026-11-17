@@ -74,12 +74,13 @@ class _NullPreview implements PayoutRepository {
   Future<MoneyAmount?> quoteNetPreview(String l, MoneyAmount a) async => null;
 }
 
-SessionController _session(PayoutRepository? payouts) {
+SessionController _session(PayoutRepository? payouts, {bool preview = true}) {
   final loads = MockLoadRepository();
   return SessionController(
     auth: MockAuthRepository(),
     loads: loads,
-    quotations: MockQuotationRepository(loads: loads),
+    quotations: MockQuotationRepository(
+        loads: loads, payoutPreviewEnabled: preview),
     bookings: MockBookingRepository(),
     payments: MockPaymentRepository(),
     payouts: payouts,
@@ -179,7 +180,8 @@ void main() {
     expect(find.byType(PayoutCard), findsNothing);
   });
 
-  testWidgets('quote hint shows server/mock net; hidden when API has none',
+  testWidgets(
+      'quote hint shows payout-preview net; hidden when preview fails',
       (tester) async {
     final load = seedLoads().first;
     final s = _session(MockPayoutRepository());
@@ -188,11 +190,12 @@ void main() {
         value: s, child: MaterialApp(home: SubmitQuoteScreen(load: load))));
     await tester.enterText(find.byKey(const Key('quote_rate')), '950');
     await tester.pumpAndSettle();
-    expect(find.text('You’ll receive US\$902.50 after commission and fees.'),
+    expect(
+        find.text('You’ll earn US\$902.50 after Truber’s commission.'),
         findsOneWidget);
 
     await tester.pumpWidget(const SizedBox());
-    final n = _session(_NullPreview());
+    final n = _session(_NullPreview(), preview: false);
     await n.login('transporter@truber.zw', 'demopass');
     await tester.pumpWidget(ChangeNotifierProvider.value(
         value: n, child: MaterialApp(home: SubmitQuoteScreen(load: load))));
