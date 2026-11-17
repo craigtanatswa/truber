@@ -34,7 +34,7 @@ class LiveOffPlatformReportRepository implements OffPlatformReportRepository {
     return r;
   }
 
-  /// No party-facing GET in v0.4.0: session-local list only.
+  /// No party-facing GET in v0.5.0: session-local list only.
   @override
   Future<List<OffPlatformReport>> forBooking(String bookingId) async =>
       _created.where((r) => r.bookingId == bookingId).toList();

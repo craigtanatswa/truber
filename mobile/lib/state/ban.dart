@@ -2,7 +2,7 @@ import '../models/company.dart';
 import '../models/user.dart';
 
 /// Active off-platform ban on the signed-in user and/or their company.
-/// Built only from OpenAPI v0.4.0 `User.bannedUntil`, `Company.bannedUntil`
+/// Built only from OpenAPI v0.5.0 `User.bannedUntil`, `Company.bannedUntil`
 /// and `AccountBannedError.details` (caller / caller_company). Never a reason.
 class BanState {
   const BanState({
