@@ -36,31 +36,40 @@ ALTER TABLE commission_receivables
   DROP CONSTRAINT IF EXISTS commission_receivables_settled_voided_check;
 
 ALTER TABLE commission_receivables
+  DROP CONSTRAINT IF EXISTS commission_receivables_trip_minor_check,
   ADD CONSTRAINT commission_receivables_trip_minor_check CHECK (
     trip_minor IS NULL OR trip_minor > 0
   ),
+  DROP CONSTRAINT IF EXISTS commission_receivables_reduced_minor_check,
   ADD CONSTRAINT commission_receivables_reduced_minor_check CHECK (reduced_minor >= 0),
+  DROP CONSTRAINT IF EXISTS commission_receivables_credit_applied_minor_check,
   ADD CONSTRAINT commission_receivables_credit_applied_minor_check CHECK (
     credit_applied_minor >= 0
   ),
+  DROP CONSTRAINT IF EXISTS commission_receivables_dispute_window_check,
   ADD CONSTRAINT commission_receivables_dispute_window_check CHECK (
     dispute_window_ends_at = recognised_at + interval '24 hours'
   ),
+  DROP CONSTRAINT IF EXISTS commission_receivables_dispute_ref_uuid,
   ADD CONSTRAINT commission_receivables_dispute_ref_uuid CHECK (
     dispute_ref IS NULL OR dispute_ref ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
   ),
+  DROP CONSTRAINT IF EXISTS commission_receivables_pre_hold_status_check,
   ADD CONSTRAINT commission_receivables_pre_hold_status_check CHECK (
     pre_hold_status IS NULL
     OR pre_hold_status IN ('open', 'collected', 'settled_on_release')
   ),
+  DROP CONSTRAINT IF EXISTS commission_receivables_status_check,
   ADD CONSTRAINT commission_receivables_status_check CHECK (
     status IN ('open', 'settled_on_release', 'collected', 'voided', 'held', 'cancelled')
   ),
+  DROP CONSTRAINT IF EXISTS commission_receivables_open_balance_check,
   ADD CONSTRAINT commission_receivables_open_balance_check CHECK (
     status NOT IN ('open', 'held')
     OR pre_hold_status IS NOT DISTINCT FROM 'settled_on_release'
     OR remaining_minor + collected_minor + credit_applied_minor + reduced_minor = amount_minor
   ),
+  DROP CONSTRAINT IF EXISTS commission_receivables_collected_state_check,
   ADD CONSTRAINT commission_receivables_collected_state_check CHECK (
     status <> 'collected'
     OR (
@@ -68,13 +77,16 @@ ALTER TABLE commission_receivables
       AND collected_minor + credit_applied_minor + reduced_minor = amount_minor
     )
   ),
+  DROP CONSTRAINT IF EXISTS commission_receivables_settled_voided_check,
   ADD CONSTRAINT commission_receivables_settled_voided_check CHECK (
     status NOT IN ('settled_on_release', 'voided', 'cancelled') OR remaining_minor = 0
   ),
+  DROP CONSTRAINT IF EXISTS commission_receivables_cancelled_check,
   ADD CONSTRAINT commission_receivables_cancelled_check CHECK (
     status <> 'cancelled'
     OR (collected_minor = 0 AND credit_applied_minor = 0 AND final_at IS NOT NULL)
   ),
+  DROP CONSTRAINT IF EXISTS commission_receivables_held_check,
   ADD CONSTRAINT commission_receivables_held_check CHECK (
     status <> 'held'
     OR (
@@ -85,13 +97,16 @@ ALTER TABLE commission_receivables
       AND pre_hold_status IS NOT NULL
     )
   ),
-  ADD CONSTRAINT commission_receivables_paid_le_amount CHECK (
+  DROP CONSTRAINT IF EXISTS commission_receivables_paid_le_amount_check,
+  ADD CONSTRAINT commission_receivables_paid_le_amount_check CHECK (
     collected_minor + credit_applied_minor + reduced_minor <= amount_minor
   ),
+  DROP CONSTRAINT IF EXISTS commission_receivables_deadline_check,
   ADD CONSTRAINT commission_receivables_deadline_check CHECK (
     response_deadline_at IS NULL
     OR response_deadline_at = disputed_at + interval '48 hours'
   ),
+  DROP CONSTRAINT IF EXISTS commission_receivables_disputed_before_window_check,
   ADD CONSTRAINT commission_receivables_disputed_before_window_check CHECK (
     disputed_at IS NULL OR disputed_at < dispute_window_ends_at
   );
