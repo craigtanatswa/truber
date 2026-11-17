@@ -1,5 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import { randomUUID } from 'crypto';
+import { CommissionGateService } from '../src/billing/commission-gate.service';
 import { ReceivablesService } from '../src/billing/receivables.service';
 import { createApp } from '../src/create-app';
 import { DbService } from '../src/db/db.service';
@@ -156,7 +157,152 @@ describe('billing credit offsets existing commission (U1)', () => {
     expect(result.afterC.c.credit_applied_minor).toBe('2000');
     expect(result.afterC.credit).toEqual([money(500)]);
   });
+
+  it('always lets collection credit pay debt left by a held dispute, even with the flag off', async () => {
+    const result = await runHeldCollectionScenario('false', 'finalise');
+
+    expect(result.collection.creditedAmount).toEqual(money(5000));
+    expect(result.receivable.status).toBe('collected');
+    expect(result.receivable.remaining_minor).toBe('0');
+    expect(result.receivable.credit_applied_minor).toBe('5000');
+    expect(result.credits).toEqual([
+      { amount_minor: '5000', remaining_minor: '0', source_kind: 'collection' },
+    ]);
+    expect(result.balances.outstandingByCurrency).toEqual([]);
+    expect(result.gatePassed).toBe(true);
+  });
+
+  it('applies a held collection to an adjustment and leaves the rest as collection credit', async () => {
+    const result = await runHeldCollectionScenario('false', 'adjust');
+
+    expect(result.adjustment?.adjustment.newCommission).toEqual(money(3000));
+    expect(result.receivable.status).toBe('collected');
+    expect(result.receivable.remaining_minor).toBe('0');
+    expect(result.receivable.credit_applied_minor).toBe('3000');
+    expect(result.credits).toEqual([
+      { amount_minor: '5000', remaining_minor: '2000', source_kind: 'collection' },
+    ]);
+    expect(result.balances.outstandingByCurrency).toEqual([]);
+    expect(result.balances.creditByCurrency).toEqual([money(2000)]);
+    expect(result.gatePassed).toBe(true);
+  });
 });
+
+type CollectionResult = Awaited<ReturnType<ReceivablesService['recordCollectionForAdmin']>>;
+type AdjustmentResult = Awaited<ReturnType<ReceivablesService['adjustForResolvedDispute']>>;
+type Balances = Awaited<ReturnType<ReceivablesService['commissionBalances']>>;
+
+interface RawCredit {
+  amount_minor: string;
+  remaining_minor: string;
+  source_kind: string;
+}
+
+interface HeldCollectionResult {
+  collection: CollectionResult;
+  adjustment?: AdjustmentResult;
+  receivable: RawReceivable;
+  credits: RawCredit[];
+  balances: Balances;
+  gatePassed: boolean;
+}
+
+async function runHeldCollectionScenario(
+  flag: 'true' | 'false',
+  afterHold: 'finalise' | 'adjust',
+): Promise<HeldCollectionResult> {
+  const previous = process.env.BILLING_CREDIT_OFFSETS_EXISTING;
+  process.env.BILLING_CREDIT_OFFSETS_EXISTING = flag;
+  let app: INestApplication | undefined;
+  try {
+    await truncate();
+    app = await createApp({ logger: false });
+    const db = app.get(DbService);
+    const receivables = app.get(ReceivablesService);
+    const gate = app.get(CommissionGateService);
+    const admin = await insertUser(db);
+    const companyId = await insertCompany(db);
+    const disputeRef = 'da000000-0000-4000-8000-00000000000b';
+
+    const trip = await receivables.recognise(null, {
+      bookingId: randomUUID(),
+      transporterCompanyId: companyId,
+      tripAmount: money(100000),
+      paymentMethod: 'cash',
+      completedAt: T0,
+    });
+    await receivables.holdForDispute(null, {
+      bookingId: trip.bookingId,
+      disputeRef,
+      disputedAt: at(1 * HOUR),
+    });
+    const collection = await receivables.recordCollectionForAdmin(
+      admin,
+      companyId,
+      { amount: money(5000) },
+      'held-collection',
+    );
+    await receivables.recordDisputeResponse(null, {
+      bookingId: trip.bookingId,
+      disputeRef,
+      respondedAt: at(1.5 * HOUR),
+    });
+
+    let adjustment: AdjustmentResult | undefined;
+    if (afterHold === 'finalise') {
+      await receivables.finaliseAfterDispute(null, {
+        bookingId: trip.bookingId,
+        disputeRef,
+        source: 'admin_decision',
+        outcomeReason: 'No change after review',
+        actorUserId: admin.id,
+        at: at(50 * HOUR),
+        idempotencyKey: 'held-finalise',
+      });
+    } else {
+      adjustment = await receivables.adjustForResolvedDispute(null, {
+        bookingId: trip.bookingId,
+        disputeRef,
+        source: 'admin_decision',
+        newTripAmount: money(60000),
+        reason: 'Dispute resolved down to 60000',
+        actorUserId: admin.id,
+        decidedAt: at(2 * HOUR),
+        idempotencyKey: 'held-adjust',
+      });
+    }
+
+    const credits = await db.query<RawCredit>(
+      `SELECT amount_minor, remaining_minor, source_kind
+         FROM commission_credits
+        ORDER BY created_at, id`,
+    );
+    let gatePassed = true;
+    try {
+      await db.tx((client) => gate.assertCanTakeNewWork(client, companyId));
+    } catch {
+      gatePassed = false;
+    }
+
+    return {
+      collection,
+      adjustment,
+      receivable: await loadReceivable(db, trip.id),
+      credits: credits.rows,
+      balances: await receivables.commissionBalances(null, companyId),
+      gatePassed,
+    };
+  } finally {
+    if (app) {
+      await app.close();
+    }
+    if (previous === undefined) {
+      delete process.env.BILLING_CREDIT_OFFSETS_EXISTING;
+    } else {
+      process.env.BILLING_CREDIT_OFFSETS_EXISTING = previous;
+    }
+  }
+}
 
 async function insertUser(db: DbService): Promise<DbUser> {
   const id = randomUUID();

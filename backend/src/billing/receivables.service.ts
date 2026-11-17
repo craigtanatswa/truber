@@ -23,6 +23,7 @@ export type CommissionReceivableStatus =
 
 export type DisputeSource = 'party_settlement' | 'admin_decision';
 export type DisputePreHoldStatus = 'open' | 'collected' | 'settled_on_release';
+export type CreditSourceKind = 'adjustment' | 'void' | 'collection';
 
 export interface CommissionReceivable {
   id: string;
@@ -265,6 +266,7 @@ interface CreditRow extends QueryResultRow {
   currency: string;
   amount_minor: string | number;
   remaining_minor: string | number;
+  source_kind: CreditSourceKind;
   created_at: Date | string;
 }
 
@@ -322,6 +324,22 @@ function requireDisputeRef(disputeRef: string): string {
     throw validationError({ disputeRef: 'must be a UUID' });
   }
   return normalised;
+}
+
+function normaliseReceiptRef(externalReference: string | undefined): string | null {
+  if (typeof externalReference !== 'string') {
+    return null;
+  }
+  const normalised = externalReference.trim().replace(/\s+/g, ' ').toUpperCase();
+  return normalised.length === 0 ? null : normalised;
+}
+
+function duplicateCollectionError(): ApiException {
+  return new ApiException(
+    409,
+    'DUPLICATE_COLLECTION',
+    'That receipt reference is already recorded for this company and currency.',
+  );
 }
 
 export function presentCommissionReceivable(
@@ -475,12 +493,7 @@ export class ReceivablesService {
       throw error;
     }
 
-    await this.netCredits(
-      client,
-      input.transporterCompanyId,
-      amount.currency,
-      this.creditMayOffsetExisting() ? null : insertedId,
-    );
+    await this.netCredits(client, input.transporterCompanyId, amount.currency, insertedId);
     return presentCommissionReceivable(await this.loadReceivable(client, insertedId));
   }
 
@@ -543,10 +556,8 @@ export class ReceivablesService {
          ) VALUES ($1, $2, $3, $4, $4, 'void', NULL, $5, $6)`,
         [randomUUID(), row.transporter_company_id, row.currency, safeMinor(paid), row.id, at],
       );
-      if (this.creditMayOffsetExisting()) {
-        await this.netCredits(client, row.transporter_company_id, row.currency);
-      }
     }
+    await this.netCredits(client, row.transporter_company_id, row.currency);
 
     return presentCommissionReceivable(updated.rows[0]);
   }
@@ -685,6 +696,10 @@ export class ReceivablesService {
       };
     }
 
+    if (input.source === 'admin_decision') {
+      await this.assertAdminActor(client, input.actorUserId);
+    }
+
     const disputeRef = requireDisputeRef(input.disputeRef);
     if (row.status !== 'held' || row.dispute_ref !== disputeRef) {
       throw new ApiException(409, 'DISPUTE_NOT_OPEN', 'That dispute is not open.');
@@ -755,9 +770,7 @@ export class ReceivablesService {
       ],
     );
 
-    if (this.creditMayOffsetExisting()) {
-      await this.netCredits(client, row.transporter_company_id, row.currency);
-    }
+    await this.netCredits(client, row.transporter_company_id, row.currency);
 
     const outcome = await this.query<OutcomeRow>(
       client,
@@ -799,6 +812,10 @@ export class ReceivablesService {
         adjustment: presentCommissionAdjustment(adjustment),
         receivable: presentCommissionReceivable(await this.loadReceivable(client, row.id)),
       };
+    }
+
+    if (input.source === 'admin_decision') {
+      await this.assertAdminActor(client, input.actorUserId);
     }
 
     const reason = requireReason(input.reason);
@@ -1060,9 +1077,7 @@ export class ReceivablesService {
       ],
     );
 
-    if (this.creditMayOffsetExisting()) {
-      await this.netCredits(client, row.transporter_company_id, row.currency);
-    }
+    await this.netCredits(client, row.transporter_company_id, row.currency);
 
     return {
       adjustment: presentCommissionAdjustment(adjustment.rows[0]),
@@ -1368,6 +1383,22 @@ export class ReceivablesService {
   ): Promise<CommissionCollectionRecord> {
     await lockCommissionExclusive(client, companyId);
     const currency = amount.currency;
+    const receiptRefNormalised = normaliseReceiptRef(input.externalReference);
+    if (receiptRefNormalised != null) {
+      const duplicate = await this.query<{ id: string }>(
+        client,
+        `SELECT id
+           FROM commission_collections
+          WHERE company_id = $1
+            AND currency = $2
+            AND receipt_ref_normalised = $3
+          LIMIT 1`,
+        [companyId, currency, receiptRefNormalised],
+      );
+      if (duplicate.rows[0]) {
+        throw duplicateCollectionError();
+      }
+    }
     const rows = await this.query<OpenReceivableRow>(
       client,
       `SELECT id, status, collected_minor, remaining_minor
@@ -1421,24 +1452,36 @@ export class ReceivablesService {
     }
 
     const creditedMinor = safeMinor(left);
-    await this.query(
-      client,
-      `INSERT INTO commission_collections (
-         id, company_id, currency, amount_minor, credited_minor, external_reference, notes,
-         recorded_by, recorded_at
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-      [
-        collectionId,
-        companyId,
-        currency,
-        amount.amountMinor,
-        creditedMinor,
-        input.externalReference ?? null,
-        input.notes ?? null,
-        actor.id,
-        recordedAt,
-      ],
-    );
+    try {
+      await this.query(
+        client,
+        `INSERT INTO commission_collections (
+           id, company_id, currency, amount_minor, credited_minor, external_reference,
+           receipt_ref_normalised, notes, recorded_by, recorded_at
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+        [
+          collectionId,
+          companyId,
+          currency,
+          amount.amountMinor,
+          creditedMinor,
+          input.externalReference ?? null,
+          receiptRefNormalised,
+          input.notes ?? null,
+          actor.id,
+          recordedAt,
+        ],
+      );
+    } catch (error) {
+      if (
+        isPgError(error) &&
+        error.code === '23505' &&
+        (error as { constraint?: string }).constraint === 'commission_collections_receipt_uidx'
+      ) {
+        throw duplicateCollectionError();
+      }
+      throw error;
+    }
 
     if (left > 0n) {
       await this.query(
@@ -1460,9 +1503,7 @@ export class ReceivablesService {
       );
     }
 
-    if (this.creditMayOffsetExisting()) {
-      await this.netCredits(client, companyId, currency);
-    }
+    await this.netCredits(client, companyId, currency);
 
     const outstandingByCurrencyAfter = await this.outstandingByCurrency(client, companyId);
     const outstandingAmountAfter =
@@ -1487,31 +1528,75 @@ export class ReceivablesService {
   }
 
   /**
-   * U1 (user, 11 Nov 16:37 CAT): commission credit may pay off commission already owed.
-   * When true, netting applies FIFO to all owing receivables whenever it runs. When false,
-   * netting runs only in recognise() and only against the newly inserted receivable, so
+   * U1 (user decision 11 Nov 2026 16:37 CAT) applies to dispute/void credit only.
+   * Collection credit is the transporter's own payment and always pays what they owe
+   * (Mark review L2, 17 Nov). When true, every credit kind may offset existing debt.
+   * When false, only 'collection' credit offsets existing debt; 'adjustment' and 'void'
    * credit offsets commission recognised after the credit exists.
    */
   private creditMayOffsetExisting(): boolean {
     return this.env.BILLING_CREDIT_OFFSETS_EXISTING;
   }
 
+  private creditKindsForExistingDebt(): CreditSourceKind[] {
+    return this.creditMayOffsetExisting()
+      ? ['adjustment', 'void', 'collection']
+      : ['collection'];
+  }
+
+  private async assertAdminActor(client: PoolClient, actorUserId: string): Promise<void> {
+    const result = await this.query<{ role: string }>(
+      client,
+      `SELECT role FROM users WHERE id = $1`,
+      [actorUserId],
+    );
+    if (result.rows[0]?.role !== 'admin') {
+      throw new ApiException(
+        403,
+        'ADMIN_ONLY',
+        'Only an admin can record an admin decision.',
+      );
+    }
+  }
+
   private async netCredits(
     client: PoolClient,
     companyId: string,
     currency: string,
-    onlyReceivableId: string | null = null,
+    newReceivableId: string | null = null,
   ): Promise<void> {
+    await this.applyCredits(
+      client,
+      companyId,
+      currency,
+      this.creditKindsForExistingDebt(),
+      null,
+    );
+    if (!this.creditMayOffsetExisting() && newReceivableId != null) {
+      await this.applyCredits(client, companyId, currency, null, newReceivableId);
+    }
+  }
+
+  private async applyCredits(
+    client: PoolClient,
+    companyId: string,
+    currency: string,
+    sourceKinds: CreditSourceKind[] | null,
+    onlyReceivableId: string | null,
+  ): Promise<void> {
+    const creditParams: unknown[] = [companyId, currency];
+    const kindsClause =
+      sourceKinds == null ? '' : ` AND source_kind = ANY($${creditParams.push(sourceKinds)}::text[])`;
     const credits = await this.query<CreditRow>(
       client,
-      `SELECT id, company_id, currency, amount_minor, remaining_minor, created_at
+      `SELECT id, company_id, currency, amount_minor, remaining_minor, source_kind, created_at
          FROM commission_credits
         WHERE company_id = $1
           AND currency = $2
-          AND remaining_minor > 0
+          AND remaining_minor > 0${kindsClause}
         ORDER BY created_at ASC, id ASC
         FOR UPDATE`,
-      [companyId, currency],
+      creditParams,
     );
     if (credits.rows.length === 0) {
       return;

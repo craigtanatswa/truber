@@ -1,4 +1,6 @@
 import { randomUUID } from 'crypto';
+import { readFile } from 'fs/promises';
+import path from 'path';
 import { Pool } from 'pg';
 import { loadEnv } from '../src/config/env';
 import { qualifyAppSql } from '../src/db/identifiers';
@@ -86,6 +88,38 @@ describe('billing schema constraints', () => {
     await truncate();
     userId = await insertUser();
     companyId = await insertCompany();
+  });
+
+  it('reapplies migrations 007 and 008 twice without changing receivable constraints', async () => {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const constraintCount = async (): Promise<string> => {
+        const result = await client.query<{ count: string }>(
+          `SELECT count(*)::text AS count
+             FROM pg_catalog.pg_constraint
+            WHERE conrelid = $1::regclass`,
+          [`${env.db.DB_SCHEMA}.commission_receivables`],
+        );
+        return result.rows[0].count;
+      };
+      const migrationFiles = ['007_billing_adjustments.sql', '008_billing_collection_receipts.sql'];
+      for (const file of migrationFiles) {
+        const raw = await readFile(path.resolve(process.cwd(), 'migrations', file), 'utf8');
+        await client.query(sql(raw));
+      }
+      const before = await constraintCount();
+      for (let run = 0; run < 2; run += 1) {
+        for (const file of migrationFiles) {
+          const raw = await readFile(path.resolve(process.cwd(), 'migrations', file), 'utf8');
+          await client.query(sql(raw));
+        }
+      }
+      expect(await constraintCount()).toBe(before);
+    } finally {
+      await client.query('ROLLBACK');
+      client.release();
+    }
   });
 
   it('rejects an open receivable whose collected plus remaining does not equal the amount', async () => {

@@ -145,13 +145,14 @@ describe('billing disputes and adjustments', () => {
     outcomeReason?: string;
     at?: Date;
     idempotencyKey?: string;
+    actorUserId?: string;
   }) {
     return receivables.finaliseAfterDispute(null, {
       bookingId: options.bookingId,
       disputeRef: options.disputeRef ?? 'd1000000-0000-4000-8000-000000000001',
       source: options.source ?? 'admin_decision',
       outcomeReason: options.outcomeReason ?? 'No change after review',
-      actorUserId: admin.id,
+      actorUserId: options.actorUserId ?? admin.id,
       at: options.at ?? at(50 * HOUR),
       idempotencyKey: options.idempotencyKey ?? `finalise-${randomUUID()}`,
     });
@@ -166,6 +167,7 @@ describe('billing disputes and adjustments', () => {
     reason?: string;
     decidedAt?: Date;
     idempotencyKey?: string;
+    actorUserId?: string;
     shipperCompanyId?: string;
     shipperAgreedBy?: string;
     transporterAgreedBy?: string;
@@ -179,7 +181,7 @@ describe('billing disputes and adjustments', () => {
       source: options.source ?? 'admin_decision',
       newTripAmount: money(options.newTripMinor ?? 50000, options.currency ?? 'USD'),
       reason: options.reason ?? 'Resolved dispute',
-      actorUserId: admin.id,
+      actorUserId: options.actorUserId ?? admin.id,
       decidedAt: options.decidedAt ?? at(50 * HOUR),
       idempotencyKey: options.idempotencyKey ?? `adjust-${randomUUID()}`,
       shipperCompanyId: options.shipperCompanyId,
@@ -423,6 +425,50 @@ describe('billing disputes and adjustments', () => {
     );
     expect(forbiddenError.getStatus()).toBe(403);
     expect(forbiddenError.code).toBe('FORBIDDEN');
+  });
+
+  it('requires an admin actor for admin decisions', async () => {
+    const adjusted = await recognise({ method: 'cash' });
+    await hold(adjusted.bookingId);
+
+    const adjustError = await capture(
+      adjust({
+        bookingId: adjusted.bookingId,
+        newTripMinor: 60000,
+        actorUserId: transporterUser.id,
+      }),
+    );
+    expect(adjustError.getStatus()).toBe(403);
+    expect(adjustError.code).toBe('ADMIN_ONLY');
+    expect(adjustError.message).toBe('Only an admin can record an admin decision.');
+
+    const adjustedRow = await rawReceivable(adjusted.receivable.id);
+    expect(adjustedRow.status).toBe('held');
+    expect(adjustedRow.remaining_minor).toBe('5000');
+
+    const finalised = await recognise({ method: 'cash' });
+    await hold(finalised.bookingId);
+
+    const finaliseError = await capture(
+      finalise({
+        bookingId: finalised.bookingId,
+        actorUserId: transporterUser.id,
+      }),
+    );
+    expect(finaliseError.getStatus()).toBe(403);
+    expect(finaliseError.code).toBe('ADMIN_ONLY');
+    expect(finaliseError.message).toBe('Only an admin can record an admin decision.');
+
+    const finalisedRow = await rawReceivable(finalised.receivable.id);
+    expect(finalisedRow.status).toBe('held');
+    expect(finalisedRow.remaining_minor).toBe('5000');
+
+    const counts = await db.query<{ adjustments: string; outcomes: string }>(
+      `SELECT
+         (SELECT count(*) FROM commission_adjustments)::text AS adjustments,
+         (SELECT count(*) FROM commission_dispute_outcomes)::text AS outcomes`,
+    );
+    expect(counts.rows[0]).toEqual({ adjustments: '0', outcomes: '0' });
   });
 
   it('requires a transporter response or the full 48h response window for admin decisions', async () => {

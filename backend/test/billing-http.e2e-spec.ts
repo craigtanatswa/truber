@@ -4,6 +4,7 @@ import { CommissionGateService, COMMISSION_OUTSTANDING_MESSAGE } from '../src/bi
 import { CommissionReceivable, ReceivablesService } from '../src/billing/receivables.service';
 import { ApiException } from '../src/common/api.exception';
 import { ApiExceptionFilter } from '../src/common/exception.filter';
+import { hashPassword } from '../src/common/crypto';
 import { createApp } from '../src/create-app';
 import { DbService } from '../src/db/db.service';
 import { assertOperationResponse, assertSchema } from './contract';
@@ -219,6 +220,90 @@ describe('billing HTTP endpoints', () => {
 
     const afterReuse = await http(app, 'get', `/companies/${companyId}/commission-account`, { token: admin.token });
     expect(afterReuse.body.outstandingByCurrency).toEqual([{ amountMinor: 2500, currency: 'USD' }]);
+  });
+
+  it('dedupes collection receipt references across admins', async () => {
+    const transporter = await register(app, 'transporter');
+    const companyId = await createTransporterCompany(app, transporter.token);
+    await recognise(app, companyId, 100000, 'USD');
+    const secondAdmin = await insertAdmin(app, uniqueEmail('ops-admin'), 'second-admin-password');
+    const url = `/admin/companies/${companyId}/commission-collections`;
+    const body = {
+      amount: { amountMinor: 1000, currency: 'USD' },
+      externalReference: 'EFT-123',
+    };
+
+    const first = await http(app, 'post', url, {
+      token: admin.token,
+      idempotencyKey: 'receipt-dedupe-1',
+      body,
+    });
+    expect(first.status).toBe(201);
+    assertOperationResponse('recordCommissionCollection', 201, first.body);
+
+    const duplicate = await http(app, 'post', url, {
+      token: secondAdmin.token,
+      idempotencyKey: 'receipt-dedupe-2',
+      body: {
+        amount: { amountMinor: 1000, currency: 'USD' },
+        externalReference: ' eft-123 ',
+      },
+    });
+    expect(duplicate.status).toBe(409);
+    assertOperationResponse('recordCommissionCollection', 409, duplicate.body);
+    expect(duplicate.body.code).toBe('DUPLICATE_COLLECTION');
+    expect(duplicate.body.message).toBe(
+      'That receipt reference is already recorded for this company and currency.',
+    );
+
+    const db = app.get(DbService);
+    const counts = await db.query<{ collections: string; credits: string }>(
+      `SELECT
+         (SELECT count(*) FROM commission_collections)::text AS collections,
+         (SELECT count(*) FROM commission_credits)::text AS credits`,
+    );
+    expect(counts.rows[0]).toEqual({ collections: '1', credits: '0' });
+
+    const replay = await http(app, 'post', url, {
+      token: admin.token,
+      idempotencyKey: 'receipt-dedupe-1',
+      body,
+    });
+    expect(replay.status).toBe(201);
+    assertOperationResponse('recordCommissionCollection', 201, replay.body);
+    expect(replay.body).toEqual(first.body);
+
+    const otherCurrency = await http(app, 'post', url, {
+      token: admin.token,
+      idempotencyKey: 'receipt-dedupe-3',
+      body: {
+        amount: { amountMinor: 1000, currency: 'ZWG' },
+        externalReference: 'EFT-123',
+      },
+    });
+    expect(otherCurrency.status).toBe(201);
+    assertOperationResponse('recordCommissionCollection', 201, otherCurrency.body);
+
+    const otherTransporter = await register(app, 'transporter');
+    const otherCompanyId = await createTransporterCompany(app, otherTransporter.token);
+    await recognise(app, otherCompanyId, 100000, 'USD');
+    const otherCompany = await http(app, 'post', `/admin/companies/${otherCompanyId}/commission-collections`, {
+      token: admin.token,
+      idempotencyKey: 'receipt-dedupe-4',
+      body,
+    });
+    expect(otherCompany.status).toBe(201);
+    assertOperationResponse('recordCommissionCollection', 201, otherCompany.body);
+
+    for (const key of ['receipt-dedupe-5', 'receipt-dedupe-6']) {
+      const noReference = await http(app, 'post', url, {
+        token: admin.token,
+        idempotencyKey: key,
+        body: { amount: { amountMinor: 100, currency: 'USD' } },
+      });
+      expect(noReference.status).toBe(201);
+      assertOperationResponse('recordCommissionCollection', 201, noReference.body);
+    }
   });
 
   it('requires a valid Idempotency-Key and validates the collection body', async () => {
@@ -677,6 +762,25 @@ async function loginAdmin(app: INestApplication): Promise<Session> {
     userId: response.body.user.id as string,
     email: ADMIN_EMAIL,
   };
+}
+
+async function insertAdmin(
+  app: INestApplication,
+  email: string,
+  password: string,
+): Promise<Session> {
+  const db = app.get(DbService);
+  const id = randomUUID();
+  await db.query(
+    `INSERT INTO users (id, email, password_hash, full_name, role, account_status, created_at, updated_at)
+     VALUES ($1, $2, $3, 'Second Billing Admin', 'admin', 'active', now(), now())`,
+    [id, email, await hashPassword(password)],
+  );
+  const response = await http(app, 'post', '/auth/login', { body: { email, password } });
+  if (response.status !== 200) {
+    throw new Error(`admin login failed ${response.status}`);
+  }
+  return { token: response.body.accessToken as string, userId: id, email };
 }
 
 async function createTransporterCompany(app: INestApplication, token: string): Promise<string> {
