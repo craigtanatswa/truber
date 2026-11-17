@@ -1,24 +1,26 @@
 // Writes mobile/deploy/vercel.json with a Content-Security-Policy-Report-Only
-// header. Script hashes come from the inline <script> blocks in the HTML that
-// will be served, so a rebuild that changes the splash script stays valid
-// after this script is run again.
+// header. Hashes come from the inline <script> blocks in the HTML that will
+// be served, so rerun this after a build that changes the splash script.
 //
-// Usage (after `flutter build web --no-web-resources-cdn`):
+// The policy is console-only. It does not set report-uri or report-to, and
+// this script refuses to add either. Violations show in the browser console
+// until the policy is ready to enforce.
+//
+// Live build (connect-src must include the API origin):
+//   flutter build web --no-web-resources-cdn \
+//     --dart-define=TRUBER_DATA=live \
+//     --dart-define=API_BASE_URL=https://api.example.com
 //   node mobile/deploy/write_csp.mjs \
 //     --index mobile/build/web/index.html \
-//     --bootstrap mobile/build/web/flutter_bootstrap.js
+//     --api-origin https://api.example.com
 //
-// CanvasKit wasm in the Flutter 3.24.5 engine build:
-//   chromium/canvaskit.wasm  5.12 MB
-//   canvaskit.wasm           6.44 MB
-//   skwasm.wasm              3.07 MB
-// All are under the 8 MB per-file upload limit, so the web build should use
-// --no-web-resources-cdn and serve canvaskit/ from the build. Roboto regular
-// is vendored at web/fonts/roboto/v20/. Noto fallback faces are still fetched
-// by path under fontFallbackBaseUrl; this script points that at fonts/.
-//
-// Optional: --api-origin https://api.example.com
-// adds that exact origin to connect-src. Default is 'self' only.
+// CanvasKit is self-hosted (--no-web-resources-cdn). Measured with Flutter
+// 3.24.5: chromium/canvaskit.wasm 5.12 MB, canvaskit.wasm 6.44 MB,
+// skwasm.wasm 3.07 MB. The whole build/web tree is 23.8 MB. Vercel Hobby
+// allows 100 MB for the deployment, not 8 MB per file. Roboto regular is
+// vendored at web/fonts/roboto/v20/. The font path is set in
+// web/flutter_bootstrap.js (fontFallbackBaseUrl), not by patching build output.
+// Noto fallback faces are not vendored.
 
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -32,11 +34,22 @@ function flag(name, fallback) {
 }
 
 const indexPath = path.resolve(flag('--index', 'mobile/build/web/index.html'));
-const bootstrapPath = path.resolve(
-  flag('--bootstrap', 'mobile/build/web/flutter_bootstrap.js'),
-);
 const outPath = path.resolve(flag('--out', 'mobile/deploy/vercel.json'));
 const apiOrigin = flag('--api-origin', '');
+
+if (apiOrigin) {
+  let origin;
+  try {
+    origin = new URL(apiOrigin);
+  } catch {
+    console.error(`--api-origin must be an absolute URL, got ${apiOrigin}`);
+    process.exit(1);
+  }
+  if (origin.origin !== apiOrigin || (origin.protocol !== 'https:' && origin.protocol !== 'http:')) {
+    console.error(`--api-origin must be an exact http(s) origin, got ${apiOrigin}`);
+    process.exit(1);
+  }
+}
 
 const html = fs.readFileSync(indexPath, 'utf8');
 const scriptRe = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;
@@ -53,18 +66,6 @@ while ((match = scriptRe.exec(html))) {
 if (hashes.length === 0) {
   console.error(`no inline script found in ${indexPath}`);
   process.exit(1);
-}
-
-if (fs.existsSync(bootstrapPath)) {
-  let js = fs.readFileSync(bootstrapPath, 'utf8');
-  if (!js.includes('fontFallbackBaseUrl')) {
-    js = js.replace(
-      '_flutter.loader.load({',
-      '_flutter.loader.load({\n  config: { fontFallbackBaseUrl: "fonts/" },',
-    );
-    fs.writeFileSync(bootstrapPath, js);
-    console.log(`patched fontFallbackBaseUrl in ${bootstrapPath}`);
-  }
 }
 
 const connect = ["'self'"];
@@ -86,9 +87,12 @@ const policy = [
   "manifest-src 'self'",
 ].join('; ');
 
-if (policy.includes("'unsafe-inline'") && policy.includes('script-src') &&
-    /script-src[^;]*'unsafe-inline'/.test(policy)) {
+if (/script-src[^;]*'unsafe-inline'/.test(policy)) {
   console.error('script-src must not contain unsafe-inline');
+  process.exit(1);
+}
+if (/report-uri|report-to/i.test(policy)) {
+  console.error('policy stays console-only: no report-uri or report-to');
   process.exit(1);
 }
 
