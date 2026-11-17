@@ -1,6 +1,8 @@
+import '../../models/booking.dart';
 import '../../models/company.dart';
 import '../../models/load.dart';
 import '../../models/money.dart';
+import '../../models/quotation.dart';
 import '../../models/user.dart';
 
 /// JSON <-> model mapping for OpenAPI v0.4.0 schemas. Unknown enum values map
@@ -116,3 +118,102 @@ Map<String, dynamic> createLoadToJson(CreateLoadRequest r) => {
 
 String apiEnum(Enum e) => _snake(e.name);
 String apiDate(DateTime d) => _date(d);
+
+String apiDateTime(DateTime d) => d.toUtc().toIso8601String();
+
+Quotation quotationFromJson(Map<String, dynamic> j) => Quotation(
+      id: j['id'] as String,
+      loadId: j['loadId'] as String,
+      transporterCompanyId: j['transporterCompanyId'] as String,
+      truckId: j['truckId'] as String?,
+      amount: _money(j['amount'])!,
+      status: _enum(
+          QuotationStatus.values, j['status'], QuotationStatus.submitted),
+      notes: j['notes'] as String?,
+      validUntil: _dt(j['validUntil']),
+      createdAt: _dt(j['createdAt']),
+      updatedAt: _dt(j['updatedAt']),
+      counterpartyRestrictedUntil: _dtOrNull(j['counterpartyRestrictedUntil']),
+    );
+
+Booking bookingFromJson(Map<String, dynamic> j) => Booking(
+      id: j['id'] as String,
+      loadId: j['loadId'] as String,
+      quotationId: j['quotationId'] as String,
+      shipperCompanyId: j['shipperCompanyId'] as String,
+      transporterCompanyId: j['transporterCompanyId'] as String,
+      truckId: j['truckId'] as String?,
+      status: _enum(BookingStatus.values, j['status'],
+          BookingStatus.pendingPaymentArrangement),
+      tripStatus:
+          _enum(TripStatus.values, j['tripStatus'], TripStatus.notStarted),
+      completionStatus: _enum(CompletionStatus.values, j['completionStatus'],
+          CompletionStatus.notComplete),
+      agreedAmount: _money(j['agreedAmount'])!,
+      commissionRateBps: (j['commissionRateBps'] as num).toInt(),
+      confirmedPaymentArrangementId:
+          j['confirmedPaymentArrangementId'] as String?,
+      confirmedAt: _dtOrNull(j['confirmedAt']),
+      createdAt: _dt(j['createdAt']),
+      updatedAt: _dt(j['updatedAt']),
+    );
+
+AcceptQuotationResponse acceptQuotationFromJson(Map<String, dynamic> j) =>
+    AcceptQuotationResponse(
+      quotation: quotationFromJson(j['quotation'] as Map<String, dynamic>),
+      booking: bookingFromJson(j['booking'] as Map<String, dynamic>),
+    );
+
+List<Quotation> quotationListFromJson(Map<String, dynamic> j) =>
+    (j['data'] as List)
+        .map((e) => quotationFromJson(e as Map<String, dynamic>))
+        .toList();
+
+PayoutPreview payoutPreviewFromJson(Map<String, dynamic> j) {
+  final blockers = <SubmissionBlocker>[];
+  final raw = j['submissionBlockers'];
+  if (raw is List) {
+    for (final item in raw) {
+      if (item is! Map) continue;
+      final map = Map<String, dynamic>.from(item);
+      final details = map['details'];
+      DateTime? until;
+      if (details is Map && details['bannedUntil'] is String) {
+        until = DateTime.tryParse(details['bannedUntil'] as String);
+      }
+      // Outstanding amounts stay in the JSON only. They are not copied onto
+      // the model, so a widget cannot render a commission breakdown from them.
+      blockers.add(SubmissionBlocker(
+        code: map['code'] as String? ?? '',
+        bannedUntil: until,
+      ));
+    }
+  }
+  return PayoutPreview(
+    agreedAmount: _money(j['agreedAmount'])!,
+    commissionRateBps: (j['commissionRateBps'] as num).toInt(),
+    commissionAmount: _money(j['commissionAmount'])!,
+    knownFeesTotal: _money(j['knownFeesTotal'])!,
+    netPayoutBeforeUnknownFees: _money(j['netPayoutBeforeUnknownFees'])!,
+    feeStatus: j['feeStatus'] as String,
+    paymentMethod: j['paymentMethod'] as String?,
+    farePayoutDueThroughTruber: j['farePayoutDueThroughTruber'] as bool,
+    paymentProtectedPossible: j['paymentProtectedPossible'] as bool,
+    submissionBlockers: blockers,
+  );
+}
+
+Map<String, dynamic> createQuotationToJson(CreateQuotationRequest r) => {
+      'transporterCompanyId': r.transporterCompanyId,
+      if (r.truckId != null) 'truckId': r.truckId,
+      'amount': r.amount.toJson(),
+      if (r.notes != null && r.notes!.isNotEmpty) 'notes': r.notes,
+      'validUntil': apiDateTime(r.validUntil),
+    };
+
+Map<String, dynamic> payoutPreviewToJson(PayoutPreviewRequest r) => {
+      'transporterCompanyId': r.transporterCompanyId,
+      'amount': r.amount.toJson(),
+      if (r.loadId != null) 'loadId': r.loadId,
+      if (r.paymentMethod != null) 'paymentMethod': r.paymentMethod,
+    };

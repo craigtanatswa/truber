@@ -157,6 +157,12 @@ abstract final class TruberCopy {
   static const quoteSubmitCta = 'Send quotation';
   static const quoteSent = 'Quotation sent to the shipper.';
 
+  /// TODO(design): quote.withdraw_cta — needs Design wording.
+  static const quoteWithdrawCta = 'TODO';
+
+  /// TODO(design): quote.restore_cta — needs Design wording.
+  static const quoteRestoreCta = 'TODO';
+
   static const bookingConfirmTitle = 'Confirm booking';
   static const bookingSummary =
       'Check route, rate, and payment before you confirm.';
@@ -373,7 +379,7 @@ abstract final class TruberCopy {
 
   /// Template — replace {amount}.
   static const payoutQuoteHint =
-      'You’ll receive {amount} after commission and fees.';
+      'You’ll earn {amount} after Truber’s commission.';
   static const payoutFeesNone = 'No fees';
 
   static String payoutNetValueFor(String amountFormatted) =>
