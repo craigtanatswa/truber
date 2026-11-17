@@ -22,7 +22,7 @@ The OpenAPI file at `../api/openapi.yaml` is the published contract (SHA-256 `88
 | GET, PATCH | `/loads/{loadId}` | Owner edit while `draft` or `posted`. |
 | POST | `/loads/{loadId}/post` | Requires `accountStatus=active` and company `verificationStatus=verified`. |
 | POST | `/loads/{loadId}/cancel` | Owner cancel while no confirmed booking state exists. |
-| GET, POST | `/trucks` | Transporters see their own fleet. Shippers see verified trucks only. Admins see all. Create is always `unverified`; registration numbers are normalised. |
+| GET, POST | `/trucks` | Transporters see their own fleet. Shippers get 403 `TRUCK_BROWSING_DISABLED` (no truck browsing at launch). Admins see all. Create is always `unverified`; registration numbers are normalised. |
 | GET, PATCH | `/trucks/{truckId}` | Owning transporter member or admin. `verificationStatus` is admin-only. A truck the caller cannot see returns 404. |
 | GET, POST | `/verification-documents` | Callers see their own or their companies' documents. Upload stores `submitted` and moves an unverified or rejected company/truck to `pending`. |
 | POST | `/admin/verification-documents/{documentId}/review` | Admin only. Approve or reject once; an `Idempotency-Key` replay returns the same body. |
@@ -52,9 +52,9 @@ There is no public shortcut to a verified company.
 
 ## Trucks, verification documents and account status (launch item 5)
 
-Truck list and read visibility depends on the caller. A transporter sees only trucks in companies it belongs to, a shipper sees only `verified` trucks, and an admin sees all. `getTruck` returns 404 when the caller cannot see the truck.
+Truck list and read visibility depends on the caller. A transporter sees only trucks in companies it belongs to, and an admin sees all. There is no truck browsing at launch: a shipper gets 403 `TRUCK_BROWSING_DISABLED` from `listTrucks` and `getTruck` (for any id, so existence is never revealed) and 403 `FORBIDDEN` from `updateTruck`. Once quotations land, shippers will see only trucks named on quotations for their own loads (TODO for mark/quotations-api). `getTruck` returns 404 to a transporter outside the owning company.
 
-`registrationNumber` is normalised by removing spaces and hyphens and uppercasing, then stored under a global unique index. A duplicate variant returns 409 `TRUCK_REGISTRATION_EXISTS`. `availableOn` is accepted on `listTrucks` and ignored until API v0.5.1.
+`registrationNumber` is normalised with Unicode NFKC, then all whitespace, zero-width/format characters and punctuation are removed; the result must be 1–64 ASCII letters or digits (otherwise 400 `VALIDATION_ERROR` with `details.fields.registrationNumber`) and is uppercased and stored under a global unique index. Migration `004a_truck_registration_format.sql` enforces `^[A-Z0-9]{1,64}$` with a CHECK constraint. A duplicate variant returns 409 `TRUCK_REGISTRATION_EXISTS`. `availableOn` is accepted on `listTrucks` and ignored until API v0.5.1.
 
 Verification documents are links only. `documentUri` must be an absolute `https` URL on a host listed in `VERIFICATION_DOC_URI_HOSTS`. The API stores the link and never fetches or logs it. An empty host list rejects every link. The contract has no `mimeType` or size fields, so those fields are refused as validation errors. Uploading a document moves an `unverified` or `rejected` truck or company to `pending`; editing a verified truck's identity fields (`truckType` or `capacityKg`) also returns it to `pending`.
 

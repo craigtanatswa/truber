@@ -1,13 +1,14 @@
+import { randomUUID } from 'crypto';
 import { Pool } from 'pg';
 import { loadEnv } from '../src/config/env';
 import { migrate } from '../src/db/migrate';
-import { quoteIdent } from '../src/db/identifiers';
+import { qualifyAppSql, quoteIdent } from '../src/db/identifiers';
 import { buildPoolConfig } from '../src/db/pg-config';
 import { prepareTestDatabase } from './prepare-db';
 
 const ITEM5_TABLES = ['account_status_changes', 'trucks', 'verification_documents'];
 const DENIED_GRANTEES = ['PUBLIC', 'anon', 'authenticated', 'service_role'];
-const MIGRATION_ID = '004_trucks_verification.sql';
+const MIGRATION_IDS = ['004_trucks_verification.sql', '004a_truck_registration_format.sql'];
 
 describe('item 5 schema, RLS and grants', () => {
   const env = loadEnv();
@@ -80,15 +81,15 @@ describe('item 5 schema, RLS and grants', () => {
     }
   });
 
-  it('records migration 004 and reruns migrate without changing it', async () => {
+  it('records migrations 004 and 004a and reruns migrate without changing them', async () => {
     const pool = new Pool(buildPoolConfig(env.db, 'migration'));
     const schema = quoteIdent(env.db.DB_SCHEMA);
     try {
       const before = await pool.query<{ id: string; applied_at: Date }>(
-        `SELECT id, applied_at FROM ${schema}.schema_migrations WHERE id = $1`,
-        [MIGRATION_ID],
+        `SELECT id, applied_at FROM ${schema}.schema_migrations WHERE id = ANY($1::text[]) ORDER BY id`,
+        [MIGRATION_IDS],
       );
-      expect(before.rowCount).toBe(1);
+      expect(before.rows.map((row) => row.id)).toEqual(MIGRATION_IDS);
 
       const countBefore = await pool.query<{ count: number }>(
         `SELECT count(*)::int AS count FROM ${schema}.schema_migrations`,
@@ -97,18 +98,74 @@ describe('item 5 schema, RLS and grants', () => {
       await expect(migrate(pool, env)).resolves.toBeUndefined();
 
       const after = await pool.query<{ id: string; applied_at: Date }>(
-        `SELECT id, applied_at FROM ${schema}.schema_migrations WHERE id = $1`,
-        [MIGRATION_ID],
+        `SELECT id, applied_at FROM ${schema}.schema_migrations WHERE id = ANY($1::text[]) ORDER BY id`,
+        [MIGRATION_IDS],
       );
-      expect(after.rowCount).toBe(1);
-      expect(after.rows[0].id).toBe(MIGRATION_ID);
-      expect(after.rows[0].applied_at.getTime()).toBe(before.rows[0].applied_at.getTime());
+      expect(after.rows.map((row) => row.id)).toEqual(MIGRATION_IDS);
+      const beforeApplied = new Map(before.rows.map((row) => [row.id, row.applied_at.getTime()]));
+      for (const row of after.rows) {
+        expect(row.applied_at.getTime()).toBe(beforeApplied.get(row.id));
+      }
 
       const countAfter = await pool.query<{ count: number }>(
         `SELECT count(*)::int AS count FROM ${schema}.schema_migrations`,
       );
       expect(countAfter.rows[0].count).toBe(countBefore.rows[0].count);
     } finally {
+      await pool.end();
+    }
+  });
+
+  it('enforces the normalised registration format at the database boundary', async () => {
+    const pool = new Pool(buildPoolConfig(env.db, 'migration'));
+    const sql = (text: string) =>
+      qualifyAppSql(text, { appSchema: env.db.DB_SCHEMA, postgisSchema: env.db.POSTGIS_SCHEMA });
+    const userId = randomUUID();
+    const companyId = randomUUID();
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        sql(`INSERT INTO users (id, email, password_hash, full_name, role, account_status, created_at, updated_at)
+             VALUES ($1, $2, 'hash', 'Registration Format Test', 'transporter', 'active',
+                     clock_timestamp(), clock_timestamp())`),
+        [userId, `registration-format-${userId}@example.com`],
+      );
+      await client.query(
+        sql(`INSERT INTO companies (id, type, legal_name, verification_status, created_at, updated_at)
+             VALUES ($1, 'transporter', 'Registration Format Fleet', 'unverified',
+                     clock_timestamp(), clock_timestamp())`),
+        [companyId],
+      );
+
+      const insertTruck = (registrationNumber: string) =>
+        client.query(
+          sql(`INSERT INTO trucks (
+               id, company_id, created_by, registration_number, truck_type, capacity_kg,
+               verification_status, created_at, updated_at
+             ) VALUES ($1, $2, $3, $4, 'flatbed', 10000, 'unverified',
+                       clock_timestamp(), clock_timestamp())`),
+          [randomUUID(), companyId, userId, registrationNumber],
+        );
+
+      for (const registrationNumber of ['abc123', 'ABC 123', 'ABC.123', 'АВС123', '']) {
+        await client.query('SAVEPOINT truck_format_check');
+        let error: { code?: string; constraint?: string } | undefined;
+        try {
+          await insertTruck(registrationNumber);
+        } catch (caught) {
+          error = caught as { code?: string; constraint?: string };
+        }
+        await client.query('ROLLBACK TO SAVEPOINT truck_format_check');
+        expect(error).toBeDefined();
+        expect(error?.code).toBe('23514');
+        expect(error?.constraint).toBe('trucks_registration_number_format');
+      }
+
+      await expect(insertTruck('ABC123X')).resolves.toBeDefined();
+    } finally {
+      await client.query('ROLLBACK').catch(() => undefined);
+      client.release();
       await pool.end();
     }
   });

@@ -29,17 +29,59 @@ function rejectedUri(raw: string, hosts: readonly string[] = HOSTS): ApiExceptio
 
 describe('item 5 pure helpers', () => {
   describe('normalizeRegistrationNumber', () => {
-    it('strips spaces and hyphens and upper-cases the result', () => {
-      expect(normalizeRegistrationNumber('aez-12 34')).toBe('AEZ1234');
+    function invalidRegistration(raw: string): ApiException {
+      const error = thrownBy(() => normalizeRegistrationNumber(raw));
+      expect(error).toBeInstanceOf(ApiException);
+      const api = error as ApiException;
+      expect(api.getStatus()).toBe(400);
+      expect(api.code).toBe('VALIDATION_ERROR');
+      expect(api.details).toEqual({
+        fields: {
+          registrationNumber:
+            'must contain 1 to 64 letters A-Z or digits 0-9 after removing spaces and punctuation',
+        },
+      });
+      return api;
+    }
+
+    it('normalises Unicode, strips separators and punctuation, and upper-cases the result', () => {
+      expect(normalizeRegistrationNumber('aez 12-34')).toBe('AEZ1234');
       expect(normalizeRegistrationNumber('aez\t12\t34')).toBe('AEZ1234');
       expect(normalizeRegistrationNumber('  aez - - 12   34  ')).toBe('AEZ1234');
+      const equivalents = [
+        'ABC\u200b123',
+        'ABC\u200c123',
+        'ABC\u200d123',
+        '\ufeffABC123',
+        'ABC\u00ad123',
+        'ＡＢＣ１２３',
+        'ABC.123',
+        'ABC-123',
+        'ABC 123',
+        'ABC_123',
+        'ABC/123',
+        'abc\u00a0123',
+        'ABC\u3000123',
+      ];
+      for (const value of equivalents) {
+        expect(normalizeRegistrationNumber(value)).toBe('ABC123');
+      }
     });
 
-    it('rejects strings made only of spaces and hyphens', () => {
-      const error = thrownBy(() => normalizeRegistrationNumber('- -'));
-      expect(error).toBeInstanceOf(ApiException);
-      expect((error as ApiException).getStatus()).toBe(400);
-      expect((error as ApiException).code).toBe('VALIDATION_ERROR');
+    it('rejects empty, non-ASCII, control and over-long results', () => {
+      const invalid = [
+        '',
+        ' - . ',
+        '\u200b',
+        'АВС123',
+        'ABCß',
+        'ABC+123',
+        'ABC\u0007123',
+        'A'.repeat(63) + '\u338f',
+      ];
+      for (const value of invalid) {
+        invalidRegistration(value);
+      }
     });
   });
 

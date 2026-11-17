@@ -3,7 +3,6 @@ import { randomUUID } from 'crypto';
 import { PoolClient } from 'pg';
 import { ApiException, isPgError } from '../common/api.exception';
 import { pageMeta, pageWindow } from '../common/http';
-import { assertCalendarDate } from '../common/validation';
 import { DbService } from '../db/db.service';
 import { DbUser, TruckResponse, VerificationStatus } from '../domain';
 import { presentTruck } from '../present';
@@ -16,6 +15,7 @@ const TRUCK_COLUMNS = `
   verification_status, created_at, updated_at
 `;
 
+// At launch no non-member non-admin can reach a truck read, so this is always null in practice until quotations land.
 function counterpartyRestrictionSql(callerParam: number, revealParam: number): string {
   return `
     CASE
@@ -35,16 +35,20 @@ function counterpartyRestrictionSql(callerParam: number, revealParam: number): s
     END AS counterparty_restricted_until`;
 }
 
+// Remove Unicode whitespace/separators, zero-width/format characters, and punctuation before validation.
+export const REGISTRATION_NUMBER_STRIP_RE = /[\s\p{Z}\p{Cf}\p{P}]/gu;
+
 export function normalizeRegistrationNumber(raw: string): string {
-  const normalized = raw.replace(/[\s-]+/g, '').toUpperCase();
-  if (normalized.length === 0 || normalized.length > 64) {
+  const result = raw.normalize('NFKC').replace(REGISTRATION_NUMBER_STRIP_RE, '');
+  if (!/^[A-Za-z0-9]{1,64}$/.test(result)) {
     throw new ApiException(400, 'VALIDATION_ERROR', 'Request validation failed', {
       fields: {
-        registrationNumber: 'must contain at least one character other than spaces and hyphens',
+        registrationNumber:
+          'must contain 1 to 64 letters A-Z or digits 0-9 after removing spaces and punctuation',
       },
     });
   }
-  return normalized;
+  return result.toUpperCase();
 }
 
 @Injectable()
@@ -55,13 +59,18 @@ export class TrucksService {
     actor: DbUser,
     query: ListTrucksQueryDto,
   ): Promise<{ data: TruckResponse[]; meta: ReturnType<typeof pageMeta> }> {
-    if (query.availableOn) assertCalendarDate(query.availableOn, 'availableOn');
+    if (actor.role === 'shipper') {
+      // TODO(mark/quotations-api): when the quotations table lands, let shippers list only trucks named on quotations for loads owned by their company (read-only join), instead of 403.
+      throw new ApiException(
+        403,
+        'TRUCK_BROWSING_DISABLED',
+        'Shippers cannot browse trucks. Trucks named on quotations for your loads will be visible once quotations are available.',
+      );
+    }
     const window = pageWindow(query.page, query.pageSize);
     const where: string[] = [];
     const params: unknown[] = [];
-    if (actor.role === 'shipper') {
-      where.push(`verification_status = 'verified'`);
-    } else if (actor.role === 'transporter') {
+    if (actor.role === 'transporter') {
       params.push(actor.id);
       where.push(
         `company_id IN (SELECT company_id FROM company_members WHERE user_id = $${params.length})`,
@@ -162,6 +171,14 @@ export class TrucksService {
   }
 
   async get(actor: DbUser, truckId: string): Promise<TruckResponse> {
+    if (actor.role === 'shipper') {
+      // TODO(mark/quotations-api): when the quotations table lands, let shippers list only trucks named on quotations for loads owned by their company (read-only join), instead of 403.
+      throw new ApiException(
+        403,
+        'TRUCK_BROWSING_DISABLED',
+        'Shippers cannot browse trucks. Trucks named on quotations for your loads will be visible once quotations are available.',
+      );
+    }
     const result = await this.db.query(
       `SELECT ${TRUCK_COLUMNS}, ${counterpartyRestrictionSql(2, 3)} FROM trucks WHERE id = $1`,
       [truckId, actor.id, actor.role !== 'admin'],
@@ -176,15 +193,20 @@ export class TrucksService {
         [row.company_id, actor.id],
       );
       if (!member.rowCount) {
-        if (actor.role !== 'shipper' || row.verification_status !== 'verified') {
-          throw new ApiException(404, 'NOT_FOUND', 'Truck not found.');
-        }
+        throw new ApiException(404, 'NOT_FOUND', 'Truck not found.');
       }
     }
     return presentTruck(row);
   }
 
   async update(actor: DbUser, truckId: string, dto: UpdateTruckDto): Promise<TruckResponse> {
+    if (actor.role === 'shipper') {
+      throw new ApiException(
+        403,
+        'FORBIDDEN',
+        'Only the owning transporter or an admin can update this truck.',
+      );
+    }
     if (dto.verificationStatus !== undefined && actor.role !== 'admin') {
       throw new ApiException(403, 'VERIFICATION_ADMIN_ONLY', 'Only an admin can change verification status.');
     }
@@ -204,13 +226,6 @@ export class TrucksService {
           [existing.company_id, actor.id],
         );
         if (!member.rowCount) {
-          if (actor.role === 'shipper' && existing.verification_status === 'verified') {
-            throw new ApiException(
-              403,
-              'FORBIDDEN',
-              'Only the owning transporter or an admin can update this truck.',
-            );
-          }
           throw new ApiException(404, 'NOT_FOUND', 'Truck not found.');
         }
       }

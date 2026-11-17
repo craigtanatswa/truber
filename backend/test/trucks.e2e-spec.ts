@@ -152,17 +152,27 @@ describe('trucks API', () => {
     });
   });
 
-  it('rejects duplicate registration numbers across case, spacing, hyphen and company variants', async () => {
+  it('rejects duplicate registration numbers across case, spacing, Unicode and punctuation variants', async () => {
     const transporter = await register(app, 'transporter');
     const firstCompany = await createCompany(app, transporter.token, 'transporter', 'Duplicate One');
     const secondCompany = await createCompany(app, transporter.token, 'transporter', 'Duplicate Two');
 
     await createTruck(app, transporter.token, firstCompany.id, { registrationNumber: 'aez-12 34' });
+    await createTruck(app, transporter.token, firstCompany.id, { registrationNumber: 'ABC123' });
 
     const duplicates: Array<[string, string]> = [
       [firstCompany.id, 'AEZ 12-34'],
       [firstCompany.id, 'aez\t12\t34'],
       [secondCompany.id, 'aez-12-34'],
+      [firstCompany.id, 'ABC\u200b123'],
+      [secondCompany.id, '\ufeffABC123'],
+      [firstCompany.id, 'ＡＢＣ１２３'],
+      [secondCompany.id, 'ＡＢＣ123'],
+      [firstCompany.id, 'ABC.123'],
+      [secondCompany.id, 'abc-123'],
+      [firstCompany.id, 'ABC 123'],
+      [secondCompany.id, 'ABC_123'],
+      [firstCompany.id, 'A.B-C_1/2 3'],
     ];
     for (const [companyId, registrationNumber] of duplicates) {
       const response = expectContract(
@@ -174,6 +184,50 @@ describe('trucks API', () => {
         409,
       );
       expect(response.body.code).toBe('TRUCK_REGISTRATION_EXISTS');
+    }
+  });
+
+  it('rejects unusable registration numbers without creating a truck row', async () => {
+    const transporter = await register(app, 'transporter');
+    const company = await createCompany(app, transporter.token, 'transporter', 'Invalid Plates');
+
+    const cases: Array<{ registrationNumber: string; expectField: boolean }> = [
+      { registrationNumber: ' .-_ ', expectField: true },
+      { registrationNumber: '\u200b\u200b', expectField: true },
+      { registrationNumber: 'АВС123', expectField: true },
+      { registrationNumber: 'ABCß', expectField: true },
+      { registrationNumber: 'A'.repeat(65), expectField: false },
+      { registrationNumber: 'A'.repeat(63) + '\u338f', expectField: true },
+    ];
+    for (const { registrationNumber, expectField } of cases) {
+      const response = expectContract(
+        'createTruck',
+        await http(app, 'post', '/trucks', {
+          token: transporter.token,
+          body: { companyId: company.id, registrationNumber, truckType: 'box', capacityKg: 5000 },
+        }),
+        400,
+      );
+      expect(response.body.code).toBe('VALIDATION_ERROR');
+      if (expectField) {
+        expect(response.body.details?.fields?.registrationNumber).toBe(
+          'must contain 1 to 64 letters A-Z or digits 0-9 after removing spaces and punctuation',
+        );
+      }
+    }
+
+    const env = loadEnv();
+    const pool = new Pool(buildPoolConfig(env.db, 'migration'));
+    try {
+      const count = await pool.query<{ count: number }>(
+        qualifyAppSql('SELECT count(*)::int AS count FROM trucks', {
+          appSchema: env.db.DB_SCHEMA,
+          postgisSchema: env.db.POSTGIS_SCHEMA,
+        }),
+      );
+      expect(count.rows[0].count).toBe(0);
+    } finally {
+      await pool.end();
     }
   });
 
@@ -238,7 +292,7 @@ describe('trucks API', () => {
     expect(adminUnknown.body.code).toBe('VALIDATION_ERROR');
   });
 
-  it('scopes truck lists to the caller fleet, verified trucks for shippers, and everything for admins', async () => {
+  it('scopes truck lists to the caller fleet and everything for admins while disabling shipper browsing', async () => {
     const transporterA = await register(app, 'transporter');
     const companyA = await createCompany(app, transporterA.token, 'transporter', 'Scope A');
     const truckA1 = await createTruck(app, transporterA.token, companyA.id, {
@@ -272,17 +326,16 @@ describe('trucks API', () => {
     const shipperList = expectContract(
       'listTrucks',
       await http(app, 'get', '/trucks', { token: shipper.token }),
-      200,
+      403,
     );
-    expect(shipperList.body.data.length).toBeGreaterThan(0);
-    expect(
-      shipperList.body.data.every(
-        (truck: { verificationStatus: string }) => truck.verificationStatus === 'verified',
-      ),
-    ).toBe(true);
-    const shipperIds = shipperList.body.data.map((truck: { id: string }) => truck.id);
-    expect(shipperIds).toEqual(expect.arrayContaining([truckA1.id, truckB.id]));
-    expect(shipperIds).not.toContain(truckA2.id);
+    expect(shipperList.body.code).toBe('TRUCK_BROWSING_DISABLED');
+
+    const shipperVerifiedList = expectContract(
+      'listTrucks',
+      await http(app, 'get', '/trucks?verificationStatus=verified', { token: shipper.token }),
+      403,
+    );
+    expect(shipperVerifiedList.body.code).toBe('TRUCK_BROWSING_DISABLED');
 
     const adminList = expectContract(
       'listTrucks',
@@ -362,22 +415,18 @@ describe('trucks API', () => {
       await http(app, 'get', '/trucks', { token: transporter.token }),
       200,
     );
-    const withAvailableOn = expectContract(
-      'listTrucks',
-      await http(app, 'get', '/trucks?availableOn=2030-01-01', { token: transporter.token }),
-      200,
-    );
-    expect(withAvailableOn.body.meta).toEqual(withoutAvailableOn.body.meta);
-    expect(withAvailableOn.body.data.map((truck: { id: string }) => truck.id)).toEqual(
-      withoutAvailableOn.body.data.map((truck: { id: string }) => truck.id),
-    );
-
-    const impossibleDate = expectContract(
-      'listTrucks',
-      await http(app, 'get', '/trucks?availableOn=2030-02-30', { token: transporter.token }),
-      400,
-    );
-    expect(impossibleDate.body.code).toBe('VALIDATION_ERROR');
+    const availableOnValues = ['2030-01-01', '2030-02-30', 'garbage'];
+    for (const availableOn of availableOnValues) {
+      const ignored = expectContract(
+        'listTrucks',
+        await http(app, 'get', `/trucks?availableOn=${availableOn}`, { token: transporter.token }),
+        200,
+      );
+      expect(ignored.body.meta).toEqual(withoutAvailableOn.body.meta);
+      expect(ignored.body.data.map((truck: { id: string }) => truck.id)).toEqual(
+        withoutAvailableOn.body.data.map((truck: { id: string }) => truck.id),
+      );
+    }
 
     const unknownQuery = expectContract(
       'listTrucks',
@@ -407,13 +456,26 @@ describe('trucks API', () => {
     const shipperUnverified = expectContract(
       'getTruck',
       await http(app, 'get', `/trucks/${truck.id}`, { token: shipper.token }),
-      404,
+      403,
     );
-    expect(shipperUnverified.body.code).toBe('NOT_FOUND');
+    expect(shipperUnverified.body.code).toBe('TRUCK_BROWSING_DISABLED');
 
     await setTruckStatus(admin, truck.id, 'verified');
 
-    expectContract('getTruck', await http(app, 'get', `/trucks/${truck.id}`, { token: shipper.token }), 200);
+    const shipperVerified = expectContract(
+      'getTruck',
+      await http(app, 'get', `/trucks/${truck.id}`, { token: shipper.token }),
+      403,
+    );
+    expect(shipperVerified.body.code).toBe('TRUCK_BROWSING_DISABLED');
+
+    const shipperMissing = expectContract(
+      'getTruck',
+      await http(app, 'get', `/trucks/${randomUUID()}`, { token: shipper.token }),
+      403,
+    );
+    expect(shipperMissing.body.code).toBe('TRUCK_BROWSING_DISABLED');
+
     expectContract('getTruck', await http(app, 'get', `/trucks/${truck.id}`, { token: admin.token }), 200);
 
     const missing = expectContract(
@@ -463,7 +525,7 @@ describe('trucks API', () => {
     expect(listed.counterpartyRestrictedUntil).toBeNull();
   });
 
-  it('shows an active ban on the owning company to shippers but not owners or admins', async () => {
+  it('keeps shipper truck reads disabled and a null restriction visible to owners and admins during an active ban', async () => {
     const owner = await register(app, 'transporter');
     const company = await createCompany(app, owner.token, 'transporter', 'Restricted Fleet');
     const truck = await createTruck(app, owner.token, company.id, { registrationNumber: 'RESTRICT2' });
@@ -471,7 +533,7 @@ describe('trucks API', () => {
     await setTruckStatus(admin, truck.id, 'verified');
     const shipper = await register(app, 'shipper');
 
-    const ban = await insertCompanyBan({
+    await insertCompanyBan({
       companyId: company.id,
       userId: owner.userId,
       appliedByUserId: admin.userId,
@@ -480,17 +542,16 @@ describe('trucks API', () => {
     const shipperDetail = expectContract(
       'getTruck',
       await http(app, 'get', `/trucks/${truck.id}`, { token: shipper.token }),
-      200,
+      403,
     );
-    expect(shipperDetail.body.counterpartyRestrictedUntil).toBe(ban.endsAt);
+    expect(shipperDetail.body.code).toBe('TRUCK_BROWSING_DISABLED');
 
     const shipperList = expectContract(
       'listTrucks',
       await http(app, 'get', '/trucks', { token: shipper.token }),
-      200,
+      403,
     );
-    const shipperListed = shipperList.body.data.find((row: { id: string }) => row.id === truck.id);
-    expect(shipperListed.counterpartyRestrictedUntil).toBe(ban.endsAt);
+    expect(shipperList.body.code).toBe('TRUCK_BROWSING_DISABLED');
 
     const ownerDetail = expectContract(
       'getTruck',
@@ -548,21 +609,56 @@ describe('trucks API', () => {
       state: 'lifted',
     });
 
-    const afterLift = expectContract(
-      'getTruck',
-      await http(app, 'get', `/trucks/${truck.id}`, { token: shipper.token }),
-      200,
-    );
-    expect(afterLift.body.counterpartyRestrictedUntil).toBeNull();
-    const afterLiftList = expectContract(
-      'listTrucks',
-      await http(app, 'get', '/trucks', { token: shipper.token }),
-      200,
-    );
-    expect(
-      afterLiftList.body.data.find((row: { id: string }) => row.id === truck.id)
-        .counterpartyRestrictedUntil,
-    ).toBeNull();
+    async function expectShipperReadsDisabled(): Promise<void> {
+      const detail = expectContract(
+        'getTruck',
+        await http(app, 'get', `/trucks/${truck.id}`, { token: shipper.token }),
+        403,
+      );
+      expect(detail.body.code).toBe('TRUCK_BROWSING_DISABLED');
+      const list = expectContract(
+        'listTrucks',
+        await http(app, 'get', '/trucks', { token: shipper.token }),
+        403,
+      );
+      expect(list.body.code).toBe('TRUCK_BROWSING_DISABLED');
+    }
+
+    async function expectNullRestrictionForOwnerAndAdmin(): Promise<void> {
+      const ownerDetail = expectContract(
+        'getTruck',
+        await http(app, 'get', `/trucks/${truck.id}`, { token: owner.token }),
+        200,
+      );
+      expect(ownerDetail.body.counterpartyRestrictedUntil).toBeNull();
+      const ownerList = expectContract(
+        'listTrucks',
+        await http(app, 'get', '/trucks', { token: owner.token }),
+        200,
+      );
+      expect(
+        ownerList.body.data.find((row: { id: string }) => row.id === truck.id)
+          .counterpartyRestrictedUntil,
+      ).toBeNull();
+      const adminDetail = expectContract(
+        'getTruck',
+        await http(app, 'get', `/trucks/${truck.id}`, { token: admin.token }),
+        200,
+      );
+      expect(adminDetail.body.counterpartyRestrictedUntil).toBeNull();
+      const adminList = expectContract(
+        'listTrucks',
+        await http(app, 'get', '/trucks', { token: admin.token }),
+        200,
+      );
+      expect(
+        adminList.body.data.find((row: { id: string }) => row.id === truck.id)
+          .counterpartyRestrictedUntil,
+      ).toBeNull();
+    }
+
+    await expectShipperReadsDisabled();
+    await expectNullRestrictionForOwnerAndAdmin();
 
     await insertCompanyBan({
       companyId: company.id,
@@ -571,21 +667,8 @@ describe('trucks API', () => {
       state: 'expired',
     });
 
-    const afterExpiry = expectContract(
-      'getTruck',
-      await http(app, 'get', `/trucks/${truck.id}`, { token: shipper.token }),
-      200,
-    );
-    expect(afterExpiry.body.counterpartyRestrictedUntil).toBeNull();
-    const afterExpiryList = expectContract(
-      'listTrucks',
-      await http(app, 'get', '/trucks', { token: shipper.token }),
-      200,
-    );
-    expect(
-      afterExpiryList.body.data.find((row: { id: string }) => row.id === truck.id)
-        .counterpartyRestrictedUntil,
-    ).toBeNull();
+    await expectShipperReadsDisabled();
+    await expectNullRestrictionForOwnerAndAdmin();
   });
 
   it('enforces update permissions, admin-only verification and re-verification rules', async () => {
@@ -629,8 +712,28 @@ describe('trucks API', () => {
     );
     expect(foreign.body.code).toBe('NOT_FOUND');
 
+    const shipperUnverifiedUpdate = expectContract(
+      'updateTruck',
+      await http(app, 'patch', `/trucks/${truck.id}`, {
+        token: shipper.token,
+        body: { currentLocationText: 'Shipper attempt on unverified truck' },
+      }),
+      403,
+    );
+    expect(shipperUnverifiedUpdate.body.code).toBe('FORBIDDEN');
+
     const verified = await setTruckStatus(admin, truck.id, 'verified');
     expect(verified.body.verificationStatus).toBe('verified');
+
+    const shipperMissingUpdate = expectContract(
+      'updateTruck',
+      await http(app, 'patch', `/trucks/${randomUUID()}`, {
+        token: shipper.token,
+        body: { currentLocationText: 'Shipper attempt on missing truck' },
+      }),
+      403,
+    );
+    expect(shipperMissingUpdate.body.code).toBe('FORBIDDEN');
 
     const shipperUpdate = expectContract(
       'updateTruck',

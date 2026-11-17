@@ -17,7 +17,7 @@ export class ListTrucksQueryDto extends PageQueryDto {
   @IsIn(VERIFICATION_STATUSES)
   verificationStatus?: VerificationStatus;
 
-  // availableOn is accepted and ignored: the contract has no truck availability data yet. Planned for removal in API v0.5.1.
+  // availableOn is accepted and ignored per contract v0.5.0; scheduled for removal in API v0.5.1.
   @IsOptional()
   @IsString()
   availableOn?: string;

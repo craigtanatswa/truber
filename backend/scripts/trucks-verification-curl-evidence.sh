@@ -423,13 +423,48 @@ duplicate_truck_body="$(printf '{"companyId":"%s","registrationNumber":"AEZ-1234
   "$transporter_company_a_id")"
 api_call create-truck-duplicate 409 POST /trucks "$transporter_a_token" "$duplicate_truck_body" "" TRUCK_REGISTRATION_EXISTS
 
+plate_suffix="$(printf '%s' "$run_id" | tr -cd 'A-Za-z0-9' | tr '[:lower:]' '[:upper:]')"
+duplicate_base_plate="ABC${plate_suffix}"
+duplicate_base_body="$(printf '{"companyId":"%s","registrationNumber":"%s","truckType":"flatbed","capacityKg":30000}' \
+  "$transporter_company_a_id" "$duplicate_base_plate")"
+api_call create-truck-duplicate-base 201 POST /trucks "$transporter_a_token" "$duplicate_base_body"
+check_json_value '.registrationNumber' 'data["registrationNumber"]' "$duplicate_base_plate" 'registrationNumber'
+
+zwsp_plate="ABC\\u200b${plate_suffix}"
+duplicate_zwsp_body="$(printf '{"companyId":"%s","registrationNumber":"%s","truckType":"flatbed","capacityKg":30000}' \
+  "$transporter_company_a_id" "$zwsp_plate")"
+api_call create-truck-duplicate-zwsp 409 POST /trucks "$transporter_a_token" "$duplicate_zwsp_body" "" TRUCK_REGISTRATION_EXISTS
+
+fullwidth_plate="\\uff21\\uff22\\uff23${plate_suffix}"
+duplicate_fullwidth_body="$(printf '{"companyId":"%s","registrationNumber":"%s","truckType":"flatbed","capacityKg":30000}' \
+  "$transporter_company_a_id" "$fullwidth_plate")"
+api_call create-truck-duplicate-fullwidth 409 POST /trucks "$transporter_a_token" "$duplicate_fullwidth_body" "" TRUCK_REGISTRATION_EXISTS
+
+duplicate_dot_body="$(printf '{"companyId":"%s","registrationNumber":"ABC.%s","truckType":"flatbed","capacityKg":30000}' \
+  "$transporter_company_a_id" "$plate_suffix")"
+api_call create-truck-duplicate-dot 409 POST /trucks "$transporter_a_token" "$duplicate_dot_body" "" TRUCK_REGISTRATION_EXISTS
+
+duplicate_underscore_body="$(printf '{"companyId":"%s","registrationNumber":"ABC_%s","truckType":"flatbed","capacityKg":30000}' \
+  "$transporter_company_a_id" "$plate_suffix")"
+api_call create-truck-duplicate-underscore 409 POST /trucks "$transporter_a_token" "$duplicate_underscore_body" "" TRUCK_REGISTRATION_EXISTS
+
+cyrillic_plate="\\u0410\\u0412\\u0421123"
+invalid_cyrillic_body="$(printf '{"companyId":"%s","registrationNumber":"%s","truckType":"flatbed","capacityKg":30000}' \
+  "$transporter_company_a_id" "$cyrillic_plate")"
+api_call create-truck-invalid-cyrillic 400 POST /trucks "$transporter_a_token" "$invalid_cyrillic_body" "" VALIDATION_ERROR
+
+invalid_punctuation_body="$(printf '{"companyId":"%s","registrationNumber":" .-","truckType":"flatbed","capacityKg":30000}' \
+  "$transporter_company_a_id")"
+api_call create-truck-invalid-punctuation 400 POST /trucks "$transporter_a_token" "$invalid_punctuation_body" "" VALIDATION_ERROR
+
 # 4. Creation and reads are scoped to the owning transporter company.
 shipper_truck_body="$(printf '{"companyId":"%s","registrationNumber":"SHIPPER1","truckType":"flatbed","capacityKg":10000}' \
   "$transporter_company_a_id")"
 api_call shipper-create-truck 403 POST /trucks "$shipper_token" "$shipper_truck_body" "" FORBIDDEN
 
 api_call transporter-b-get-truck-a 404 GET "/trucks/$truck_a_id" "$transporter_b_token" "" "" NOT_FOUND
-api_call shipper-get-unverified-truck-a 404 GET "/trucks/$truck_a_id" "$shipper_token" "" "" NOT_FOUND
+api_call shipper-get-unverified-truck-a 403 GET "/trucks/$truck_a_id" "$shipper_token" "" "" TRUCK_BROWSING_DISABLED
+api_call shipper-update-truck-a 403 PATCH "/trucks/$truck_a_id" "$shipper_token" '{"currentLocationText":"Shipper attempt"}' "" FORBIDDEN
 
 # 5. Document links, pending transitions, and strict upload validation.
 truck_doc_body="$(printf '{"documentType":"vehicle_registration","documentUri":%s,"truckId":"%s"}' \
@@ -508,14 +543,14 @@ check_json_value '.status' 'data["status"]' 'approved' 'documentStatus'
 api_call transporter-a-get-verified-truck 200 GET "/trucks/$truck_a_id" "$transporter_a_token"
 check_json_value '.verificationStatus' 'data["verificationStatus"]' 'verified' 'verificationStatus'
 
-api_call shipper-get-verified-truck 200 GET "/trucks/$truck_a_id" "$shipper_token"
-check_json_value '.verificationStatus' 'data["verificationStatus"]' 'verified' 'verificationStatus'
+api_call shipper-get-verified-truck 403 GET "/trucks/$truck_a_id" "$shipper_token" "" "" TRUCK_BROWSING_DISABLED
 
-api_call shipper-list-trucks 200 GET /trucks "$shipper_token"
-check_json_value '.data | length' 'len(data["data"])' '1' 'trucks'
+api_call shipper-list-trucks 403 GET /trucks "$shipper_token" "" "" TRUCK_BROWSING_DISABLED
 
 api_call transporter-b-list-trucks 200 GET /trucks "$transporter_b_token"
 check_json_value '.data | length' 'len(data["data"])' '0' 'trucks'
+
+api_call transporter-a-list-trucks-available-on-invalid 200 GET "/trucks?availableOn=2030-02-30" "$transporter_a_token"
 
 # 10. Identity edits return a verified truck to pending; only admins set verification.
 api_call transporter-a-update-truck-capacity 200 PATCH "/trucks/$truck_a_id" "$transporter_a_token" '{"capacityKg":28000}'
@@ -579,7 +614,7 @@ api_call transporter-a-login-after-reactivation 200 POST /auth/login "" "$(print
 check_json_value '.user.accountStatus' 'data["user"]["accountStatus"]' 'active' 'accountStatus'
 
 api_call transporter-a-list-trucks-after-reactivation 200 GET /trucks "$transporter_a_token"
-check_json_value '.data | length' 'len(data["data"])' '1' 'trucks'
+check_json_value '.data | length' 'len(data["data"])' '2' 'trucks'
 
 api_call refresh-old-token-after-reactivation 401 POST /auth/refresh "" "$transporter_a_refresh_body" "" UNAUTHORIZED
 
