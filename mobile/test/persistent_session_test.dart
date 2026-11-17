@@ -22,6 +22,17 @@ import 'package:truber_app/state/session.dart';
 
 const _base = 'https://api.test.invalid';
 
+class _BlockedRefreshVault extends RefreshTokenVault {
+  @override
+  Future<String?> read() async => null;
+
+  @override
+  Future<void> write(String refreshToken) async {}
+
+  @override
+  Future<void> clear() async {}
+}
+
 class RecordingRefreshTokenVault extends MemoryRefreshTokenVault {
   RecordingRefreshTokenVault([super.value]);
 
@@ -523,6 +534,48 @@ void main() {
       session.dispose();
     });
 
+    test('refresh failure does not escape as an uncaught error', () async {
+      final uncaught = <Object>[];
+      await runZonedGuarded(() async {
+        final vault = RecordingRefreshTokenVault('refresh-kept');
+        final api = ApiClient(
+          baseUrl: _base,
+          refreshTokens: vault,
+          httpClient: MockClient((req) async {
+            throw http.ClientException('offline');
+          }),
+        );
+        expect(await api.restoreSession(), isFalse);
+        await Future<void>.delayed(Duration.zero);
+        expect(await vault.read(), 'refresh-kept');
+      }, (Object error, StackTrace _) {
+        uncaught.add(error);
+      });
+      expect(uncaught, isEmpty);
+    });
+
+    test('blocked storage ends the in-memory session at the first refresh',
+        () async {
+      final api = ApiClient(
+        baseUrl: _base,
+        refreshTokens: _BlockedRefreshVault(),
+        httpClient: MockClient((req) async {
+          return _json({'code': 'UNAUTHORIZED', 'message': 'x'}, 401);
+        }),
+      );
+      var expired = 0;
+      api.onSessionExpired = () => expired++;
+      await api.saveTokens(
+        _tokenBody(access: 'access-a', refresh: 'refresh-a'),
+        establish: true,
+      );
+      expect(api.tokens.hasSession, isTrue);
+      await expectLater(api.get('/loads'), throwsA(isA<ApiException>()));
+      expect(expired, 1);
+      expect(api.tokens.hasSession, isFalse);
+      expect(api.tokens.refreshToken, isNull);
+    });
+
     test('503 keeps the stored refresh token', () async {
       final vault = RecordingRefreshTokenVault('refresh-kept');
       var expired = 0;
@@ -667,6 +720,28 @@ void main() {
       expect(find.text(TruberCopy.getStarted), findsNothing);
       expect(await vault.read(), 'refresh-live');
       expect(refreshes, 2);
+    });
+
+    testWidgets('log out on the retry screen wipes the token and shows welcome',
+        (tester) async {
+      final vault = RecordingRefreshTokenVault('refresh-stored');
+      final session = createLiveSession(
+        _base,
+        refreshTokens: vault,
+        httpClient: MockClient((req) async {
+          throw http.ClientException('offline');
+        }),
+      );
+      await tester.pumpWidget(TruberApp(session: session));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('session_restore_logout')), findsOneWidget);
+      expect(find.text(TruberCopy.logout), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('session_restore_logout')));
+      await tester.pumpAndSettle();
+      expect(find.text(TruberCopy.getStarted), findsOneWidget);
+      expect(find.byKey(const Key('session_restore_retry')), findsNothing);
+      expect(await vault.read(), isNull);
     });
 
     testWidgets('logout in another tab returns this tab to welcome',

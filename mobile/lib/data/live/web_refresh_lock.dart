@@ -38,7 +38,13 @@ class WebRefreshLock implements RefreshLocker {
             if (!done.isCompleted) done.completeError(error, stack);
           },
         );
-        return pending.then<JSAny?>((_) => null).toJS;
+        // The promise handed to navigator.locks must not reject. A rejection
+        // here is an unhandled promise rejection in the web console even when
+        // the Dart future above already observed the error.
+        return pending.then<JSAny?>(
+          (_) => null,
+          onError: (Object _, StackTrace __) => null,
+        ).toJS;
       }).toJS,
     );
     return done.future;

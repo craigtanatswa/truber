@@ -117,7 +117,7 @@ class TruberApp extends StatelessWidget {
         ChangeNotifierProvider(
           create: (_) {
             final s = session ?? createDefaultSession();
-            s.bootstrap();
+            guardAsync(s.bootstrap());
             // Demo deep links sign in with mock seed users only — never
             // against a live API.
             if (demo != null &&

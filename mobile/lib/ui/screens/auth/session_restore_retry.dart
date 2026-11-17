@@ -10,10 +10,12 @@ class SessionRestoreRetry extends StatelessWidget {
     super.key,
     required this.message,
     required this.onRetry,
+    required this.onLogout,
   });
 
   final String message;
   final VoidCallback onRetry;
+  final VoidCallback onLogout;
 
   @override
   Widget build(BuildContext context) {
@@ -43,6 +45,19 @@ class SessionRestoreRetry extends StatelessWidget {
                 message: offline ? TruberCopy.offlineLoginBody : message,
                 actionLabel: TruberCopy.ctaRetry,
                 onAction: onRetry,
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                TruberSpacing.xl,
+                0,
+                TruberSpacing.xl,
+                TruberSpacing.xl,
+              ),
+              child: OutlinedButton(
+                key: const Key('session_restore_logout'),
+                onPressed: onLogout,
+                child: const Text(TruberCopy.logout),
               ),
             ),
           ],

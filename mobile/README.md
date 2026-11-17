@@ -19,6 +19,12 @@ Demo accounts (mock): `shipper@truber.zw`, `transporter@truber.zw`, `admin@trube
 
 Web screenshot deep links: `#/demo/login`, `#/demo/shipper`, `#/demo/shipper/post`, `#/demo/shipper/quotes`, `#/demo/shipper/payment`, `#/demo/shipper/booking`, `#/demo/transporter/search`, `#/demo/admin`.
 
+## Live session
+
+In live mode the access token stays in memory. Only the refresh token is stored. On web that store is `localStorage` (`truber.refresh.token`).
+
+If the browser blocks `localStorage` (private mode, or a policy that throws on storage access), the refresh token is never written. The in-memory sign-in ends at the first refresh: that refresh sees an empty store and treats it as logged out. The user has to sign in again.
+
 ## Proof
 
 ```bash
