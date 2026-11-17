@@ -9,7 +9,7 @@ import '../../../models/load.dart';
 import '../../../state/session.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/load_card.dart';
-import 'submit_quote_screen.dart';
+import 'my_quotes_screen.dart';
 import 'package:truber_app/ui/navigation/truber_page_route.dart';
 
 class LoadSearchScreen extends StatefulWidget {
@@ -186,7 +186,8 @@ class _LoadSearchScreenState extends State<LoadSearchScreen> {
                         Navigator.of(context).push(
                           TruberPageRoute<void>.of(
                             context,
-                            builder: (_) => SubmitQuoteScreen(load: load),
+                            builder: (_) =>
+                                TransporterQuotesScreen(load: load),
                           ),
                         );
                       },

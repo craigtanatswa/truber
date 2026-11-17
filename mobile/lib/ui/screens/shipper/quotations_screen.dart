@@ -45,12 +45,63 @@ class _QuotationsScreenState extends State<QuotationsScreen> {
       companyId,
       () => context.read<SessionController>().isCompanyBanned(companyId));
 
+  void _reload() {
+    setState(() {
+      _future =
+          context.read<SessionController>().quotations.forLoad(widget.load.id);
+    });
+  }
+
+  Future<void> _restore() async {
+    if (blockIfBanned(context)) return;
+    setState(() => _busy = true);
+    try {
+      await context
+          .read<SessionController>()
+          .quotations
+          .restoreNotSelected(widget.load.id);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      showMappedErrorSnackBar(context, e);
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _busy = false);
+    _reload();
+  }
+
   Future<void> _select(Quotation quote) async {
     if (blockIfBanned(context)) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        key: const Key('accept_confirm_dialog'),
+        title: const Text(TruberCopy.quoteSelect),
+        content: Text(
+          '${quote.transporterLegalName ?? quote.transporterCompanyId}\n'
+          '${TruberCopy.quoteRate}: ${quote.amount.display}',
+        ),
+        actions: [
+          TextButton(
+            key: const Key('accept_confirm_cancel'),
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text(TruberCopy.ctaCancel),
+          ),
+          ElevatedButton(
+            key: const Key('accept_confirm'),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text(TruberCopy.quoteSelect),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
     setState(() => _busy = true);
     final session = context.read<SessionController>();
     try {
-      final result = await session.quotations.accept(quote.id);
+      final fresh = await session.quotations.getById(quote.id);
+      final result = await session.quotations.accept(fresh.id);
       if (!mounted) return;
       await Navigator.of(context).pushReplacement(
         TruberPageRoute<void>.of(
@@ -95,8 +146,18 @@ class _QuotationsScreenState extends State<QuotationsScreen> {
               if (quotes.isEmpty) {
                 return const EmptyState(message: TruberCopy.quoteEmpty);
               }
+              final canRestore =
+                  quotes.any((q) => q.status == QuotationStatus.notSelected);
               return Column(
                 children: [
+                  if (canRestore) ...[
+                    OutlinedButton(
+                      key: const Key('restore_not_selected'),
+                      onPressed: _busy ? null : _restore,
+                      child: const Text(TruberCopy.quoteRestoreCta),
+                    ),
+                    const SizedBox(height: TruberSpacing.md),
+                  ],
                   for (final q in quotes) ...[
                     Card(
                       child: Padding(
@@ -141,7 +202,8 @@ class _QuotationsScreenState extends State<QuotationsScreen> {
                             FutureBuilder<bool?>(
                               future: _isBanned(q.transporterCompanyId),
                               builder: (context, ban) {
-                                final blocked = ban.data == true;
+                                final blocked = ban.data == true ||
+                                    q.counterpartyRestrictedAt(DateTime.now());
                                 return Column(
                                   crossAxisAlignment:
                                       CrossAxisAlignment.stretch,

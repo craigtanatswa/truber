@@ -1,19 +1,39 @@
 import '../../models/booking.dart';
+import '../../models/money.dart';
 import '../../models/quotation.dart';
 import '../repositories/load_repository.dart';
 import '../repositories/quotation_repository.dart';
+import 'mock_payout_repository.dart';
 import 'mock_seed.dart';
 import 'mock_stores.dart';
 
+/// Half-up 5% (`commissionRateBps` 500), integer minor units.
+/// Matches OpenAPI v0.5.0 payout-preview examples (100000 → 5000, 25010 → 1251).
+int mockCommissionMinor(int amountMinor) =>
+    (amountMinor * seedCommissionRateBps + 5000) ~/ 10000;
+
 class MockQuotationRepository implements QuotationRepository {
-  MockQuotationRepository({LoadRepository? loads}) : _loads = loads;
+  MockQuotationRepository({
+    LoadRepository? loads,
+    this.payoutPreviewEnabled = true,
+  }) : _loads = loads;
 
   final LoadRepository? _loads;
+
+  /// When false, [previewPayout] fails and the quote hint stays hidden.
+  final bool payoutPreviewEnabled;
   final _store = MockStores.instance;
 
   @override
   Future<List<Quotation>> forLoad(String loadId) async {
     return _store.quotations.where((q) => q.loadId == loadId).toList();
+  }
+
+  @override
+  Future<Quotation> getById(String quotationId) async {
+    final i = _store.quotations.indexWhere((q) => q.id == quotationId);
+    if (i < 0) throw StateError('Quotation not found');
+    return _store.quotations[i];
   }
 
   @override
@@ -39,6 +59,71 @@ class MockQuotationRepository implements QuotationRepository {
   }
 
   @override
+  Future<Quotation> withdraw(String quotationId) async {
+    final i = _store.quotations.indexWhere((q) => q.id == quotationId);
+    if (i < 0) throw StateError('Quotation not found');
+    final q = _store.quotations[i];
+    if (q.status == QuotationStatus.accepted) {
+      throw StateError('SELF_CANCEL_NOT_ALLOWED');
+    }
+    if (q.status != QuotationStatus.submitted) {
+      throw StateError('QUOTATION_NOT_WITHDRAWABLE');
+    }
+    final withdrawn = q.copyWith(
+      status: QuotationStatus.withdrawn,
+      updatedAt: DateTime.now().toUtc(),
+    );
+    _store.quotations[i] = withdrawn;
+    return withdrawn;
+  }
+
+  @override
+  Future<List<Quotation>> restoreNotSelected(String loadId,
+      {String? reason}) async {
+    final now = DateTime.now().toUtc();
+    final restored = <Quotation>[];
+    for (var j = 0; j < _store.quotations.length; j++) {
+      final other = _store.quotations[j];
+      if (other.loadId == loadId &&
+          other.status == QuotationStatus.notSelected) {
+        final next = other.copyWith(
+          status: QuotationStatus.submitted,
+          updatedAt: now,
+        );
+        _store.quotations[j] = next;
+        restored.add(next);
+      }
+    }
+    return restored;
+  }
+
+  @override
+  Future<PayoutPreview> previewPayout(PayoutPreviewRequest request) async {
+    if (!payoutPreviewEnabled) {
+      throw StateError('NO_PREVIEW');
+    }
+    final amount = request.amount;
+    final commission = mockCommissionMinor(amount.amountMinor);
+    final cash = request.paymentMethod == 'cash';
+    return PayoutPreview(
+      agreedAmount: amount,
+      commissionRateBps: seedCommissionRateBps,
+      commissionAmount:
+          MoneyAmount(amountMinor: commission, currency: amount.currency),
+      knownFeesTotal: MoneyAmount(amountMinor: 0, currency: amount.currency),
+      netPayoutBeforeUnknownFees: MoneyAmount(
+        amountMinor: amount.amountMinor - commission,
+        currency: amount.currency,
+      ),
+      feeStatus: cash ? 'not_applicable' : 'unknown',
+      paymentMethod: request.paymentMethod,
+      farePayoutDueThroughTruber: !cash,
+      paymentProtectedPossible: !cash,
+      submissionBlockers: const [],
+    );
+  }
+
+  @override
   Future<AcceptQuotationResponse> accept(
     String quotationId, {
     String? notes,
@@ -50,18 +135,10 @@ class MockQuotationRepository implements QuotationRepository {
       throw StateError('Quotation is not open for acceptance');
     }
     final now = DateTime.now().toUtc();
-    final accepted = Quotation(
-      id: q.id,
-      loadId: q.loadId,
-      transporterCompanyId: q.transporterCompanyId,
-      truckId: q.truckId,
-      amount: q.amount,
+    final accepted = q.copyWith(
       status: QuotationStatus.accepted,
       notes: notes ?? q.notes,
-      validUntil: q.validUntil,
-      createdAt: q.createdAt,
       updatedAt: now,
-      transporterLegalName: q.transporterLegalName,
     );
     _store.quotations[i] = accepted;
 
@@ -71,18 +148,9 @@ class MockQuotationRepository implements QuotationRepository {
       if (other.loadId == q.loadId &&
           other.id != q.id &&
           other.status == QuotationStatus.submitted) {
-        _store.quotations[j] = Quotation(
-          id: other.id,
-          loadId: other.loadId,
-          transporterCompanyId: other.transporterCompanyId,
-          truckId: other.truckId,
-          amount: other.amount,
+        _store.quotations[j] = other.copyWith(
           status: QuotationStatus.notSelected,
-          notes: other.notes,
-          validUntil: other.validUntil,
-          createdAt: other.createdAt,
           updatedAt: now,
-          transporterLegalName: other.transporterLegalName,
         );
       }
     }
