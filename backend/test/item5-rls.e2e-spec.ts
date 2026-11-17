@@ -85,8 +85,9 @@ describe('item 5 schema, RLS and grants', () => {
     const pool = new Pool(buildPoolConfig(env.db, 'migration'));
     const schema = quoteIdent(env.db.DB_SCHEMA);
     try {
+      // Match the runner's code-unit filename order regardless of database collation.
       const before = await pool.query<{ id: string; applied_at: Date }>(
-        `SELECT id, applied_at FROM ${schema}.schema_migrations WHERE id = ANY($1::text[]) ORDER BY id`,
+        `SELECT id, applied_at FROM ${schema}.schema_migrations WHERE id = ANY($1::text[]) ORDER BY id COLLATE "C"`,
         [MIGRATION_IDS],
       );
       expect(before.rows.map((row) => row.id)).toEqual(MIGRATION_IDS);
@@ -97,8 +98,9 @@ describe('item 5 schema, RLS and grants', () => {
 
       await expect(migrate(pool, env)).resolves.toBeUndefined();
 
+      // Match the runner's code-unit filename order regardless of database collation.
       const after = await pool.query<{ id: string; applied_at: Date }>(
-        `SELECT id, applied_at FROM ${schema}.schema_migrations WHERE id = ANY($1::text[]) ORDER BY id`,
+        `SELECT id, applied_at FROM ${schema}.schema_migrations WHERE id = ANY($1::text[]) ORDER BY id COLLATE "C"`,
         [MIGRATION_IDS],
       );
       expect(after.rows.map((row) => row.id)).toEqual(MIGRATION_IDS);
