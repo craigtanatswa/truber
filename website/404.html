@@ -12,8 +12,8 @@
 <meta property="og:site_name" content="Truber">
 <meta property="og:title" content="Page not found | Truber">
 <meta property="og:description" content="The page you are looking for could not be found on the Truber website.">
-<meta property="og:url" content="https://truber-web.vercel.app/404">
-<meta property="og:image" content="https://truber-web.vercel.app/og-image.png">
+<meta property="og:url" content="__SITE_ORIGIN__/404">
+<meta property="og:image" content="__SITE_ORIGIN__/og-image.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="Truber logo with the tagline Connecting Cargo. Moving Business.">
@@ -21,7 +21,7 @@
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Page not found | Truber">
 <meta name="twitter:description" content="The page you are looking for could not be found on the Truber website.">
-<meta name="twitter:image" content="https://truber-web.vercel.app/og-image.png">
+<meta name="twitter:image" content="__SITE_ORIGIN__/og-image.png">
 <link rel="icon" href="/favicon.ico" sizes="any">
 <link rel="icon" type="image/png" sizes="32x32" href="/assets/icon-32.png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -74,10 +74,10 @@
       <p class="eyebrow">404</p>
       <h1 class="page-title" id="page-title">Page not found</h1>
       <p class="lead">We couldn’t find that page. It may have moved, or the link may be incorrect.</p>
-      <p>The Truber preview is still available while the public site is in testing.</p>
+      <p>You can go to the home page or open the web app.</p>
       <div class="btn-row">
         <a class="btn btn-primary" href="/">Home</a>
-        <a class="btn btn-secondary" href="/app">Try the preview</a>
+        <a class="btn btn-secondary" href="/app">Open web app</a>
       </div>
     </div>
   </section>
@@ -116,10 +116,7 @@
       </div>
     </nav>
     <div class="footer-meta">
-      <!-- PLACEHOLDER: support contact not confirmed -->
-      <p class="footer-contact">[support contact TBC]</p>
-      <!-- PLACEHOLDER: social accounts not set up -->
-      <p class="footer-social"><span class="social-soon">Social accounts coming soon</span></p>
+      <!-- inject:support-email -->
       <!-- COPY: design/website/COPY.md -->
       <p class="footer-copy">© 2026 Truber, Harare, Zimbabwe</p>
     </div>
