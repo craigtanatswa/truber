@@ -1,0 +1,3 @@
+Roboto (Apache License 2.0). File KFOmCnqEu92Fr1Me5WZLCzYlKw.ttf is the
+regular face CanvasKit requests at roboto/v20/ from fonts.gstatic.com.
+https://github.com/googlefonts/roboto
