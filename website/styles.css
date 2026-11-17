@@ -1370,8 +1370,6 @@ main > section.hero {
   white-space: nowrap;
 }
 
-.badge--planned,
-.badge--soon,
 .badge--cash {
   border-color: currentColor;
   background: transparent;
@@ -1380,8 +1378,7 @@ main > section.hero {
 
 /* Messages */
 
-.notice,
-.demo-banner {
+.notice {
   margin: 0 0 var(--truber-space-xl);
   padding: var(--truber-space-lg);
   border: 1px solid var(--truber-warning);
@@ -1390,18 +1387,15 @@ main > section.hero {
   color: var(--truber-warning);
 }
 
-.notice a,
-.demo-banner a {
+.notice a {
   color: inherit;
 }
 
-.notice strong,
-.demo-banner strong {
+.notice strong {
   font-weight: 700;
 }
 
-.notice:last-child,
-.demo-banner:last-child {
+.notice:last-child {
   margin-bottom: 0;
 }
 
@@ -1986,20 +1980,6 @@ html.js .feature-card.is-visible .icon * {
   }
 }
 
-/* Demo forms */
-
-.demo-form {
-  padding: var(--truber-space-xl);
-  border: 1px solid var(--truber-border);
-  border-radius: var(--truber-radius-card);
-  background: var(--truber-card);
-}
-
-.demo-form .notice {
-  margin-top: var(--truber-space-lg);
-  margin-bottom: 0;
-}
-
 .form-grid {
   display: grid;
   grid-template-columns: 1fr;
@@ -2035,32 +2015,6 @@ html.js .feature-card.is-visible .icon * {
   line-height: var(--truber-leading-helper);
 }
 
-.demo-form input:not([type="radio"]):not([type="checkbox"]),
-.demo-form select,
-.demo-form textarea {
-  width: 100%;
-  min-height: var(--truber-target-min);
-  padding: 0 var(--truber-space-lg);
-  border: 1px solid var(--truber-border-strong);
-  border-radius: var(--truber-radius-pill);
-  background: var(--truber-card);
-  color: var(--truber-text);
-  font: inherit;
-  font-size: var(--truber-size-body);
-}
-
-.demo-form textarea {
-  min-height: 120px;
-  padding: var(--truber-space-md) var(--truber-space-lg);
-  border-radius: var(--truber-radius-card);
-  resize: vertical;
-}
-
-.demo-form ::placeholder {
-  color: var(--truber-text-muted);
-  opacity: 1;
-}
-
 .checkbox-option {
   display: flex;
   align-items: flex-start;
@@ -2081,22 +2035,12 @@ html.js .feature-card.is-visible .icon * {
   accent-color: var(--truber-primary);
 }
 
-.demo-form.was-validated input:not([type="radio"]):not([type="checkbox"]):invalid,
-.demo-form.was-validated select:invalid,
-.demo-form.was-validated textarea:invalid {
-  border-color: var(--truber-error);
-}
-
 .form-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--truber-space-md);
   margin-top: var(--truber-space-xl);
-}
-
-.demo-submit {
-  cursor: pointer;
 }
 
 /* Reduced motion: no transitions or animations */

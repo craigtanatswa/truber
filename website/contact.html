@@ -5,24 +5,24 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Contact | Truber</title>
 <!-- PLACEHOLDER: engineering-drafted copy from CONCEPT.md; Truber Design to supply final copy -->
-<meta name="description" content="Contact Truber about support, business enquiries or transporter support. The public preview is in testing.">
-<link rel="canonical" href="https://truber-web.vercel.app/contact">
+<meta name="description" content="Contact Truber support by email about loads, quotes, trips or joining as a transporter.">
+<link rel="canonical" href="__SITE_ORIGIN__/contact">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#000000">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Truber">
 <meta property="og:title" content="Contact | Truber">
-<meta property="og:description" content="Contact Truber about support, business enquiries or transporter support. The public preview is in testing.">
-<meta property="og:url" content="https://truber-web.vercel.app/contact">
-<meta property="og:image" content="https://truber-web.vercel.app/og-image.png">
+<meta property="og:description" content="Contact Truber support by email about loads, quotes, trips or joining as a transporter.">
+<meta property="og:url" content="__SITE_ORIGIN__/contact">
+<meta property="og:image" content="__SITE_ORIGIN__/og-image.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="Truber logo with the tagline Connecting Cargo. Moving Business.">
 <meta property="og:locale" content="en_GB">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Contact | Truber">
-<meta name="twitter:description" content="Contact Truber about support, business enquiries or transporter support. The public preview is in testing.">
-<meta name="twitter:image" content="https://truber-web.vercel.app/og-image.png">
+<meta name="twitter:description" content="Contact Truber support by email about loads, quotes, trips or joining as a transporter.">
+<meta name="twitter:image" content="__SITE_ORIGIN__/og-image.png">
 <link rel="icon" href="/favicon.ico" sizes="any">
 <link rel="icon" type="image/png" sizes="32x32" href="/assets/icon-32.png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -31,9 +31,7 @@
 <link rel="stylesheet" href="/tokens.css">
 <link rel="stylesheet" href="/tokens-web-v2.css">
 <link rel="stylesheet" href="/styles.css">
-<meta http-equiv="Content-Security-Policy" content="form-action 'none'">
 <script src="/motion.js" defer></script>
-<script src="/forms.js" defer></script>
 </head>
 <body>
 <a class="skip-link" href="#main">Skip to main content</a>
@@ -76,73 +74,12 @@
       <!-- PLACEHOLDER: engineering-drafted copy from CONCEPT.md; Truber Design to supply final copy -->
       <p class="eyebrow">Contact</p>
       <h1 class="page-title" id="page-title">Contact</h1>
-      <p class="lead">Questions about Truber, the public preview or joining as a transporter? Use the contact options below, or send a demo enquiry.</p>
+      <!-- inject:contact-lead -->
     </div>
   </section>
   <section class="section section--muted">
     <div class="container">
-      <!-- PLACEHOLDER: engineering-drafted copy from CONCEPT.md; Truber Design to supply final copy -->
-      <!-- PLACEHOLDER: support contact not confirmed -->
-      <ul class="contact-grid">
-        <li class="card" data-reveal>
-          <h2 class="card-title">Support</h2>
-          <p>For help with loads, quotations, trips or deliveries.</p>
-          <p><strong>[support contact TBC]</strong></p>
-        </li>
-        <li class="card" data-reveal>
-          <h2 class="card-title">Business enquiries</h2>
-          <p>For partnerships, corporate accounts or business questions.</p>
-          <p><strong>[support contact TBC]</strong></p>
-        </li>
-        <li class="card" data-reveal>
-          <h2 class="card-title">Transporter support</h2>
-          <p>For help registering your company, adding trucks or quoting on loads.</p>
-          <p><strong>[support contact TBC]</strong></p>
-        </li>
-      </ul>
-    </div>
-  </section>
-  <section class="section">
-    <div class="container narrow">
-      <!-- PLACEHOLDER: engineering-drafted copy from CONCEPT.md; Truber Design to supply final copy -->
-      <div class="section-header" data-reveal>
-        <h2 class="section-title">Send a demo enquiry</h2>
-        <p class="section-intro">Use this form to see how a contact enquiry would work. Nothing is sent or stored.</p>
-      </div>
-      <!-- INTEGRATION POINT: contact enquiry endpoint TBD per openapi.yaml; not connected -->
-      <!-- PLACEHOLDER: demo form -->
-      <form class="demo-form" action="#" aria-describedby="contact-demo-banner">
-        <p class="demo-banner" id="contact-demo-banner"><strong>Demo only:</strong> nothing you enter is sent or stored.</p>
-        <div class="form-grid">
-          <div class="form-field">
-            <label class="form-label" for="contact-name">Name</label>
-            <input id="contact-name" name="contact-name" type="text" autocomplete="name" required>
-          </div>
-          <div class="form-field">
-            <label class="form-label" for="contact-email">Email</label>
-            <input id="contact-email" name="contact-email" type="email" autocomplete="email" required>
-          </div>
-          <div class="form-field form-field--full">
-            <label class="form-label" for="contact-topic">Topic</label>
-            <select id="contact-topic" name="contact-topic" required>
-              <option value="">Select a topic</option>
-              <option>Support</option>
-              <option>Business</option>
-              <option>Transporter support</option>
-            </select>
-          </div>
-          <div class="form-field form-field--full">
-            <label class="form-label" for="contact-message">Message</label>
-            <textarea id="contact-message" name="contact-message" rows="6" minlength="10" required></textarea>
-            <p class="form-hint">At least 10 characters.</p>
-          </div>
-        </div>
-        <div class="form-actions">
-          <button type="submit" class="btn btn-primary demo-submit" disabled>Send (demo)</button>
-        </div>
-        <noscript><p class="notice">JavaScript is off, so this demo form is switched off. Nothing can be sent or stored.</p></noscript>
-        <p class="form-status" role="status" aria-live="polite" hidden></p>
-      </form>
+      <!-- inject:contact-support-card -->
     </div>
   </section>
 </main>
@@ -180,10 +117,7 @@
       </div>
     </nav>
     <div class="footer-meta">
-      <!-- PLACEHOLDER: support contact not confirmed -->
-      <p class="footer-contact">[support contact TBC]</p>
-      <!-- PLACEHOLDER: social accounts not set up -->
-      <p class="footer-social"><span class="social-soon">Social accounts coming soon</span></p>
+      <!-- inject:support-email -->
       <!-- COPY: design/website/COPY.md -->
       <p class="footer-copy">© 2026 Truber, Harare, Zimbabwe</p>
     </div>

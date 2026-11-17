@@ -2,15 +2,29 @@
 
 ## What this is
 
-The static public marketing site for Truber, a Zimbabwe-first freight marketplace for shippers and transporters. It is plain HTML, CSS and vanilla JavaScript: no framework, build step, server code, environment values, API calls or third-party requests. The web app itself is a separate Flutter preview at `/app`.
+The static public marketing site for Truber, a Zimbabwe-first freight marketplace for shippers and transporters. It is plain HTML, CSS and vanilla JavaScript: no framework, server code, API calls or third-party requests. `scripts/inject-config.mjs` runs at build time to copy the site into `dist/` and fill in deployment-specific values. The web app itself is a separate Flutter app at `/app`.
 
-## Run locally
+## Build and run locally
+
+From this directory (`website/`):
 
 ```sh
-npx serve website
+node scripts/inject-config.mjs
+npx serve dist
 ```
 
-`/app` is only available on Vercel: `vercel.json` rewrites it to the Mobile-owned preview. It does not resolve under `serve`.
+`/app` is only available on Vercel: `vercel.json` rewrites it to the Mobile-owned app. It does not resolve under `serve`.
+
+## Environment values
+
+The build reads two optional environment variables. Do not commit values.
+
+| Variable | Purpose |
+| --- | --- |
+| `SUPPORT_EMAIL` | Optional single email address. When set, “Email support” `mailto:` links are injected at build time. When empty, those links and any element that exists only to hold them (the contact Support card and the safety support paragraph) are omitted. A change requires a redeploy. |
+| `SITE_ORIGIN` | Optional absolute origin with no trailing slash (for example `https://www.example.com`). Used for canonical, Open Graph, Twitter, `robots.txt` and `sitemap.xml`. When unset on Vercel, defaults to `https://${VERCEL_URL}` so previews do not advertise production. Production should set `SITE_ORIGIN` once the custom domain exists. Locally, if both `SITE_ORIGIN` and `VERCEL_URL` are unset, the script uses `http://localhost:3000`. |
+
+Nothing hard-codes the domain or mailbox in git. Source HTML uses `__SITE_ORIGIN__` and inject comments; the build replaces them. Support is mailto only. There is no contact form.
 
 ## File structure
 
@@ -18,18 +32,21 @@ npx serve website
 | --- | --- |
 | `index.html` | Home page. |
 | `how-it-works.html` | Shipper and transporter flows. |
-| `services.html` | Planned services. |
-| `become-a-transporter.html` | Transporter application page with a demo form. |
+| `services.html` | Launch services. |
+| `become-a-transporter.html` | Transporter registration page. |
 | `about.html` | About Truber. |
 | `safety.html` | Safety and trust. |
-| `contact.html` | Contact page with a demo form. |
+| `contact.html` | Contact and support. |
+| `terms.html` | Hidden, unlinked Terms of use shell. |
+| `privacy.html` | Hidden, unlinked Privacy policy shell. |
 | `404.html` | Not-found page. |
+| `scripts/inject-config.mjs` | Build step: copies the site to `dist/` and injects the origin and support email values. |
 | `styles.css` | Layout and component styles; design tokens only, no hex values. |
 | `tokens.css` | Colour and type tokens; verbatim Design file. |
 | `tokens-web-v2.css` | Design v2 tokens; verbatim; loaded after `tokens.css`. |
 | `motion.js` | IntersectionObserver reveals and pinned-scene switch. |
-| `forms.js` | Enables the contact and become-a-transporter demo forms, then blocks submission. |
-| `vercel.json` | Clean URLs, `/app` rewrite, redirects and security headers. |
+| `hero-video.js` | Loads the home hero video only when the connection and motion preferences allow. |
+| `vercel.json` | Build command, output directory, clean URLs, `/app` rewrite, redirects and security headers. |
 | `robots.txt` | Crawler rules; disallows `/app` and points to the sitemap. |
 | `sitemap.xml` | Indexable public pages. |
 | `site.webmanifest` | Web-app name, colours and icons. |
@@ -54,6 +71,7 @@ npx serve website
 - The pinned crossfade scene is enhanced only at 960 px and above; image scale is capped at 1.05.
 - Reveals, hairlines and icons draw once when they enter view.
 - Without JS, all content is visible and the scene is a static stack; only the one-off CSS hero grow remains. `prefers-reduced-motion: reduce` disables all motion. Explicit image dimensions and `font-display: swap` keep CLS at 0.
+- The home hero uses `hero-video.js` to swap in the looping video only when the connection and motion preferences allow; the poster remains the fallback.
 
 ## Hero readability
 
@@ -70,35 +88,19 @@ All images are AI-generated with Grok Imagine, not photographs, and were upscale
 - `/sign-in`, `/sign-in.html`, `/register` and `/register.html` are permanent (308) redirects to `/app` (`trailingSlash: false` also 308s `/app/` to `/app`; `cleanUrls` first 308s `*.html` to the clean path).
 - `robots.txt` disallows `/app`.
 - The home quick-quote form is a native GET to `/app?from=&to=` and shows no price. The CSP uses `form-action 'self'` for it.
-- The contact and become-a-transporter forms are demos: `action="#"`, no network code, and `forms.js` prevents submission. Their meta CSP keeps `form-action 'none'`.
 
 ## Copy rules
 
-- Do not claim live bookings, live payments, GPS tracking or automated matching.
-- Cash is “Not protected”.
-- “Protected payment” is never “escrow”. It is planned and in testing; Truber does not hold funds.
-- Commission is 5% on completed trips; payment fees are separate.
-- No booking is confirmed without a confirmed payment arrangement.
+- Describe only what works on launch day.
+- Cash, bank transfer or mobile money are Not protected. Truber doesn’t hold any funds, and the shipper pays the transporter directly.
+- Tracking means trip status updates. Do not use GPS, ETA or live-tracking wording.
+- Do not mention protected payment, escrow, preview, beta, demo, test/testing, coming soon, planned, TBC or upload in user-visible copy. Use “add” instead of “upload”.
+- Do not name Paynow, EcoCash, OneMoney, Telecash, InnBucks or BuySafe.
+- Commission is 5% on completed trips, charged to the transporter. There is no fee to sign up or to quote.
 
-## Placeholders
+## Hidden legal shells
 
-There are **65** `PLACEHOLDER` comments in the HTML. Count them with:
-
-```sh
-grep -o PLACEHOLDER -r website --include=*.html | wc -l
-```
-
-| Kind | Count |
-| --- | ---: |
-| Engineering-drafted copy from `CONCEPT.md` | 43 |
-| Scene statement and captions | 1 |
-| Support contact | 10 |
-| Social accounts | 8 |
-| Demo form | 2 |
-| Truck type list | 1 |
-| **Total** | **65** |
-
-Truber Design owns the final copy.
+`terms.html` and `privacy.html` are `noindex, nofollow`, unlinked shells with the shared header and footer. They are not in `sitemap.xml`, `robots.txt` or any navigation. They stay unpublished until legal text arrives.
 
 ## Theme
 
@@ -106,7 +108,7 @@ The website is dark only. There is no theme toggle and no inline script; styles.
 
 ## Search indexing
 
-The site is indexable. There is no robots `noindex` meta and no `X-Robots-Tag`. Canonical and social URLs use https://truber-web.vercel.app. `robots.txt` allows crawling, disallows `/app` and points to `sitemap.xml`, which lists the seven indexable pages; `404.html` is excluded.
+The seven public pages are indexable and listed in `sitemap.xml`; `404.html`, `terms.html` and `privacy.html` are excluded. Canonical and social URLs are built from `SITE_ORIGIN`. `robots.txt` allows crawling, disallows `/app` and points to `sitemap.xml`.
 
 ## Checks
 
@@ -114,7 +116,7 @@ The site is indexable. There is no robots `noindex` meta and no `X-Robots-Tag`. 
 - axe-core via Playwright.
 - `html-validate` with `html-validate:recommended`.
 - Contrast checks over the tokens and hero text.
-- Network logs: no third-party requests and no requests on demo form submit.
+- Network logs: no third-party requests.
 - Reduced-motion pass and a scroll trace.
 
 Evidence is kept outside the repo.
