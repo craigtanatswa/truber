@@ -34,14 +34,17 @@ class LiveAuthRepository implements AuthRepository {
 
   @override
   Future<TruberUser?> currentUser() async {
-    if (!api.tokens.hasSession) return null;
+    if (!api.tokens.hasSession) {
+      final restored = await api.restoreSession();
+      if (!restored) return null;
+    }
     final j = await api.get('/auth/me') as Map<String, dynamic>;
     return userFromJson(j);
   }
 
-  AuthTokenResponse _session(dynamic body) {
+  Future<AuthTokenResponse> _session(dynamic body) async {
     final j = body as Map<String, dynamic>;
-    api.saveTokens(j);
+    await api.saveTokens(j);
     return tokensFromJson(j);
   }
 
@@ -112,8 +115,9 @@ class LiveAuthRepository implements AuthRepository {
   }
 
   /// OpenAPI v0.4.0 has no logout endpoint: drop tokens locally.
+  /// Clears the in-memory access token and the persisted refresh token.
   @override
-  Future<void> logout() async => api.tokens.clear();
+  Future<void> logout() => api.tokens.clear();
 }
 
 class LiveCompanyRepository implements CompanyRepository {

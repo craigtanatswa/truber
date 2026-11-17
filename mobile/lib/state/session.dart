@@ -97,8 +97,8 @@ class SessionController extends ChangeNotifier {
 
   final DateTime Function() _clock;
 
-  /// Access-token expiry (AuthTokenResponse.expiresIn, 1800s). In mock mode
-  /// the session ends here; in live mode ApiClient refreshes before it.
+  /// Access-token expiry from AuthTokenResponse.expiresIn. In mock mode the
+  /// session ends here; in live mode ApiClient refreshes before it.
   DateTime? sessionExpiresAt;
   Timer? _expiryTimer;
   bool _refreshable = false;
@@ -127,7 +127,11 @@ class SessionController extends ChangeNotifier {
     notifyListeners();
     try {
       user = await auth.currentUser();
-      if (user != null) await _resolveCompany();
+      if (user != null) {
+        // Live mode refreshes; do not arm the mock expiry timer.
+        if (companies != null) _refreshable = true;
+        await _resolveCompany();
+      }
     } catch (_) {
       user = null;
     }
@@ -158,6 +162,7 @@ class SessionController extends ChangeNotifier {
     user = null;
     accessToken = null;
     sessionExpiresAt = null;
+    _refreshable = false;
     error = TruberCopy.errorUnauthorized;
     currentCompany = null;
     _serverBanUntil = null;
@@ -336,6 +341,7 @@ class SessionController extends ChangeNotifier {
     await auth.logout();
     user = null;
     accessToken = null;
+    _refreshable = false;
     currentCompany = null;
     _serverBanUntil = null;
     notifyListeners();
