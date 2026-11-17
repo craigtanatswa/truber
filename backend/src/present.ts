@@ -129,6 +129,10 @@ export function presentQuotation(row: QueryResultRow): QuotationResponse {
     validUntil: iso(asTimestamp(row.validUntil)),
     createdAt: iso(asTimestamp(row.createdAt)),
     updatedAt: iso(asTimestamp(row.updatedAt)),
+    counterpartyRestrictedUntil:
+      row.counterpartyRestrictedUntil == null
+        ? null
+        : iso(asTimestamp(row.counterpartyRestrictedUntil)),
   };
 }
 

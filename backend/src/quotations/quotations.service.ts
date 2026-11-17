@@ -17,6 +17,7 @@ import {
   QuotationResponse,
   QuotationStatus,
   TRANSPORTER_VISIBLE_STATUSES,
+  UserRole,
 } from '../domain';
 import { BOOKING_RETURNING, presentBooking } from '../bookings/booking.presenter';
 import { OffPlatformBanService } from '../offplatform/offplatform-ban.service';
@@ -45,6 +46,7 @@ interface QuotationRecord {
   validUntil: Date | string;
   createdAt: Date | string;
   updatedAt: Date | string;
+  counterpartyRestrictedUntil: Date | string | null;
 }
 
 interface BookingRecord {
@@ -59,10 +61,31 @@ const LOAD_RECORD = `
   l.currency
 `;
 
-const QUOTATION_RECORD = `
-  ${QUOTATION_RETURNING},
-  q.submitted_by_user_id AS "submittedByUserId"
-`;
+function quotationRecord(role: UserRole): string {
+  return `
+    ${QUOTATION_RETURNING},
+    q.submitted_by_user_id AS "submittedByUserId",
+    ${counterpartyRestrictedUntilSelect(role)}
+  `;
+}
+
+function counterpartyRestrictedUntilSelect(role: UserRole): string {
+  if (role === 'admin') {
+    return 'NULL::timestamptz AS "counterpartyRestrictedUntil"';
+  }
+  const counterparty =
+    role === 'shipper'
+      ? '(b.company_id = q.transporter_company_id OR b.user_id = q.submitted_by_user_id)'
+      : 'b.company_id = (SELECT l.company_id FROM loads l WHERE l.id = q.load_id)';
+  return `(
+    SELECT max(b.ends_at)
+    FROM off_platform_bans b
+    WHERE b.starts_at <= clock_timestamp()
+      AND clock_timestamp() < b.ends_at
+      AND b.lifted_at IS NULL
+      AND ${counterparty}
+  ) AS "counterpartyRestrictedUntil"`;
+}
 
 @Injectable()
 export class QuotationsService {
@@ -99,7 +122,7 @@ export class QuotationsService {
     );
     const rows = await run(
       client,
-      `SELECT ${QUOTATION_RECORD}
+      `SELECT ${quotationRecord(actor.role)}
        FROM quotations q
        WHERE ${clause}
        ORDER BY q.created_at ASC, q.id ASC
@@ -245,14 +268,14 @@ export class QuotationsService {
         );
       }
 
-      const body = await this.fetchQuotation(client, quotationId);
+      const body = await this.fetchQuotation(client, actor.role, quotationId);
       await storeIdempotency(client, actor.id, idempotencyKey, 'createQuotation', requestHash, 201, body);
       return { status: 201, body };
     });
   }
 
   async get(actor: DbUser, quotationId: string): Promise<QuotationResponse> {
-    const quotation = await this.fetchQuotationRecord(this.db, quotationId);
+    const quotation = await this.fetchQuotationRecord(this.db, actor.role, quotationId);
     if (!quotation) {
       throw new ApiException(404, 'NOT_FOUND', 'Quotation not found.');
     }
@@ -290,7 +313,7 @@ export class QuotationsService {
         throw new ApiException(404, 'NOT_FOUND', 'Quotation not found.');
       }
       const load = await this.lockLoad(client, located.rows[0].loadId);
-      const locked = await this.lockQuotation(client, quotationId);
+      const locked = await this.lockQuotation(client, actor.role, quotationId);
       if (!locked) {
         throw new ApiException(404, 'NOT_FOUND', 'Quotation not found.');
       }
@@ -302,7 +325,7 @@ export class QuotationsService {
       }
 
       await this.sweepExpiredForLoad(client, locked.loadId);
-      const quotation = await this.fetchQuotationRecord(client, quotationId);
+      const quotation = await this.fetchQuotationRecord(client, actor.role, quotationId);
       if (!quotation) {
         throw new ApiException(404, 'NOT_FOUND', 'Quotation not found.');
       }
@@ -333,7 +356,7 @@ export class QuotationsService {
          WHERE id = $1`,
         [quotationId],
       );
-      const body = await this.fetchQuotation(client, quotationId);
+      const body = await this.fetchQuotation(client, actor.role, quotationId);
       await storeIdempotency(client, actor.id, idempotencyKey, 'withdrawQuotation', requestHash, 200, body);
       return { status: 200, body };
     });
@@ -367,7 +390,7 @@ export class QuotationsService {
         throw new ApiException(404, 'NOT_FOUND', 'Quotation not found.');
       }
       const load = await this.lockLoad(client, located.rows[0].loadId);
-      const locked = await this.lockQuotation(client, quotationId);
+      const locked = await this.lockQuotation(client, actor.role, quotationId);
       if (!load || !locked) {
         throw new ApiException(404, 'NOT_FOUND', 'Quotation not found.');
       }
@@ -379,7 +402,7 @@ export class QuotationsService {
       }
 
       await this.sweepExpiredForLoad(client, load.id);
-      const quotation = await this.fetchQuotationRecord(client, quotationId);
+      const quotation = await this.fetchQuotationRecord(client, actor.role, quotationId);
       if (!quotation) {
         throw new ApiException(404, 'NOT_FOUND', 'Quotation not found.');
       }
@@ -455,7 +478,7 @@ export class QuotationsService {
         [load.id],
       );
 
-      const quotationBody = await this.fetchQuotation(client, quotationId);
+      const quotationBody = await this.fetchQuotation(client, actor.role, quotationId);
       const bookingResult = await run(
         client,
         `SELECT ${BOOKING_RETURNING} FROM bookings b WHERE b.id = $1`,
@@ -502,10 +525,14 @@ export class QuotationsService {
     return result.rows[0] ?? null;
   }
 
-  private async lockQuotation(client: PoolClient, quotationId: string): Promise<QuotationRecord | null> {
+  private async lockQuotation(
+    client: PoolClient,
+    role: UserRole,
+    quotationId: string,
+  ): Promise<QuotationRecord | null> {
     const result = await run<QuotationRecord>(
       client,
-      `SELECT ${QUOTATION_RECORD} FROM quotations q WHERE q.id = $1 FOR UPDATE`,
+      `SELECT ${quotationRecord(role)} FROM quotations q WHERE q.id = $1 FOR UPDATE`,
       [quotationId],
     );
     return result.rows[0] ?? null;
@@ -513,18 +540,23 @@ export class QuotationsService {
 
   private async fetchQuotationRecord(
     client: PoolClient | DbService,
+    role: UserRole,
     quotationId: string,
   ): Promise<QuotationRecord | null> {
     const result = await run<QuotationRecord>(
       client,
-      `SELECT ${QUOTATION_RECORD} FROM quotations q WHERE q.id = $1`,
+      `SELECT ${quotationRecord(role)} FROM quotations q WHERE q.id = $1`,
       [quotationId],
     );
     return result.rows[0] ?? null;
   }
 
-  private async fetchQuotation(client: PoolClient, quotationId: string): Promise<QuotationResponse> {
-    const record = await this.fetchQuotationRecord(client, quotationId);
+  private async fetchQuotation(
+    client: PoolClient,
+    role: UserRole,
+    quotationId: string,
+  ): Promise<QuotationResponse> {
+    const record = await this.fetchQuotationRecord(client, role, quotationId);
     if (!record) {
       throw new ApiException(404, 'NOT_FOUND', 'Quotation not found.');
     }

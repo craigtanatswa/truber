@@ -1,4 +1,4 @@
--- Quotations (API v0.4.0) and the minimal bookings row created by acceptQuotation.
+-- Quotations (API v0.5.0) and the minimal bookings row created by acceptQuotation.
 -- The bookings slice will extend this table; it must not create it again.
 -- off_platform_reports.booking_id and off_platform_findings.booking_id deliberately
 -- stay unconstrained: production already holds rows that reference fixture ids, so
@@ -49,8 +49,12 @@ CREATE TABLE IF NOT EXISTS bookings (
   trip_status text NOT NULL DEFAULT 'not_started',
   completion_status text NOT NULL DEFAULT 'not_complete',
   agreed_amount_minor integer NOT NULL,
+  adjusted_agreed_amount_minor integer,
   currency text NOT NULL,
   commission_rate_bps integer NOT NULL DEFAULT 500,
+  delivery_confirmed_at timestamptz,
+  dispute_window_ends_at timestamptz,
+  locked_at timestamptz,
   confirmed_payment_arrangement_id uuid,
   confirmed_at timestamptz,
   accept_notes text,
@@ -64,9 +68,19 @@ CREATE TABLE IF NOT EXISTS bookings (
     trip_status IN ('not_started', 'truck_dispatched', 'goods_collected', 'in_transit', 'delivered')
   ),
   CONSTRAINT bookings_completion_status_check CHECK (
-    completion_status IN ('not_complete', 'awaiting_shipper_acceptance', 'completed', 'disputed', 'cancelled')
+    completion_status IN ('not_complete', 'awaiting_shipper_acceptance', 'completed', 'disputed', 'locked', 'cancelled')
   ),
   CONSTRAINT bookings_agreed_amount_check CHECK (agreed_amount_minor >= 1),
+  CONSTRAINT bookings_adjusted_agreed_amount_check CHECK (
+    adjusted_agreed_amount_minor IS NULL OR adjusted_agreed_amount_minor >= 0
+  ),
+  CONSTRAINT bookings_dispute_window_check CHECK (
+    (delivery_confirmed_at IS NULL AND dispute_window_ends_at IS NULL)
+    OR (
+      delivery_confirmed_at IS NOT NULL
+      AND dispute_window_ends_at = delivery_confirmed_at + interval '24 hours'
+    )
+  ),
   CONSTRAINT bookings_currency_check CHECK (currency ~ '^[A-Z]{3}$'),
   CONSTRAINT bookings_commission_rate_check CHECK (commission_rate_bps = 500),
   CONSTRAINT bookings_accept_notes_len CHECK (accept_notes IS NULL OR char_length(accept_notes) <= 1000),

@@ -175,6 +175,33 @@ describe('quotations API', () => {
     expect(stillOne.rows[0].count).toBe(1);
   });
 
+  it('returns null v0.5.0 booking fields when a quotation is accepted', async () => {
+    const { shipper, load, admin } = await setupPostedLoad(app);
+    const transporter = await verifiedTransporter(app, admin.token, 'Pending Booking Field Fleet');
+    const quote = expectContract(
+      'createQuotation',
+      await submitQuote(app, transporter.token, load.id, transporter.companyId),
+      201,
+    );
+    const accepted = expectContract(
+      'acceptQuotation',
+      await http(app, 'post', `/quotations/${quote.body.id}/accept`, { token: shipper.token, body: {} }),
+      201,
+    );
+    expect(accepted.body.booking).toMatchObject({
+      status: 'pending_payment_arrangement',
+      completionStatus: 'not_complete',
+      agreedAmount: quote.body.amount,
+      commissionRateBps: 500,
+      confirmedPaymentArrangementId: null,
+      confirmedAt: null,
+      deliveryConfirmedAt: null,
+      disputeWindowEndsAt: null,
+      lockedAt: null,
+      adjustedAgreedAmount: null,
+    });
+  });
+
   it('blocks accept when the accepting shipper is banned and when only the submitting user is banned', async () => {
     const { shipper, shipperCompany, load, admin } = await setupPostedLoad(app);
     const transporter = await verifiedTransporter(app, admin.token, 'Shipper Ban Fleet');
@@ -204,6 +231,151 @@ describe('quotations API', () => {
     const db = app.get(DbService);
     const bookings = await db.query<{ count: number }>('SELECT count(*)::int AS count FROM bookings');
     expect(bookings.rows[0].count).toBe(0);
+  });
+
+  it('shows counterpartyRestrictedUntil per caller without revealing the reason', async () => {
+    const { shipper, shipperCompany, load, admin } = await setupPostedLoad(app);
+    const transporter = await verifiedTransporter(app, admin.token, 'Restriction Visibility Fleet');
+    const quote = expectContract(
+      'createQuotation',
+      await submitQuote(app, transporter.token, load.id, transporter.companyId),
+      201,
+    );
+
+    const getQuote = async (token: string) =>
+      expectContract('getQuotation', await http(app, 'get', `/quotations/${quote.body.id}`, { token }), 200);
+    const listQuotes = async (token: string) =>
+      expectContract(
+        'listQuotationsForLoad',
+        await http(app, 'get', `/loads/${load.id}/quotations`, { token }),
+        200,
+      );
+
+    for (const token of [shipper.token, transporter.token, admin.token]) {
+      expect((await getQuote(token)).body.counterpartyRestrictedUntil).toBeNull();
+    }
+    expect((await listQuotes(shipper.token)).body.data[0].counterpartyRestrictedUntil).toBeNull();
+
+    const reason = 'Secret ban reason that must never be disclosed to either party';
+    const companyBan = await insertActiveBan(app, {
+      userId: admin.userId,
+      companyId: transporter.companyId,
+      partyRole: 'transporter',
+      reason,
+    });
+    const shipperQuote = await getQuote(shipper.token);
+    expect(shipperQuote.body.counterpartyRestrictedUntil).toBe(companyBan.endsAt);
+    const shipperList = await listQuotes(shipper.token);
+    expect(shipperList.body.data[0].counterpartyRestrictedUntil).toBe(companyBan.endsAt);
+    expect((await getQuote(transporter.token)).body.counterpartyRestrictedUntil).toBeNull();
+    expect((await getQuote(admin.token)).body.counterpartyRestrictedUntil).toBeNull();
+    expect(JSON.stringify(shipperQuote.body)).not.toContain(reason);
+    expect(JSON.stringify(shipperList.body)).not.toContain(reason);
+
+    const shipperBan = await insertActiveBan(app, {
+      userId: shipper.userId,
+      companyId: shipperCompany.id,
+      partyRole: 'shipper',
+      reason: 'Another secret reason held by the platform',
+    });
+    const transporterQuote = await getQuote(transporter.token);
+    expect(transporterQuote.body.counterpartyRestrictedUntil).toBe(shipperBan.endsAt);
+    expect((await listQuotes(transporter.token)).body.data[0].counterpartyRestrictedUntil).toBe(
+      shipperBan.endsAt,
+    );
+
+    const db = app.get(DbService);
+    await db.query(
+      `UPDATE off_platform_bans
+       SET lifted_at = clock_timestamp(), lifted_by_user_id = $1,
+           lift_reason = 'Lifted by the restriction visibility test'
+       WHERE lifted_at IS NULL`,
+      [admin.userId],
+    );
+    expect((await getQuote(shipper.token)).body.counterpartyRestrictedUntil).toBeNull();
+    expect((await getQuote(transporter.token)).body.counterpartyRestrictedUntil).toBeNull();
+    expect((await listQuotes(shipper.token)).body.data[0].counterpartyRestrictedUntil).toBeNull();
+    expect((await listQuotes(transporter.token)).body.data[0].counterpartyRestrictedUntil).toBeNull();
+
+    const expiredEndsAt = new Date(Date.now() - 60_000);
+    await insertActiveBan(app, {
+      userId: admin.userId,
+      companyId: transporter.companyId,
+      partyRole: 'transporter',
+      endsAt: expiredEndsAt,
+    });
+    await insertActiveBan(app, {
+      userId: shipper.userId,
+      companyId: shipperCompany.id,
+      partyRole: 'shipper',
+      endsAt: expiredEndsAt,
+    });
+    expect((await getQuote(shipper.token)).body.counterpartyRestrictedUntil).toBeNull();
+    expect((await getQuote(transporter.token)).body.counterpartyRestrictedUntil).toBeNull();
+    expect((await listQuotes(transporter.token)).body.data[0].counterpartyRestrictedUntil).toBeNull();
+
+    const submittingUserReason = 'Reason attached to the submitting user ban';
+    const userBan = await insertActiveBan(app, {
+      userId: transporter.userId,
+      companyId: transporter.companyId,
+      partyRole: 'transporter',
+      reason: submittingUserReason,
+    });
+    const shipperUserBan = await getQuote(shipper.token);
+    expect(shipperUserBan.body.counterpartyRestrictedUntil).toBe(userBan.endsAt);
+    expect(JSON.stringify(shipperUserBan.body)).not.toContain(submittingUserReason);
+  });
+
+  it('enforces booking confirmation and dispute window constraints in PostgreSQL', async () => {
+    const { shipper, load, admin } = await setupPostedLoad(app);
+    const transporter = await verifiedTransporter(app, admin.token, 'Booking Constraint Fleet');
+    const quote = expectContract(
+      'createQuotation',
+      await submitQuote(app, transporter.token, load.id, transporter.companyId),
+      201,
+    );
+    const accepted = expectContract(
+      'acceptQuotation',
+      await http(app, 'post', `/quotations/${quote.body.id}/accept`, { token: shipper.token, body: {} }),
+      201,
+    );
+
+    const db = app.get(DbService);
+    const bookingId = accepted.body.booking.id as string;
+    await expect(
+      db.query(`UPDATE bookings SET status = 'confirmed' WHERE id = $1`, [bookingId]),
+    ).rejects.toThrow(/bookings_confirmed_pair_check/);
+
+    const second = await setupPostedLoad(app);
+    const secondTransporter = await verifiedTransporter(app, admin.token, 'Dispute Window Constraint Fleet');
+    const secondQuote = expectContract(
+      'createQuotation',
+      await submitQuote(app, secondTransporter.token, second.load.id, secondTransporter.companyId),
+      201,
+    );
+    await expect(
+      db.query(
+        `INSERT INTO bookings (
+           id, load_id, quotation_id, shipper_company_id, transporter_company_id,
+           status, trip_status, completion_status, agreed_amount_minor, currency,
+           commission_rate_bps, delivery_confirmed_at, dispute_window_ends_at,
+           created_by_user_id, created_at, updated_at
+         ) VALUES (
+           $1, $2, $3, $4, $5,
+           'pending_payment_arrangement', 'not_started', 'not_complete', 100000, 'USD',
+           500, '2026-01-01T00:00:00Z', '2026-01-01T23:00:00Z',
+           $6, clock_timestamp(), clock_timestamp()
+         )`,
+        [
+          randomUUID(),
+          second.load.id,
+          secondQuote.body.id,
+          second.shipperCompany.id,
+          secondTransporter.companyId,
+          second.shipper.userId,
+        ],
+      ),
+    ).rejects.toThrow(/bookings_dispute_window_check/);
   });
 
   it('withdraws, refuses a second withdraw, and allows revision by resubmission', async () => {
@@ -642,6 +814,70 @@ describe('quotations API', () => {
     expect(unchanged.rows[0].status).toBe('submitted');
   });
 
+  it('checks the ban gate before the commission gate', async () => {
+    const { shipper, load, admin } = await setupPostedLoad(app);
+    const transporter = await verifiedTransporter(app, admin.token, 'Gate Order Fleet');
+    const quote = expectContract(
+      'createQuotation',
+      await submitQuote(app, transporter.token, load.id, transporter.companyId),
+      201,
+    );
+    await insertActiveBan(app, {
+      userId: transporter.userId,
+      companyId: transporter.companyId,
+      partyRole: 'transporter',
+    });
+
+    const gate = app.get(NewWorkCommissionGate);
+    const commission = jest.spyOn(gate, 'assertCanTakeNewWork').mockRejectedValue(
+      new ApiException(
+        409,
+        'COMMISSION_OUTSTANDING',
+        'Outstanding commission must be settled before taking new work.',
+        {
+          outstandingAmount: { amountMinor: 5000, currency: 'USD' },
+          outstandingByCurrency: [{ amountMinor: 5000, currency: 'USD' }],
+        },
+      ),
+    );
+
+    const createBlocked = expectContract(
+      'createQuotation',
+      await submitQuote(app, transporter.token, load.id, transporter.companyId),
+      409,
+    );
+    expect(createBlocked.body.code).toBe('ACCOUNT_BANNED');
+    const acceptBlocked = expectContract(
+      'acceptQuotation',
+      await http(app, 'post', `/quotations/${quote.body.id}/accept`, { token: shipper.token, body: {} }),
+      409,
+    );
+    expect(acceptBlocked.body.code).toBe('ACCOUNT_BANNED');
+    expect(commission).not.toHaveBeenCalled();
+  });
+
+  it('held commission does not gate createQuotation or acceptQuotation when the mocked gate resolves', async () => {
+    const { shipper, load, admin } = await setupPostedLoad(app);
+    const transporter = await verifiedTransporter(app, admin.token, 'Held Commission Fleet');
+    const gate = app.get(NewWorkCommissionGate);
+    const commission = jest.spyOn(gate, 'assertCanTakeNewWork').mockResolvedValue();
+
+    // The mock simulates a company whose only commission is held by an open dispute.
+    // The real held/open receivable distinction lives in the billing binding.
+    const quote = expectContract(
+      'createQuotation',
+      await submitQuote(app, transporter.token, load.id, transporter.companyId),
+      201,
+    );
+    const accepted = expectContract(
+      'acceptQuotation',
+      await http(app, 'post', `/quotations/${quote.body.id}/accept`, { token: shipper.token, body: {} }),
+      201,
+    );
+    expect(accepted.body.booking.status).toBe('pending_payment_arrangement');
+    expect(commission).toHaveBeenCalledTimes(2);
+  });
+
   it('presents submitted quotations as expired and refuses accept or withdraw', async () => {
     const { shipper, load, admin } = await setupPostedLoad(app);
     const transporter = await verifiedTransporter(app, admin.token, 'Expiry Fleet');
@@ -944,14 +1180,21 @@ async function submitQuote(
 
 async function insertActiveBan(
   app: INestApplication,
-  input: { userId: string; companyId: string; partyRole: 'shipper' | 'transporter' },
-): Promise<void> {
+  input: {
+    userId: string;
+    companyId: string;
+    partyRole: 'shipper' | 'transporter';
+    endsAt?: Date | string;
+    reason?: string;
+  },
+): Promise<{ id: string; endsAt: string; reason: string }> {
   const db = app.get(DbService);
   const reportId = randomUUID();
   const findingId = randomUUID();
   const banId = randomUUID();
   const bookingId = randomUUID();
-  const reason = 'Direct test fixture for an active off-platform ban';
+  const reason = input.reason ?? 'Direct test fixture for an active off-platform ban';
+  const endsAt = input.endsAt === undefined ? null : new Date(input.endsAt).toISOString();
   await db.query(
     `INSERT INTO off_platform_reports (
        id, booking_id, reported_by_user_id, reporter_role, suspected_party,
@@ -966,14 +1209,22 @@ async function insertActiveBan(
      ) VALUES ($1, $2, $3, 'confirmed', $4, '[]'::jsonb, $5, clock_timestamp())`,
     [findingId, reportId, bookingId, reason, input.userId],
   );
-  await db.query(
+  const inserted = await db.query<{ endsAt: Date | string }>(
     `INSERT INTO off_platform_bans (
        id, finding_id, user_id, company_id, party_role, reason, starts_at, ends_at,
        duration_days, applied_by_user_id, created_at
      ) VALUES (
-       $1, $2, $3, $4, $5, $6, clock_timestamp(), clock_timestamp() + interval '336 hours',
+       $1, $2, $3, $4, $5, $6,
+       CASE WHEN $8::timestamptz IS NULL THEN now() ELSE $8::timestamptz - interval '336 hours' END,
+       COALESCE($8::timestamptz, now() + interval '336 hours'),
        14, $7, clock_timestamp()
-     )`,
-    [banId, findingId, input.userId, input.companyId, input.partyRole, reason, input.userId],
+     )
+     RETURNING ends_at AS "endsAt"`,
+    [banId, findingId, input.userId, input.companyId, input.partyRole, reason, input.userId, endsAt],
   );
+  return {
+    id: banId,
+    endsAt: new Date(inserted.rows[0].endsAt).toISOString(),
+    reason,
+  };
 }

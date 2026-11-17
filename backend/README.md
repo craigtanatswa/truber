@@ -27,6 +27,8 @@ The OpenAPI file at `../api/openapi.yaml` is the published contract (SHA-256 `88
 | POST | `/quotations/{quotationId}/withdraw` | Transporter withdraws its own submitted quotation. An accepted quotation cannot be withdrawn (409 `SELF_CANCEL_NOT_ALLOWED`). Revision is withdraw plus resubmit. |
 | POST | `/quotations/{quotationId}/accept` | Shipper owner accepts a submitted quotation, siblings become `not_selected`, and the load moves to `booking_pending`. The booking is created only as `pending_payment_arrangement`; it is never confirmed here. |
 
+Quotations and the pending booking follow API v0.5.0. Every `Quotation` response, including the one inside `AcceptQuotationResponse`, carries the read-only `counterpartyRestrictedUntil` computed per caller: the latest active ban end for the caller's counterparty, or null. Admins always see null, and no ban reason, finding, report, evidence, or reporter is disclosed. The booking created by accept includes `deliveryConfirmedAt`, `disputeWindowEndsAt`, `lockedAt`, and `adjustedAgreedAmount`, all null at creation; `completionStatus` gains `locked`, and a completed booking whose dispute window has elapsed is presented as `locked` with `lockedAt` from the window end.
+
 Responses used by the tests are validated against the operation schemas in `api/openapi.yaml`.
 
 ## Not implemented

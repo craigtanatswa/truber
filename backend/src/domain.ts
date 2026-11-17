@@ -103,6 +103,7 @@ export interface QuotationResponse {
   validUntil: string;
   createdAt: string;
   updatedAt: string;
+  counterpartyRestrictedUntil: string | null;
 }
 
 export type BookingStatus = 'pending_payment_arrangement' | 'confirmed' | 'cancelled';
@@ -112,6 +113,7 @@ export type CompletionStatus =
   | 'awaiting_shipper_acceptance'
   | 'completed'
   | 'disputed'
+  | 'locked'
   | 'cancelled';
 
 export interface BookingResponse {
@@ -125,7 +127,11 @@ export interface BookingResponse {
   tripStatus: TripStatus;
   completionStatus: CompletionStatus;
   agreedAmount: MoneyResponse;
+  adjustedAgreedAmount: MoneyResponse | null;
   commissionRateBps: 500;
+  deliveryConfirmedAt: string | null;
+  disputeWindowEndsAt: string | null;
+  lockedAt: string | null;
   confirmedPaymentArrangementId: string | null;
   confirmedAt: string | null;
   createdAt: string;
