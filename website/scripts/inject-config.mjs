@@ -182,10 +182,18 @@ async function main() {
         "<!-- inject:contact-lead -->",
         "<!-- inject:contact-support-card -->",
       ]) {
-        content = content.split(marker).join(
-          replacementFor(marker, supportEmail, escapedEmail),
-        );
+        const replacement = replacementFor(marker, supportEmail, escapedEmail);
+        if (replacement) {
+          content = content.split(marker).join(replacement);
+        } else {
+          const escaped = marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          content = content.replace(new RegExp(`^[ \t]*${escaped}[ \t]*\n?`, "gm"), "");
+        }
       }
+      content = content.replace(
+        /<section class="section section--muted">\s*<div class="container">\s*<\/div>\s*<\/section>\s*/g,
+        "",
+      );
     }
 
     await fsp.writeFile(file, content, "utf8");
