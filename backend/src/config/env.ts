@@ -1,6 +1,13 @@
 import { z, ZodError } from 'zod';
 import { assertDbSettings, DbConnectionMode, DbSettings, DbSslMode, DbTarget } from '../db/pg-config';
 
+// U1 (user, 11 Nov 2026 16:37 CAT): commission credit may pay off commission already owed.
+// Default TRUE; set BILLING_CREDIT_OFFSETS_EXISTING=false to apply credit to future commission only.
+const creditOffsetsExistingFlag = z
+  .union([z.boolean(), z.enum(['true', 'false', '1', '0'])])
+  .default(true)
+  .transform((value) => value === true || value === 'true' || value === '1');
+
 const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
@@ -35,6 +42,7 @@ const schema = z.object({
   OTP_SOURCE_WINDOW_SECONDS: z.coerce.number().int().min(1).max(86_400).default(600),
   OTP_VERIFY_MAX: z.coerce.number().int().min(1).max(100_000).default(5),
   OTP_VERIFY_WINDOW_SECONDS: z.coerce.number().int().min(1).max(86_400).default(600),
+  BILLING_CREDIT_OFFSETS_EXISTING: creditOffsetsExistingFlag,
 });
 
 export type Env = z.infer<typeof schema> & {

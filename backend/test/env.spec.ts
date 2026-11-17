@@ -25,4 +25,29 @@ describe('environment configuration', () => {
   it('rejects a non-1800 reset token TTL', () => {
     expect(() => loadEnv({ ...base, RESET_TOKEN_TTL_SECONDS: '900' })).toThrow(/RESET_TOKEN_TTL_SECONDS must be 1800/);
   });
+
+  it('defaults BILLING_CREDIT_OFFSETS_EXISTING to true', () => {
+    expect(loadEnv(base).BILLING_CREDIT_OFFSETS_EXISTING).toBe(true);
+  });
+
+  it('parses BILLING_CREDIT_OFFSETS_EXISTING from true/false and 1/0', () => {
+    for (const value of ['true', '1']) {
+      expect(
+        loadEnv({ ...base, BILLING_CREDIT_OFFSETS_EXISTING: value })
+          .BILLING_CREDIT_OFFSETS_EXISTING,
+      ).toBe(true);
+    }
+    for (const value of ['false', '0']) {
+      expect(
+        loadEnv({ ...base, BILLING_CREDIT_OFFSETS_EXISTING: value })
+          .BILLING_CREDIT_OFFSETS_EXISTING,
+      ).toBe(false);
+    }
+  });
+
+  it('rejects an invalid BILLING_CREDIT_OFFSETS_EXISTING value', () => {
+    expect(() =>
+      loadEnv({ ...base, BILLING_CREDIT_OFFSETS_EXISTING: 'nope' }),
+    ).toThrow(/Invalid environment configuration/);
+  });
 });

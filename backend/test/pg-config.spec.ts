@@ -7,7 +7,7 @@ import { loadEnv } from '../src/config/env';
 import { qualifyAppSql } from '../src/db/identifiers';
 import { buildPoolConfig, buildSsl } from '../src/db/pg-config';
 
-const OPENAPI_SHA256 = '7f44d228ba8129398a9d2790e3e08770efbfed381fab7be391bef592f38221f4';
+const OPENAPI_SHA256 = '8839f1d4afebb3ceda9683d4c83604866ed80c31d094be31afb415fc08460b4a';
 
 function env(overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
   return {
