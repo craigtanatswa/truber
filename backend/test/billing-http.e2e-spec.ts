@@ -41,6 +41,8 @@ describe('billing HTTP endpoints', () => {
     assertOperationResponse('getCompanyCommissionAccount', 200, response.body);
     expect(response.body).toEqual({ companyId, outstandingByCurrency: [], receivables: [] });
     expect('outstandingAmount' in response.body).toBe(false);
+    expect(response.body.creditByCurrency).toBeUndefined();
+    expect(response.body.heldByCurrency).toBeUndefined();
   });
 
   it('copies the single outstanding currency into outstandingAmount', async () => {

@@ -52,8 +52,12 @@ describe('billing schema constraints', () => {
       sql(
         `INSERT INTO commission_receivables (
            id, booking_id, transporter_company_id, currency, amount_minor, collected_minor,
-           remaining_minor, status, payment_method, recognised_at, voided_at, created_at, updated_at
-         ) VALUES ($1, $2, $3, 'USD', $4, $5, $6, $7, 'prepay', now(), $8, now(), now())`,
+           remaining_minor, status, payment_method, recognised_at, dispute_window_ends_at,
+           voided_at, created_at, updated_at
+         ) VALUES (
+           $1, $2, $3, 'USD', $4, $5, $6, $7, 'prepay', now(),
+           now() + interval '24 hours', $8, now(), now()
+         )`,
       ),
       [
         id,
@@ -140,8 +144,11 @@ describe('billing schema constraints', () => {
           `INSERT INTO commission_receivables (
              id, booking_id, transporter_company_id, currency, amount_minor, collected_minor,
              remaining_minor, status, payment_method, commission_rate_bps, recognised_at,
-             created_at, updated_at
-           ) VALUES ($1, $2, $3, 'USD', 1000, 0, 1000, 'open', 'prepay', 400, now(), now(), now())`,
+             dispute_window_ends_at, created_at, updated_at
+           ) VALUES (
+             $1, $2, $3, 'USD', 1000, 0, 1000, 'open', 'prepay', 400, now(),
+             now() + interval '24 hours', now(), now()
+           )`,
         ),
         [randomUUID(), randomUUID(), companyId],
       ),
@@ -178,8 +185,12 @@ describe('billing schema constraints', () => {
         sql(
           `INSERT INTO commission_receivables (
              id, booking_id, transporter_company_id, currency, amount_minor, collected_minor,
-             remaining_minor, status, payment_method, recognised_at, created_at, updated_at
-           ) VALUES ($1, $2, $3, 'USD', 1000, 0, 1000, 'open', NULL, now(), now(), now())`,
+             remaining_minor, status, payment_method, recognised_at, dispute_window_ends_at,
+             created_at, updated_at
+           ) VALUES (
+             $1, $2, $3, 'USD', 1000, 0, 1000, 'open', NULL, now(),
+             now() + interval '24 hours', now(), now()
+           )`,
         ),
         [randomUUID(), randomUUID(), companyId],
       ),

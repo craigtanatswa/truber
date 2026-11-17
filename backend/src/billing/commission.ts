@@ -1,5 +1,5 @@
 import { ApiException } from '../common/api.exception';
-import { assertMoney, assertSameCurrency, Money } from './money';
+import { AssertMoneyOptions, assertMoney, assertSameCurrency, Money } from './money';
 
 export const COMMISSION_RATE_BPS = 500;
 
@@ -18,8 +18,13 @@ function safeMoney(amountMinor: bigint, currency: string): Money {
   return { amountMinor: converted, currency };
 }
 
-export function commissionFor(trip: Money): Money {
-  assertMoney(trip);
+export function commissionFor(trip: Money, options: AssertMoneyOptions = {}): Money {
+  assertMoney(trip, options);
+  return commissionForMinor(trip.amountMinor, trip.currency);
+}
+
+export function commissionForMinor(tripMinor: number, currency: string): Money {
+  const trip = assertMoney({ amountMinor: tripMinor, currency }, { allowZero: true });
   const commission =
     (BigInt(trip.amountMinor) * BigInt(COMMISSION_RATE_BPS) + ROUNDING_OFFSET) / BPS_DIVISOR;
   return safeMoney(commission, trip.currency);

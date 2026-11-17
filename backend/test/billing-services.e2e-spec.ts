@@ -251,6 +251,13 @@ describe('billing receivable services', () => {
     expect(partialVoid.remainingAmount).toEqual({ amountMinor: 0, currency: 'USD' });
     expect(partialVoid.collectedAmount).toEqual({ amountMinor: 2000, currency: 'USD' });
 
+    const balances = await receivables.commissionBalances(null, companyId);
+    expect(balances.creditByCurrency).toEqual([{ amountMinor: 2000, currency: 'USD' }]);
+    const voidCredits = await db.query<{ amount_minor: string; source_kind: string }>(
+      `SELECT amount_minor, source_kind FROM commission_credits`,
+    );
+    expect(voidCredits.rows).toEqual([{ amount_minor: '2000', source_kind: 'void' }]);
+
     const account = await receivables.account(companyId);
     expect(account.outstandingByCurrency).toEqual([]);
     await expect(gateCheck()).resolves.toBeUndefined();

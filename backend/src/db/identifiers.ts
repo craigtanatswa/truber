@@ -1,6 +1,10 @@
 export const APP_TABLES = [
+  'commission_adjustments',
   'commission_collection_allocations',
   'commission_collections',
+  'commission_credit_allocations',
+  'commission_credits',
+  'commission_dispute_outcomes',
   'commission_receivables',
   'company_members',
   'companies',
@@ -21,7 +25,11 @@ export const APP_TABLES = [
   'users',
 ] as const;
 
-const APP_FUNCTIONS = new Set(['billing_receivable_immutable']);
+const APP_FUNCTIONS = new Set([
+  'billing_append_only',
+  'billing_credit_guard',
+  'billing_receivable_immutable',
+]);
 
 const POSTGIS_FUNCTIONS = new Set([
   'ST_AsText',
