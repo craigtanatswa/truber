@@ -326,11 +326,19 @@ function requireDisputeRef(disputeRef: string): string {
   return normalised;
 }
 
-function normaliseReceiptRef(externalReference: string | undefined): string | null {
+/**
+ * Receipt references are compared after NFKC folding (full-width to ASCII), removal of all
+ * format characters (zero-width etc.) and all separators/whitespace, then upper-casing.
+ * Hyphens are kept. 'EC\u200b123', 'ＥＣ123', 'EC 123' and 'ec123' all equal 'EC123'.
+ */
+export function normaliseReceiptRef(externalReference: string | undefined): string | null {
   if (typeof externalReference !== 'string') {
     return null;
   }
-  const normalised = externalReference.trim().replace(/\s+/g, ' ').toUpperCase();
+  const normalised = externalReference
+    .normalize('NFKC')
+    .replace(/[\p{Cf}\p{Z}\s]+/gu, '')
+    .toUpperCase();
   return normalised.length === 0 ? null : normalised;
 }
 
