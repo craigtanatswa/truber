@@ -52,6 +52,10 @@ export function presentTruck(row: QueryResultRow): TruckResponse {
     verificationStatus: row.verification_status as TruckResponse['verificationStatus'],
     createdAt: iso(asTimestamp(row.created_at)),
     updatedAt: iso(asTimestamp(row.updated_at)),
+    counterpartyRestrictedUntil:
+      row.counterparty_restricted_until == null
+        ? null
+        : iso(asTimestamp(row.counterparty_restricted_until)),
   };
 }
 

@@ -53,6 +53,7 @@ export interface TruckResponse {
   verificationStatus: VerificationStatus;
   createdAt: string;
   updatedAt: string;
+  counterpartyRestrictedUntil: string | null;
 }
 
 export type VerificationDocumentType =

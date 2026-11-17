@@ -1,8 +1,12 @@
 import { INestApplication } from '@nestjs/common';
 import { randomUUID } from 'crypto';
+import { Pool } from 'pg';
 import { ApiException } from '../src/common/api.exception';
+import { loadEnv } from '../src/config/env';
 import { createApp } from '../src/create-app';
 import { DbService } from '../src/db/db.service';
+import { qualifyAppSql } from '../src/db/identifiers';
+import { buildPoolConfig } from '../src/db/pg-config';
 import { assertTruckUsableForQuote } from '../src/trucks/truck-usability';
 import { http, seedAdmin, truncate } from './helpers';
 import {
@@ -15,6 +19,74 @@ import {
   Session,
 } from './item5-helpers';
 import { prepareTestDatabase } from './prepare-db';
+
+type BanState = 'active' | 'lifted' | 'expired';
+
+async function insertCompanyBan(input: {
+  companyId: string;
+  userId: string;
+  appliedByUserId: string;
+  state?: BanState;
+}): Promise<{ id: string; endsAt: string }> {
+  const env = loadEnv();
+  const pool = new Pool(buildPoolConfig(env.db, 'migration'));
+  const sql = (text: string) =>
+    qualifyAppSql(text, { appSchema: env.db.DB_SCHEMA, postgisSchema: env.db.POSTGIS_SCHEMA });
+  const reportId = randomUUID();
+  const findingId = randomUUID();
+  const banId = randomUUID();
+  const bookingId = randomUUID();
+  const state = input.state ?? 'active';
+  const startsAtExpression =
+    state === 'expired' ? "clock_timestamp() - interval '15 days'" : 'clock_timestamp()';
+  try {
+    await pool.query(
+      sql(`INSERT INTO off_platform_reports (
+         id, booking_id, reported_by_user_id, reporter_role, suspected_party, description, created_at
+       ) VALUES ($1, $2, $3, 'admin', 'transporter', $4, clock_timestamp())`),
+      [reportId, bookingId, input.appliedByUserId, 'Direct test report for truck restriction visibility'],
+    );
+    await pool.query(
+      sql(`INSERT INTO off_platform_findings (
+         id, report_id, booking_id, outcome, reason, responsible_parties, reviewed_by_user_id, reviewed_at
+       ) VALUES ($1, $2, $3, 'confirmed', $4, '[]'::jsonb, $5, clock_timestamp())`),
+      [
+        findingId,
+        reportId,
+        bookingId,
+        'Direct test finding for truck restriction visibility',
+        input.appliedByUserId,
+      ],
+    );
+    const inserted = await pool.query<{ endsAt: Date | string }>(
+      sql(`WITH applied AS (SELECT ${startsAtExpression} AS starts_at)
+       INSERT INTO off_platform_bans (
+         id, finding_id, user_id, company_id, party_role, reason, starts_at, ends_at,
+         duration_days, applied_by_user_id, created_at, lifted_at, lifted_by_user_id, lift_reason
+       )
+       SELECT $1::uuid, $2::uuid, $3::uuid, $4::uuid, 'transporter', $5::text, applied.starts_at,
+              applied.starts_at + interval '336 hours', 14, $6::uuid, applied.starts_at,
+              CASE WHEN $7::boolean THEN applied.starts_at ELSE NULL END,
+              CASE WHEN $7::boolean THEN $6::uuid ELSE NULL END,
+              CASE WHEN $7::boolean THEN $8::text ELSE NULL END
+       FROM applied
+       RETURNING ends_at AS "endsAt"`),
+      [
+        banId,
+        findingId,
+        input.userId,
+        input.companyId,
+        'Direct test off-platform ban',
+        input.appliedByUserId,
+        state === 'lifted',
+        state === 'lifted' ? 'Lifting the direct test ban early' : null,
+      ],
+    );
+    return { id: banId, endsAt: new Date(inserted.rows[0].endsAt).toISOString() };
+  } finally {
+    await pool.end();
+  }
+}
 
 describe('trucks API', () => {
   let app: INestApplication;
@@ -357,6 +429,163 @@ describe('trucks API', () => {
       400,
     );
     expect(malformed.body.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('returns a null counterparty restriction to the owning company', async () => {
+    const owner = await register(app, 'transporter');
+    const company = await createCompany(app, owner.token, 'transporter', 'Restriction Owner');
+    const truck = await createTruck(app, owner.token, company.id, { registrationNumber: 'RESTRICT1' });
+    expect(truck.counterpartyRestrictedUntil).toBeNull();
+
+    const updated = expectContract(
+      'updateTruck',
+      await http(app, 'patch', `/trucks/${truck.id}`, {
+        token: owner.token,
+        body: { trailerSpecs: 'Restriction test trailer' },
+      }),
+      200,
+    );
+    expect(updated.body.counterpartyRestrictedUntil).toBeNull();
+
+    const detail = expectContract(
+      'getTruck',
+      await http(app, 'get', `/trucks/${truck.id}`, { token: owner.token }),
+      200,
+    );
+    expect(detail.body.counterpartyRestrictedUntil).toBeNull();
+
+    const list = expectContract(
+      'listTrucks',
+      await http(app, 'get', '/trucks', { token: owner.token }),
+      200,
+    );
+    const listed = list.body.data.find((row: { id: string }) => row.id === truck.id);
+    expect(listed.counterpartyRestrictedUntil).toBeNull();
+  });
+
+  it('shows an active ban on the owning company to shippers but not owners or admins', async () => {
+    const owner = await register(app, 'transporter');
+    const company = await createCompany(app, owner.token, 'transporter', 'Restricted Fleet');
+    const truck = await createTruck(app, owner.token, company.id, { registrationNumber: 'RESTRICT2' });
+    const admin = await loginAdmin(app);
+    await setTruckStatus(admin, truck.id, 'verified');
+    const shipper = await register(app, 'shipper');
+
+    const ban = await insertCompanyBan({
+      companyId: company.id,
+      userId: owner.userId,
+      appliedByUserId: admin.userId,
+    });
+
+    const shipperDetail = expectContract(
+      'getTruck',
+      await http(app, 'get', `/trucks/${truck.id}`, { token: shipper.token }),
+      200,
+    );
+    expect(shipperDetail.body.counterpartyRestrictedUntil).toBe(ban.endsAt);
+
+    const shipperList = expectContract(
+      'listTrucks',
+      await http(app, 'get', '/trucks', { token: shipper.token }),
+      200,
+    );
+    const shipperListed = shipperList.body.data.find((row: { id: string }) => row.id === truck.id);
+    expect(shipperListed.counterpartyRestrictedUntil).toBe(ban.endsAt);
+
+    const ownerDetail = expectContract(
+      'getTruck',
+      await http(app, 'get', `/trucks/${truck.id}`, { token: owner.token }),
+      200,
+    );
+    expect(ownerDetail.body.counterpartyRestrictedUntil).toBeNull();
+
+    const ownerList = expectContract(
+      'listTrucks',
+      await http(app, 'get', '/trucks', { token: owner.token }),
+      200,
+    );
+    const ownerListed = ownerList.body.data.find((row: { id: string }) => row.id === truck.id);
+    expect(ownerListed.counterpartyRestrictedUntil).toBeNull();
+
+    const ownerUpdate = expectContract(
+      'updateTruck',
+      await http(app, 'patch', `/trucks/${truck.id}`, {
+        token: owner.token,
+        body: { currentLocationText: 'Restricted but still editable' },
+      }),
+      200,
+    );
+    expect(ownerUpdate.body.counterpartyRestrictedUntil).toBeNull();
+
+    const adminDetail = expectContract(
+      'getTruck',
+      await http(app, 'get', `/trucks/${truck.id}`, { token: admin.token }),
+      200,
+    );
+    expect(adminDetail.body.counterpartyRestrictedUntil).toBeNull();
+
+    const adminList = expectContract(
+      'listTrucks',
+      await http(app, 'get', '/trucks', { token: admin.token }),
+      200,
+    );
+    const adminListed = adminList.body.data.find((row: { id: string }) => row.id === truck.id);
+    expect(adminListed.counterpartyRestrictedUntil).toBeNull();
+  });
+
+  it('does not show lifted or expired bans on the owning company', async () => {
+    const owner = await register(app, 'transporter');
+    const company = await createCompany(app, owner.token, 'transporter', 'Formerly Restricted Fleet');
+    const truck = await createTruck(app, owner.token, company.id, { registrationNumber: 'RESTRICT3' });
+    const admin = await loginAdmin(app);
+    await setTruckStatus(admin, truck.id, 'verified');
+    const shipper = await register(app, 'shipper');
+
+    await insertCompanyBan({
+      companyId: company.id,
+      userId: owner.userId,
+      appliedByUserId: admin.userId,
+      state: 'lifted',
+    });
+
+    const afterLift = expectContract(
+      'getTruck',
+      await http(app, 'get', `/trucks/${truck.id}`, { token: shipper.token }),
+      200,
+    );
+    expect(afterLift.body.counterpartyRestrictedUntil).toBeNull();
+    const afterLiftList = expectContract(
+      'listTrucks',
+      await http(app, 'get', '/trucks', { token: shipper.token }),
+      200,
+    );
+    expect(
+      afterLiftList.body.data.find((row: { id: string }) => row.id === truck.id)
+        .counterpartyRestrictedUntil,
+    ).toBeNull();
+
+    await insertCompanyBan({
+      companyId: company.id,
+      userId: owner.userId,
+      appliedByUserId: admin.userId,
+      state: 'expired',
+    });
+
+    const afterExpiry = expectContract(
+      'getTruck',
+      await http(app, 'get', `/trucks/${truck.id}`, { token: shipper.token }),
+      200,
+    );
+    expect(afterExpiry.body.counterpartyRestrictedUntil).toBeNull();
+    const afterExpiryList = expectContract(
+      'listTrucks',
+      await http(app, 'get', '/trucks', { token: shipper.token }),
+      200,
+    );
+    expect(
+      afterExpiryList.body.data.find((row: { id: string }) => row.id === truck.id)
+        .counterpartyRestrictedUntil,
+    ).toBeNull();
   });
 
   it('enforces update permissions, admin-only verification and re-verification rules', async () => {

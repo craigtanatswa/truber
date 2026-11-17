@@ -16,6 +16,25 @@ const TRUCK_COLUMNS = `
   verification_status, created_at, updated_at
 `;
 
+function counterpartyRestrictionSql(callerParam: number, revealParam: number): string {
+  return `
+    CASE
+      WHEN $${revealParam} AND NOT EXISTS (
+        SELECT 1
+        FROM company_members cm
+        WHERE cm.company_id = trucks.company_id
+          AND cm.user_id = $${callerParam}
+      ) THEN (
+        SELECT max(b.ends_at)
+        FROM off_platform_bans b
+        WHERE b.company_id = trucks.company_id
+          AND b.lifted_at IS NULL
+          AND b.starts_at <= clock_timestamp()
+          AND clock_timestamp() < b.ends_at
+      )
+    END AS counterparty_restricted_until`;
+}
+
 export function normalizeRegistrationNumber(raw: string): string {
   const normalized = raw.replace(/[\s-]+/g, '').toUpperCase();
   if (normalized.length === 0 || normalized.length > 64) {
@@ -65,13 +84,14 @@ export class TrucksService {
       `SELECT count(*)::int AS total FROM trucks WHERE ${clause}`,
       params,
     );
+    const restrictionSql = counterpartyRestrictionSql(params.length + 1, params.length + 2);
     const rows = await this.db.query(
-      `SELECT ${TRUCK_COLUMNS}
+      `SELECT ${TRUCK_COLUMNS}, ${restrictionSql}
        FROM trucks
        WHERE ${clause}
        ORDER BY created_at DESC, id DESC
-       LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
-      [...params, window.pageSize, window.offset],
+       LIMIT $${params.length + 3} OFFSET $${params.length + 4}`,
+      [...params, actor.id, actor.role !== 'admin', window.pageSize, window.offset],
     );
     return {
       data: rows.rows.map((row) => presentTruck(row)),
@@ -115,7 +135,7 @@ export class TrucksService {
            created_at, updated_at
          ) VALUES (
            $1, $2, $3, $4, $5, $6, $7, $8, $9, 'unverified', clock_timestamp(), clock_timestamp()
-         ) RETURNING ${TRUCK_COLUMNS}`,
+         ) RETURNING ${TRUCK_COLUMNS}, NULL::timestamptz AS counterparty_restricted_until`,
         [
           randomUUID(),
           dto.companyId,
@@ -142,7 +162,10 @@ export class TrucksService {
   }
 
   async get(actor: DbUser, truckId: string): Promise<TruckResponse> {
-    const result = await this.db.query(`SELECT ${TRUCK_COLUMNS} FROM trucks WHERE id = $1`, [truckId]);
+    const result = await this.db.query(
+      `SELECT ${TRUCK_COLUMNS}, ${counterpartyRestrictionSql(2, 3)} FROM trucks WHERE id = $1`,
+      [truckId, actor.id, actor.role !== 'admin'],
+    );
     const row = result.rows[0];
     if (!row) {
       throw new ApiException(404, 'NOT_FOUND', 'Truck not found.');
@@ -167,7 +190,8 @@ export class TrucksService {
     }
     return this.db.tx(async (client) => {
       const locked = await client.query(
-        `SELECT ${TRUCK_COLUMNS} FROM trucks WHERE id = $1 FOR UPDATE`,
+        `SELECT ${TRUCK_COLUMNS}, NULL::timestamptz AS counterparty_restricted_until
+         FROM trucks WHERE id = $1 FOR UPDATE`,
         [truckId],
       );
       const existing = locked.rows[0];
@@ -221,7 +245,8 @@ export class TrucksService {
       sets.push('updated_at = clock_timestamp()');
       params.push(truckId);
       const updated = await client.query(
-        `UPDATE trucks SET ${sets.join(', ')} WHERE id = $${params.length} RETURNING ${TRUCK_COLUMNS}`,
+        `UPDATE trucks SET ${sets.join(', ')} WHERE id = $${params.length}
+         RETURNING ${TRUCK_COLUMNS}, NULL::timestamptz AS counterparty_restricted_until`,
         params,
       );
       return presentTruck(updated.rows[0]);
