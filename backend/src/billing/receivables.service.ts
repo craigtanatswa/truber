@@ -1,8 +1,10 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { PoolClient, QueryResult, QueryResultRow } from 'pg';
 import { ApiException, isPgError } from '../common/api.exception';
+import { pageMeta, pageWindow } from '../common/http';
 import { iso, sha256 } from '../common/crypto';
+import { ENV, Env } from '../config/env';
 import { DbService } from '../db/db.service';
 import { DbUser } from '../domain';
 import { planAdjustment } from './adjustments';
@@ -27,6 +29,14 @@ export interface CommissionReceivable {
   bookingId: string;
   transporterCompanyId: string;
   amount: Money;
+  reducedAmount: Money;
+  effectiveAmount: Money;
+  creditAppliedAmount: Money;
+  disputeWindowEndsAt: string;
+  finalAt: string | null;
+  disputeRef: string | null;
+  heldSince: string | null;
+  commissionRateBps: number;
   collectedAmount: Money;
   remainingAmount: Money;
   status: CommissionReceivableStatus;
@@ -39,6 +49,8 @@ export interface CommissionAccount {
   companyId: string;
   outstandingByCurrency: Money[];
   outstandingAmount?: Money;
+  heldByCurrency: Money[];
+  creditByCurrency: Money[];
   receivables: CommissionReceivable[];
 }
 
@@ -54,6 +66,7 @@ export interface CommissionCollectionRecord {
   amount: Money;
   outstandingAmountAfter: Money;
   outstandingByCurrencyAfter: Money[];
+  creditedAmount: Money;
   externalReference: string | null;
   notes: string | null;
   fundsMovementClaimedByTruber: false;
@@ -107,7 +120,7 @@ export interface CommissionDisputeOutcome {
   receivableId: string;
   bookingId: string;
   transporterCompanyId: string;
-  disputeRef: string;
+  disputeRef: string | null;
   kind: 'unchanged' | 'adjusted';
   source: DisputeSource;
   adjustmentId: string | null;
@@ -129,23 +142,20 @@ export interface CommissionAdjustment {
   bookingId: string;
   receivableId: string;
   transporterCompanyId: string;
-  disputeRef: string;
+  disputeRef: string | null;
   source: DisputeSource;
-  shipperAgreedBy: string | null;
-  transporterAgreedBy: string | null;
+  shipperAgreedByUserId: string | null;
+  transporterAgreedByUserId: string | null;
   decidedAt: string;
-  currency: string;
   previousTripAmount: Money;
   newTripAmount: Money;
-  previousCommissionAmount: Money;
-  newCommissionAmount: Money;
+  previousCommission: Money;
+  newCommission: Money;
   reducedOpenAmount: Money;
   creditedAmount: Money;
   reason: string;
   recordedByUserId: string;
   recordedAt: string;
-  idempotencyKey: string;
-  requestHash: string;
   fundsMovementClaimedByTruber: false;
 }
 
@@ -156,7 +166,7 @@ export interface CommissionAdjustmentResult {
 
 export interface AdjustForResolvedDisputeInput {
   bookingId: string;
-  disputeRef: string;
+  disputeRef?: string;
   source: DisputeSource;
   newTripAmount: Money;
   reason: string;
@@ -181,6 +191,7 @@ interface ReceivableRow extends QueryResultRow {
   reduced_minor: string | number;
   credit_applied_minor: string | number;
   status: CommissionReceivableStatus;
+  commission_rate_bps: number | string;
   recognised_at: Date | string;
   settled_at: Date | string | null;
   voided_at: Date | string | null;
@@ -212,7 +223,7 @@ interface AdjustmentRow extends QueryResultRow {
   booking_id: string;
   receivable_id: string;
   transporter_company_id: string;
-  dispute_ref: string;
+  dispute_ref: string | null;
   source: DisputeSource;
   shipper_agreed_by: string | null;
   transporter_agreed_by: string | null;
@@ -236,7 +247,7 @@ interface OutcomeRow extends QueryResultRow {
   receivable_id: string;
   booking_id: string;
   transporter_company_id: string;
-  dispute_ref: string;
+  dispute_ref: string | null;
   kind: 'unchanged' | 'adjusted';
   source: DisputeSource;
   adjustment_id: string | null;
@@ -302,21 +313,39 @@ function requireReason(reason: string): string {
   return reason;
 }
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/** Contract v0.5.0: disputeRef is the BookingDispute id (format uuid). Stored lower-case. */
 function requireDisputeRef(disputeRef: string): string {
-  if (typeof disputeRef !== 'string' || disputeRef.length < 1 || disputeRef.length > 200) {
-    throw validationError({ disputeRef: 'must be 1 to 200 characters' });
+  const normalised = typeof disputeRef === 'string' ? disputeRef.toLowerCase() : '';
+  if (!UUID_PATTERN.test(normalised)) {
+    throw validationError({ disputeRef: 'must be a UUID' });
   }
-  return disputeRef;
+  return normalised;
 }
 
-export function presentCommissionReceivable(row: ReceivableRow): CommissionReceivable {
+export function presentCommissionReceivable(
+  row: ReceivableRow,
+  now: Date = new Date(),
+): CommissionReceivable {
   const currency = String(row.currency);
-  // commissionRateBps is stored (commission_rate_bps) but not exposed until contract v0.5.0 is published.
+  const amountMinor = minorFromDb(row.amount_minor);
+  const reducedMinor = minorFromDb(row.reduced_minor);
+  const finalAt = finalAtFor(row, now);
   return {
     id: String(row.id),
     bookingId: String(row.booking_id),
     transporterCompanyId: String(row.transporter_company_id),
-    amount: { amountMinor: minorFromDb(row.amount_minor), currency },
+    amount: { amountMinor, currency },
+    reducedAmount: { amountMinor: reducedMinor, currency },
+    effectiveAmount: { amountMinor: amountMinor - reducedMinor, currency },
+    creditAppliedAmount: { amountMinor: minorFromDb(row.credit_applied_minor), currency },
+    disputeWindowEndsAt: iso(row.dispute_window_ends_at),
+    finalAt: finalAt == null ? null : iso(finalAt),
+    disputeRef: row.status === 'held' && row.dispute_ref != null ? String(row.dispute_ref) : null,
+    heldSince:
+      row.status === 'held' && row.disputed_at != null ? iso(row.disputed_at) : null,
+    commissionRateBps: Number(row.commission_rate_bps),
     collectedAmount: { amountMinor: minorFromDb(row.collected_minor), currency },
     remainingAmount: { amountMinor: minorFromDb(row.remaining_minor), currency },
     status: row.status,
@@ -333,27 +362,25 @@ export function presentCommissionAdjustment(row: AdjustmentRow): CommissionAdjus
     bookingId: String(row.booking_id),
     receivableId: String(row.receivable_id),
     transporterCompanyId: String(row.transporter_company_id),
-    disputeRef: String(row.dispute_ref),
+    disputeRef: row.dispute_ref == null ? null : String(row.dispute_ref),
     source: row.source,
-    shipperAgreedBy: row.shipper_agreed_by == null ? null : String(row.shipper_agreed_by),
-    transporterAgreedBy:
+    shipperAgreedByUserId:
+      row.shipper_agreed_by == null ? null : String(row.shipper_agreed_by),
+    transporterAgreedByUserId:
       row.transporter_agreed_by == null ? null : String(row.transporter_agreed_by),
     decidedAt: iso(row.decided_at),
-    currency,
     previousTripAmount: { amountMinor: minorFromDb(row.previous_trip_minor), currency },
     newTripAmount: { amountMinor: minorFromDb(row.new_trip_minor), currency },
-    previousCommissionAmount: {
+    previousCommission: {
       amountMinor: minorFromDb(row.previous_commission_minor),
       currency,
     },
-    newCommissionAmount: { amountMinor: minorFromDb(row.new_commission_minor), currency },
+    newCommission: { amountMinor: minorFromDb(row.new_commission_minor), currency },
     reducedOpenAmount: { amountMinor: minorFromDb(row.reduced_open_minor), currency },
     creditedAmount: { amountMinor: minorFromDb(row.credited_minor), currency },
     reason: String(row.reason),
     recordedByUserId: String(row.recorded_by),
     recordedAt: iso(row.recorded_at),
-    idempotencyKey: String(row.idempotency_key),
-    requestHash: String(row.request_hash),
     fundsMovementClaimedByTruber: false,
   };
 }
@@ -364,7 +391,7 @@ export function presentCommissionDisputeOutcome(row: OutcomeRow): CommissionDisp
     receivableId: String(row.receivable_id),
     bookingId: String(row.booking_id),
     transporterCompanyId: String(row.transporter_company_id),
-    disputeRef: String(row.dispute_ref),
+    disputeRef: row.dispute_ref == null ? null : String(row.dispute_ref),
     kind: row.kind,
     source: row.source,
     adjustmentId: row.adjustment_id == null ? null : String(row.adjustment_id),
@@ -393,7 +420,10 @@ export function finalAtFor(row: FinalAtRow, now: Date): Date | string | null {
 
 @Injectable()
 export class ReceivablesService {
-  constructor(private readonly db: DbService) {}
+  constructor(
+    private readonly db: DbService,
+    @Inject(ENV) private readonly env: Env,
+  ) {}
 
   async recognise(client: PoolClient | null, input: RecogniseReceivableInput): Promise<CommissionReceivable> {
     if (!client) {
@@ -445,7 +475,12 @@ export class ReceivablesService {
       throw error;
     }
 
-    await this.netCredits(client, input.transporterCompanyId, amount.currency);
+    await this.netCredits(
+      client,
+      input.transporterCompanyId,
+      amount.currency,
+      this.creditMayOffsetExisting() ? null : insertedId,
+    );
     return presentCommissionReceivable(await this.loadReceivable(client, insertedId));
   }
 
@@ -508,7 +543,9 @@ export class ReceivablesService {
          ) VALUES ($1, $2, $3, $4, $4, 'void', NULL, $5, $6)`,
         [randomUUID(), row.transporter_company_id, row.currency, safeMinor(paid), row.id, at],
       );
-      await this.netCredits(client, row.transporter_company_id, row.currency);
+      if (this.creditMayOffsetExisting()) {
+        await this.netCredits(client, row.transporter_company_id, row.currency);
+      }
     }
 
     return presentCommissionReceivable(updated.rows[0]);
@@ -718,7 +755,9 @@ export class ReceivablesService {
       ],
     );
 
-    await this.netCredits(client, row.transporter_company_id, row.currency);
+    if (this.creditMayOffsetExisting()) {
+      await this.netCredits(client, row.transporter_company_id, row.currency);
+    }
 
     const outcome = await this.query<OutcomeRow>(
       client,
@@ -767,14 +806,17 @@ export class ReceivablesService {
       throw validationError({ source: 'must be party_settlement or admin_decision' });
     }
     const newTripAmount = assertMoney(input.newTripAmount, { allowZero: true });
-    const disputeRef = requireDisputeRef(input.disputeRef);
+    const suppliedDisputeRef =
+      input.disputeRef === undefined ? null : requireDisputeRef(input.disputeRef);
 
     const held = row.status === 'held';
+    let disputeRef: string | null = suppliedDisputeRef;
     let backstopDisputedAt: Date | null = null;
     let backstopRespondedAt: Date | null = null;
+    let backstopApplies = false;
 
     if (held) {
-      if (row.dispute_ref !== disputeRef) {
+      if (disputeRef == null || row.dispute_ref !== disputeRef) {
         throw new ApiException(409, 'DISPUTE_NOT_OPEN', 'That dispute is not open.');
       }
       backstopDisputedAt = row.disputed_at == null ? null : dateValue(row.disputed_at);
@@ -782,6 +824,7 @@ export class ReceivablesService {
         row.transporter_responded_at == null
           ? null
           : dateValue(row.transporter_responded_at);
+      backstopApplies = true;
     } else {
       if (row.status === 'voided' || row.status === 'cancelled') {
         throw new ApiException(409, 'RECEIVABLE_NOT_OPEN', 'Commission receivable is not open.');
@@ -799,17 +842,23 @@ export class ReceivablesService {
           'Trip is locked; use a dispute adjustment.',
         );
       }
-      if (input.disputedAt === undefined) {
-        throw validationError({ disputedAt: 'required for a late admin decision' });
+      if (disputeRef == null && input.disputedAt === undefined) {
+        disputeRef = null;
+      } else {
+        if (input.disputedAt === undefined) {
+          throw validationError({ disputedAt: 'required for a late admin decision' });
+        }
+        backstopDisputedAt = requireDate(input.disputedAt, 'disputedAt');
+        backstopRespondedAt =
+          input.transporterRespondedAt === undefined
+            ? null
+            : requireDate(input.transporterRespondedAt, 'transporterRespondedAt');
+        backstopApplies = true;
       }
-      backstopDisputedAt = requireDate(input.disputedAt, 'disputedAt');
-      backstopRespondedAt =
-        input.transporterRespondedAt === undefined
-          ? null
-          : requireDate(input.transporterRespondedAt, 'transporterRespondedAt');
     }
 
     if (
+      backstopApplies &&
       input.source === 'admin_decision' &&
       backstopRespondedAt == null &&
       (backstopDisputedAt == null ||
@@ -1011,7 +1060,9 @@ export class ReceivablesService {
       ],
     );
 
-    await this.netCredits(client, row.transporter_company_id, row.currency);
+    if (this.creditMayOffsetExisting()) {
+      await this.netCredits(client, row.transporter_company_id, row.currency);
+    }
 
     return {
       adjustment: presentCommissionAdjustment(adjustment.rows[0]),
@@ -1163,7 +1214,7 @@ export class ReceivablesService {
   async account(companyId: string): Promise<CommissionAccount> {
     return this.db.tx(async (client) => {
       await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
-      const outstandingByCurrency = await this.outstandingByCurrency(client, companyId);
+      const balances = await this.commissionBalances(client, companyId);
       const result = await this.query<ReceivableRow>(
         client,
         `SELECT *
@@ -1174,11 +1225,13 @@ export class ReceivablesService {
       );
       const account: CommissionAccount = {
         companyId,
-        outstandingByCurrency,
+        outstandingByCurrency: balances.outstandingByCurrency,
+        heldByCurrency: balances.heldByCurrency,
+        creditByCurrency: balances.creditByCurrency,
         receivables: result.rows.map((row) => presentCommissionReceivable(row)),
       };
-      if (outstandingByCurrency.length === 1) {
-        account.outstandingAmount = outstandingByCurrency[0];
+      if (balances.outstandingByCurrency.length === 1) {
+        account.outstandingAmount = balances.outstandingByCurrency[0];
       }
       return account;
     });
@@ -1215,6 +1268,53 @@ export class ReceivablesService {
       }
     }
     return this.account(companyId);
+  }
+
+  async listAdjustmentsFor(
+    actor: DbUser,
+    companyId: string,
+    page?: number,
+    pageSize?: number,
+  ): Promise<{ data: CommissionAdjustment[]; meta: ReturnType<typeof pageMeta> }> {
+    const company = await this.db.query<{ id: string; type: string }>(
+      'SELECT id, type FROM companies WHERE id = $1',
+      [companyId],
+    );
+    if (!company.rows[0] || company.rows[0].type !== 'transporter') {
+      throw new ApiException(404, 'NOT_FOUND', 'Company not found.');
+    }
+    if (actor.role !== 'admin') {
+      if (actor.role === 'shipper') {
+        throw new ApiException(404, 'NOT_FOUND', 'Company not found.');
+      }
+      const member = await this.db.query(
+        'SELECT 1 FROM company_members WHERE company_id = $1 AND user_id = $2',
+        [companyId, actor.id],
+      );
+      if (!member.rowCount) {
+        throw new ApiException(404, 'NOT_FOUND', 'Company not found.');
+      }
+    }
+
+    const window = pageWindow(page, pageSize);
+    const total = await this.db.query<{ total: number }>(
+      `SELECT count(*)::int AS total
+         FROM commission_adjustments
+        WHERE transporter_company_id = $1`,
+      [companyId],
+    );
+    const rows = await this.db.query<AdjustmentRow>(
+      `SELECT *
+         FROM commission_adjustments
+        WHERE transporter_company_id = $1
+        ORDER BY recorded_at DESC, id DESC
+        LIMIT $2 OFFSET $3`,
+      [companyId, window.pageSize, window.offset],
+    );
+    return {
+      data: rows.rows.map((row) => presentCommissionAdjustment(row)),
+      meta: pageMeta(window.page, window.pageSize, total.rows[0]?.total ?? 0),
+    };
   }
 
   async recordCollectionForAdmin(
@@ -1281,21 +1381,7 @@ export class ReceivablesService {
       [companyId, currency, [...owingStatuses()]],
     );
 
-    let outstanding = 0n;
-    for (const row of rows.rows) {
-      outstanding += BigInt(minorFromDb(row.remaining_minor));
-    }
-
     let left = BigInt(amount.amountMinor);
-    if (left > outstanding) {
-      throw new ApiException(
-        409,
-        'COLLECTION_EXCEEDS_OUTSTANDING',
-        'Collection exceeds the outstanding commission in that currency.',
-        { outstandingAmount: { amountMinor: safeMinor(outstanding), currency } },
-      );
-    }
-
     const recordedAt = new Date();
     const collectionId = randomUUID();
     const allocations: { receivableId: string; amountMinor: number }[] = [];
@@ -1334,22 +1420,36 @@ export class ReceivablesService {
       left -= applied;
     }
 
+    const creditedMinor = safeMinor(left);
     await this.query(
       client,
       `INSERT INTO commission_collections (
-         id, company_id, currency, amount_minor, external_reference, notes, recorded_by, recorded_at
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+         id, company_id, currency, amount_minor, credited_minor, external_reference, notes,
+         recorded_by, recorded_at
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
       [
         collectionId,
         companyId,
         currency,
         amount.amountMinor,
+        creditedMinor,
         input.externalReference ?? null,
         input.notes ?? null,
         actor.id,
         recordedAt,
       ],
     );
+
+    if (left > 0n) {
+      await this.query(
+        client,
+        `INSERT INTO commission_credits (
+           id, company_id, currency, amount_minor, remaining_minor, source_kind,
+           source_adjustment_id, source_receivable_id, source_collection_id, created_at
+         ) VALUES ($1, $2, $3, $4, $4, 'collection', NULL, NULL, $5, $6)`,
+        [randomUUID(), companyId, currency, safeMinor(left), collectionId, recordedAt],
+      );
+    }
 
     for (const allocation of allocations) {
       await this.query(
@@ -1358,6 +1458,10 @@ export class ReceivablesService {
          VALUES ($1, $2, $3)`,
         [collectionId, allocation.receivableId, allocation.amountMinor],
       );
+    }
+
+    if (this.creditMayOffsetExisting()) {
+      await this.netCredits(client, companyId, currency);
     }
 
     const outstandingByCurrencyAfter = await this.outstandingByCurrency(client, companyId);
@@ -1373,6 +1477,7 @@ export class ReceivablesService {
       amount,
       outstandingAmountAfter,
       outstandingByCurrencyAfter,
+      creditedAmount: { amountMinor: creditedMinor, currency },
       externalReference: input.externalReference ?? null,
       notes: input.notes ?? null,
       fundsMovementClaimedByTruber: false,
@@ -1381,10 +1486,21 @@ export class ReceivablesService {
     };
   }
 
+  /**
+   * U1 (user, 11 Nov 16:37 CAT): commission credit may pay off commission already owed.
+   * When true, netting applies FIFO to all owing receivables whenever it runs. When false,
+   * netting runs only in recognise() and only against the newly inserted receivable, so
+   * credit offsets commission recognised after the credit exists.
+   */
+  private creditMayOffsetExisting(): boolean {
+    return this.env.BILLING_CREDIT_OFFSETS_EXISTING;
+  }
+
   private async netCredits(
     client: PoolClient,
     companyId: string,
     currency: string,
+    onlyReceivableId: string | null = null,
   ): Promise<void> {
     const credits = await this.query<CreditRow>(
       client,
@@ -1401,6 +1517,9 @@ export class ReceivablesService {
       return;
     }
 
+    const params: unknown[] = [companyId, currency, [...owingStatuses()]];
+    const onlyReceivableClause =
+      onlyReceivableId == null ? '' : ` AND id = $${params.push(onlyReceivableId)}`;
     const receivables = await this.query<ReceivableRow>(
       client,
       `SELECT *
@@ -1408,10 +1527,10 @@ export class ReceivablesService {
         WHERE transporter_company_id = $1
           AND currency = $2
           AND status = ANY($3::text[])
-          AND remaining_minor > 0
+          AND remaining_minor > 0${onlyReceivableClause}
         ORDER BY recognised_at ASC, id ASC
         FOR UPDATE`,
-      [companyId, currency, [...owingStatuses()]],
+      params,
     );
     if (receivables.rows.length === 0) {
       return;

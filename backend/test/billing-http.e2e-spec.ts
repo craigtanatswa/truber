@@ -39,10 +39,14 @@ describe('billing HTTP endpoints', () => {
 
     expect(response.status).toBe(200);
     assertOperationResponse('getCompanyCommissionAccount', 200, response.body);
-    expect(response.body).toEqual({ companyId, outstandingByCurrency: [], receivables: [] });
+    expect(response.body).toEqual({
+      companyId,
+      outstandingByCurrency: [],
+      heldByCurrency: [],
+      creditByCurrency: [],
+      receivables: [],
+    });
     expect('outstandingAmount' in response.body).toBe(false);
-    expect(response.body.creditByCurrency).toBeUndefined();
-    expect(response.body.heldByCurrency).toBeUndefined();
   });
 
   it('copies the single outstanding currency into outstandingAmount', async () => {
@@ -58,6 +62,9 @@ describe('billing HTTP endpoints', () => {
     assertOperationResponse('getCompanyCommissionAccount', 200, response.body);
     expect(response.body.outstandingByCurrency).toEqual([{ amountMinor: 5000, currency: 'USD' }]);
     expect(response.body.outstandingAmount).toEqual({ amountMinor: 5000, currency: 'USD' });
+    expect(response.body.receivables[0].commissionRateBps).toBe(500);
+    expect(response.body.heldByCurrency).toEqual([]);
+    expect(response.body.creditByCurrency).toEqual([]);
   });
 
   it('omits outstandingAmount when owing spans two currencies', async () => {
@@ -307,33 +314,102 @@ describe('billing HTTP endpoints', () => {
     expect(after.body.outstandingByCurrency).toEqual([{ amountMinor: 5000, currency: 'USD' }]);
   });
 
-  it('rejects over-collection and a currency with nothing owing', async () => {
+  it('turns over-collection and a currency with nothing owing into credit', async () => {
     const transporter = await register(app, 'transporter');
     const companyId = await createTransporterCompany(app, transporter.token);
-    await recognise(app, companyId, 100000, 'USD');
+    const trip = await recognise(app, companyId, 60000, 'USD');
     const url = `/admin/companies/${companyId}/commission-collections`;
 
-    const exceeds = await http(app, 'post', url, {
+    const overpaymentKey = 'collection-overpayment';
+    const overpaymentBody = { amount: { amountMinor: 5000, currency: 'USD' } };
+    const overpayment = await http(app, 'post', url, {
       token: admin.token,
-      idempotencyKey: 'collection-exceeds',
-      body: { amount: { amountMinor: 5001, currency: 'USD' } },
+      idempotencyKey: overpaymentKey,
+      body: overpaymentBody,
     });
-    expect(exceeds.status).toBe(409);
-    assertOperationResponse('recordCommissionCollection', 409, exceeds.body);
-    expect(exceeds.body.code).toBe('COLLECTION_EXCEEDS_OUTSTANDING');
-    expect(exceeds.body.details).toEqual({ outstandingAmount: { amountMinor: 5000, currency: 'USD' } });
+    expect(overpayment.status).toBe(201);
+    assertOperationResponse('recordCommissionCollection', 201, overpayment.body);
+    expect(overpayment.body.amount).toEqual({ amountMinor: 5000, currency: 'USD' });
+    expect(overpayment.body.creditedAmount).toEqual({ amountMinor: 2000, currency: 'USD' });
+    expect(overpayment.body.outstandingAmountAfter).toEqual({ amountMinor: 0, currency: 'USD' });
+    expect(overpayment.body.outstandingByCurrencyAfter).toEqual([]);
+
+    const account = await http(app, 'get', `/companies/${companyId}/commission-account`, {
+      token: admin.token,
+    });
+    assertOperationResponse('getCompanyCommissionAccount', 200, account.body);
+    const row = (account.body.receivables as CommissionReceivable[]).find(
+      (item) => item.bookingId === trip.bookingId,
+    );
+    expect(row).toMatchObject({
+      status: 'collected',
+      collectedAmount: { amountMinor: 3000, currency: 'USD' },
+      remainingAmount: { amountMinor: 0, currency: 'USD' },
+    });
+    expect(account.body.creditByCurrency).toEqual([{ amountMinor: 2000, currency: 'USD' }]);
+
+    const db = app.get(DbService);
+    const credits = await db.query<{ count: string; amount_minor: string; source_kind: string }>(
+      `SELECT count(*) OVER ()::text AS count, amount_minor, source_kind
+         FROM commission_credits`,
+    );
+    expect(credits.rows).toEqual([
+      { count: '1', amount_minor: '2000', source_kind: 'collection' },
+    ]);
+
+    const replay = await http(app, 'post', url, {
+      token: admin.token,
+      idempotencyKey: overpaymentKey,
+      body: overpaymentBody,
+    });
+    expect(replay.status).toBe(201);
+    assertOperationResponse('recordCommissionCollection', 201, replay.body);
+    expect(replay.body).toEqual(overpayment.body);
+    const afterReplay = await db.query<{ count: string }>(
+      'SELECT count(*)::text AS count FROM commission_credits',
+    );
+    expect(afterReplay.rows[0].count).toBe('1');
 
     const noOwing = await http(app, 'post', url, {
       token: admin.token,
       idempotencyKey: 'collection-no-owing',
-      body: { amount: { amountMinor: 1, currency: 'ZWG' } },
+      body: { amount: { amountMinor: 1000, currency: 'ZWG' } },
     });
-    expect(noOwing.status).toBe(409);
-    assertOperationResponse('recordCommissionCollection', 409, noOwing.body);
-    expect(noOwing.body.code).toBe('COLLECTION_EXCEEDS_OUTSTANDING');
+    expect(noOwing.status).toBe(201);
+    assertOperationResponse('recordCommissionCollection', 201, noOwing.body);
+    expect(noOwing.body.creditedAmount).toEqual({ amountMinor: 1000, currency: 'ZWG' });
 
-    const account = await http(app, 'get', `/companies/${companyId}/commission-account`, { token: admin.token });
-    expect(account.body.outstandingByCurrency).toEqual([{ amountMinor: 5000, currency: 'USD' }]);
+    const afterNoOwing = await http(app, 'get', `/companies/${companyId}/commission-account`, {
+      token: admin.token,
+    });
+    expect(afterNoOwing.body.creditByCurrency).toEqual([
+      { amountMinor: 2000, currency: 'USD' },
+      { amountMinor: 1000, currency: 'ZWG' },
+    ]);
+    const usdRow = (afterNoOwing.body.receivables as CommissionReceivable[]).find(
+      (item) => item.bookingId === trip.bookingId,
+    );
+    expect(usdRow).toMatchObject({
+      status: 'collected',
+      collectedAmount: { amountMinor: 3000, currency: 'USD' },
+      remainingAmount: { amountMinor: 0, currency: 'USD' },
+    });
+
+    const zero = await http(app, 'post', url, {
+      token: admin.token,
+      idempotencyKey: 'collection-zero',
+      body: { amount: { amountMinor: 0, currency: 'USD' } },
+    });
+    expect(zero.status).toBe(400);
+    assertOperationResponse('recordCommissionCollection', 400, zero.body);
+
+    const badCurrency = await http(app, 'post', url, {
+      token: admin.token,
+      idempotencyKey: 'collection-bad-currency',
+      body: { amount: { amountMinor: 100, currency: 'usd' } },
+    });
+    expect(badCurrency.status).toBe(400);
+    assertOperationResponse('recordCommissionCollection', 400, badCurrency.body);
   });
 
   it('forbids non-admin collection posts', async () => {
@@ -414,6 +490,138 @@ describe('billing HTTP endpoints', () => {
     for (const operationId of ['createQuotation', 'acceptQuotation', 'confirmBooking']) {
       assertOperationResponse(operationId, 409, multiple.body);
     }
+  });
+
+  it('lists commission adjustments for members and admins newest first with pagination', async () => {
+    const transporter = await register(app, 'transporter');
+    const outsider = await register(app, 'transporter');
+    const shipper = await register(app, 'shipper');
+    const companyId = await createTransporterCompany(app, transporter.token);
+    await createShipperCompany(app, shipper.token);
+    const receivables = app.get(ReceivablesService);
+
+    const createAdjustment = async (input: {
+      tripMinor: number;
+      newTripMinor: number;
+      completedAt: Date;
+      key: string;
+      disputeRef: string;
+    }) => {
+      const bookingId = randomUUID();
+      const disputeRef = input.disputeRef;
+      await receivables.recognise(null, {
+        bookingId,
+        transporterCompanyId: companyId,
+        tripAmount: { amountMinor: input.tripMinor, currency: 'USD' },
+        paymentMethod: 'cash',
+        completedAt: input.completedAt,
+      });
+      await receivables.holdForDispute(null, {
+        bookingId,
+        disputeRef,
+        disputedAt: new Date(input.completedAt.getTime() + 60 * 60 * 1000),
+      });
+      await receivables.recordDisputeResponse(null, {
+        bookingId,
+        disputeRef,
+        respondedAt: new Date(input.completedAt.getTime() + 2 * 60 * 60 * 1000),
+      });
+      return receivables.adjustForResolvedDispute(null, {
+        bookingId,
+        disputeRef,
+        source: 'admin_decision',
+        newTripAmount: { amountMinor: input.newTripMinor, currency: 'USD' },
+        reason: 'Admin decision',
+        actorUserId: admin.userId,
+        decidedAt: new Date(input.completedAt.getTime() + 3 * 60 * 60 * 1000),
+        idempotencyKey: input.key,
+      });
+    };
+
+    const first = await createAdjustment({
+      tripMinor: 100000,
+      newTripMinor: 60000,
+      completedAt: new Date('2026-11-01T10:00:00.000Z'),
+      key: 'adjust-list-first',
+      disputeRef: 'a1000000-0000-4000-8000-000000000001',
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    const second = await createAdjustment({
+      tripMinor: 100000,
+      newTripMinor: 50000,
+      completedAt: new Date('2026-11-01T11:00:00.000Z'),
+      key: 'adjust-list-second',
+      disputeRef: 'a2000000-0000-4000-8000-000000000002',
+    });
+
+    const url = `/companies/${companyId}/commission-adjustments`;
+    const member = await http(app, 'get', url, { token: transporter.token });
+    expect(member.status).toBe(200);
+    assertOperationResponse('listCommissionAdjustments', 200, member.body);
+    assertSchema('CommissionAdjustmentListResponse', member.body);
+    expect(member.body.data.map((item: { id: string }) => item.id)).toEqual([
+      second.adjustment.id,
+      first.adjustment.id,
+    ]);
+    expect(member.body.data[0].disputeRef).toBe('a2000000-0000-4000-8000-000000000002');
+    expect(member.body.data[0]).not.toHaveProperty('currency');
+    expect(member.body.data[0]).not.toHaveProperty('idempotencyKey');
+    expect(member.body.data[0]).not.toHaveProperty('requestHash');
+    expect(member.body.meta).toEqual({
+      page: 1,
+      pageSize: 20,
+      totalItems: 2,
+      totalPages: 1,
+    });
+
+    const pageOne = await http(app, 'get', `${url}?page=1&pageSize=1`, {
+      token: transporter.token,
+    });
+    expect(pageOne.status).toBe(200);
+    assertOperationResponse('listCommissionAdjustments', 200, pageOne.body);
+    expect(pageOne.body.data).toHaveLength(1);
+    expect(pageOne.body.data[0].id).toBe(second.adjustment.id);
+    expect(pageOne.body.meta).toEqual({
+      page: 1,
+      pageSize: 1,
+      totalItems: 2,
+      totalPages: 2,
+    });
+
+    const pageTwo = await http(app, 'get', `${url}?page=2&pageSize=1`, {
+      token: transporter.token,
+    });
+    expect(pageTwo.status).toBe(200);
+    assertOperationResponse('listCommissionAdjustments', 200, pageTwo.body);
+    expect(pageTwo.body.data[0].id).toBe(first.adjustment.id);
+    expect(pageTwo.body.meta).toEqual({
+      page: 2,
+      pageSize: 1,
+      totalItems: 2,
+      totalPages: 2,
+    });
+
+    const asAdmin = await http(app, 'get', url, { token: admin.token });
+    expect(asAdmin.status).toBe(200);
+    assertOperationResponse('listCommissionAdjustments', 200, asAdmin.body);
+
+    const asShipper = await http(app, 'get', url, { token: shipper.token });
+    expect(asShipper.status).toBe(404);
+    assertOperationResponse('listCommissionAdjustments', 404, asShipper.body);
+
+    const asOutsider = await http(app, 'get', url, { token: outsider.token });
+    expect(asOutsider.status).toBe(404);
+    assertOperationResponse('listCommissionAdjustments', 404, asOutsider.body);
+
+    const anonymous = await http(app, 'get', url);
+    expect(anonymous.status).toBe(401);
+    assertOperationResponse('listCommissionAdjustments', 401, anonymous.body);
+
+    const badPageSize = await http(app, 'get', `${url}?pageSize=101`, {
+      token: transporter.token,
+    });
+    expect(badPageSize.status).toBe(400);
+    assertSchema('Error', badPageSize.body);
   });
 
   it('keeps unimplemented billing routes absent', async () => {

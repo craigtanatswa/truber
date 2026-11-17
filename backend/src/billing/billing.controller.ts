@@ -1,4 +1,17 @@
-import { Body, Controller, Get, Headers, HttpCode, Param, ParseUUIDPipe, Post, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Headers,
+  HttpCode,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
+import { PageQueryDto } from '../companies/companies.dto';
 import { JwtAuthGuard } from '../common/jwt-auth.guard';
 import { AuthedRequest, singleHeader } from '../common/http';
 import { RecordCommissionCollectionDto } from './billing.dto';
@@ -15,6 +28,20 @@ export class BillingController {
     @Param('companyId', new ParseUUIDPipe()) companyId: string,
   ) {
     return this.receivables.accountFor(req.user, companyId);
+  }
+
+  @Get('companies/:companyId/commission-adjustments')
+  listCompanyCommissionAdjustments(
+    @Req() req: AuthedRequest,
+    @Param('companyId', new ParseUUIDPipe()) companyId: string,
+    @Query() query: PageQueryDto,
+  ) {
+    return this.receivables.listAdjustmentsFor(
+      req.user,
+      companyId,
+      query.page,
+      query.pageSize,
+    );
   }
 
   @Post('admin/companies/:companyId/commission-collections')

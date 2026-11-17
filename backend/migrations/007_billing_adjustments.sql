@@ -20,6 +20,15 @@ UPDATE commission_receivables
 ALTER TABLE commission_receivables
   ALTER COLUMN dispute_window_ends_at SET NOT NULL;
 
+ALTER TABLE commission_collections
+  ADD COLUMN IF NOT EXISTS credited_minor bigint NOT NULL DEFAULT 0;
+
+ALTER TABLE commission_collections
+  DROP CONSTRAINT IF EXISTS commission_collections_credited_check,
+  ADD CONSTRAINT commission_collections_credited_check CHECK (
+    credited_minor >= 0 AND credited_minor <= amount_minor
+  );
+
 ALTER TABLE commission_receivables
   DROP CONSTRAINT IF EXISTS commission_receivables_status_check,
   DROP CONSTRAINT IF EXISTS commission_receivables_open_balance_check,
@@ -37,8 +46,8 @@ ALTER TABLE commission_receivables
   ADD CONSTRAINT commission_receivables_dispute_window_check CHECK (
     dispute_window_ends_at = recognised_at + interval '24 hours'
   ),
-  ADD CONSTRAINT commission_receivables_dispute_ref_len CHECK (
-    dispute_ref IS NULL OR char_length(dispute_ref) BETWEEN 1 AND 200
+  ADD CONSTRAINT commission_receivables_dispute_ref_uuid CHECK (
+    dispute_ref IS NULL OR dispute_ref ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
   ),
   ADD CONSTRAINT commission_receivables_pre_hold_status_check CHECK (
     pre_hold_status IS NULL
@@ -114,7 +123,7 @@ CREATE TABLE IF NOT EXISTS commission_adjustments (
   booking_id uuid NOT NULL,
   receivable_id uuid NOT NULL REFERENCES commission_receivables (id),
   transporter_company_id uuid NOT NULL REFERENCES companies (id),
-  dispute_ref text NOT NULL,
+  dispute_ref text,
   source text NOT NULL,
   shipper_agreed_by uuid REFERENCES users (id),
   transporter_agreed_by uuid REFERENCES users (id),
@@ -131,8 +140,11 @@ CREATE TABLE IF NOT EXISTS commission_adjustments (
   recorded_at timestamptz NOT NULL,
   idempotency_key text NOT NULL,
   request_hash text NOT NULL,
-  CONSTRAINT commission_adjustments_dispute_ref_len CHECK (
-    char_length(dispute_ref) BETWEEN 1 AND 200
+  CONSTRAINT commission_adjustments_dispute_ref_uuid CHECK (
+    dispute_ref IS NULL OR dispute_ref ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+  ),
+  CONSTRAINT commission_adjustments_dispute_ref_source_check CHECK (
+    dispute_ref IS NOT NULL OR source = 'admin_decision'
   ),
   CONSTRAINT commission_adjustments_source_check CHECK (
     source IN ('party_settlement', 'admin_decision')
@@ -174,7 +186,7 @@ CREATE TABLE IF NOT EXISTS commission_dispute_outcomes (
   receivable_id uuid NOT NULL REFERENCES commission_receivables (id),
   booking_id uuid NOT NULL,
   transporter_company_id uuid NOT NULL REFERENCES companies (id),
-  dispute_ref text NOT NULL,
+  dispute_ref text,
   kind text NOT NULL,
   source text NOT NULL,
   adjustment_id uuid UNIQUE REFERENCES commission_adjustments (id),
@@ -184,8 +196,11 @@ CREATE TABLE IF NOT EXISTS commission_dispute_outcomes (
   idempotency_key text NOT NULL,
   request_hash text NOT NULL,
   recorded_at timestamptz NOT NULL,
-  CONSTRAINT commission_dispute_outcomes_dispute_ref_len CHECK (
-    char_length(dispute_ref) BETWEEN 1 AND 200
+  CONSTRAINT commission_dispute_outcomes_dispute_ref_uuid CHECK (
+    dispute_ref IS NULL OR dispute_ref ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+  ),
+  CONSTRAINT commission_dispute_outcomes_dispute_ref_source_check CHECK (
+    dispute_ref IS NOT NULL OR source = 'admin_decision'
   ),
   CONSTRAINT commission_dispute_outcomes_kind_check CHECK (
     kind IN ('unchanged', 'adjusted')
@@ -219,6 +234,7 @@ CREATE TABLE IF NOT EXISTS commission_credits (
   source_kind text NOT NULL,
   source_adjustment_id uuid UNIQUE REFERENCES commission_adjustments (id),
   source_receivable_id uuid REFERENCES commission_receivables (id),
+  source_collection_id uuid REFERENCES commission_collections (id),
   created_at timestamptz NOT NULL,
   CONSTRAINT commission_credits_currency_check CHECK (currency ~ '^[A-Z]{3}$'),
   CONSTRAINT commission_credits_amount_check CHECK (amount_minor > 0),
@@ -226,13 +242,16 @@ CREATE TABLE IF NOT EXISTS commission_credits (
     remaining_minor >= 0 AND remaining_minor <= amount_minor
   ),
   CONSTRAINT commission_credits_source_kind_check CHECK (
-    source_kind IN ('adjustment', 'void')
+    source_kind IN ('adjustment', 'void', 'collection')
   ),
   CONSTRAINT commission_credits_source_adjustment_check CHECK (
     (source_kind = 'adjustment') = (source_adjustment_id IS NOT NULL)
   ),
   CONSTRAINT commission_credits_source_receivable_check CHECK (
     (source_kind = 'void') = (source_receivable_id IS NOT NULL)
+  ),
+  CONSTRAINT commission_credits_source_collection_check CHECK (
+    (source_kind = 'collection') = (source_collection_id IS NOT NULL)
   )
 );
 
@@ -242,6 +261,10 @@ COMMENT ON TABLE commission_credits IS
 CREATE UNIQUE INDEX IF NOT EXISTS commission_credits_void_receivable_uidx
   ON commission_credits (source_receivable_id)
   WHERE source_kind = 'void';
+
+CREATE UNIQUE INDEX IF NOT EXISTS commission_credits_collection_uidx
+  ON commission_credits (source_collection_id)
+  WHERE source_kind = 'collection';
 
 CREATE INDEX IF NOT EXISTS commission_credits_company_idx
   ON commission_credits (company_id, currency, created_at, id);
@@ -271,6 +294,7 @@ BEGIN
      OR NEW.source_kind IS DISTINCT FROM OLD.source_kind
      OR NEW.source_adjustment_id IS DISTINCT FROM OLD.source_adjustment_id
      OR NEW.source_receivable_id IS DISTINCT FROM OLD.source_receivable_id
+     OR NEW.source_collection_id IS DISTINCT FROM OLD.source_collection_id
      OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN
     RAISE EXCEPTION 'commission credit terms are immutable';
   END IF;

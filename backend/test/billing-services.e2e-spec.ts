@@ -188,32 +188,50 @@ describe('billing receivable services', () => {
     expect(allocations.rows.map((row) => Number(row.amount_minor))).toEqual([1000, 1500]);
   });
 
-  it('rejects a collection that exceeds outstanding without changing anything', async () => {
+  it('turns a collection above outstanding into commission credit', async () => {
+    const trip = await recognise({ trip: { amountMinor: 60000, currency: 'USD' } });
+    expect(trip.receivable.remainingAmount).toEqual({ amountMinor: 3000, currency: 'USD' });
+
+    const overpayment = await collect({ amount: { amountMinor: 5000, currency: 'USD' } });
+    assertSchema('CommissionCollectionRecord', overpayment);
+    expect(overpayment.creditedAmount).toEqual({ amountMinor: 2000, currency: 'USD' });
+    expect(overpayment.outstandingAmountAfter).toEqual({ amountMinor: 0, currency: 'USD' });
+    expect(overpayment.outstandingByCurrencyAfter).toEqual([]);
+
+    const account = await receivables.account(companyId);
+    const row = account.receivables.find((item) => item.id === trip.receivable.id);
+    expect(row).toMatchObject({
+      status: 'collected',
+      collectedAmount: { amountMinor: 3000, currency: 'USD' },
+      remainingAmount: { amountMinor: 0, currency: 'USD' },
+    });
+    expect(account.creditByCurrency).toEqual([{ amountMinor: 2000, currency: 'USD' }]);
+
+    const creditRows = await db.query<{ source_kind: string; amount_minor: string }>(
+      `SELECT source_kind, amount_minor FROM commission_credits`,
+    );
+    expect(creditRows.rows).toEqual([{ source_kind: 'collection', amount_minor: '2000' }]);
+  });
+
+  it('credits a collection in a currency with nothing owing and leaves other currencies untouched', async () => {
     await recognise({ trip: { amountMinor: 100000, currency: 'USD' } });
 
-    const exceeds = await capture(
-      collect({ amount: { amountMinor: 5001, currency: 'USD' } }),
-    );
-    expect(exceeds.getStatus()).toBe(409);
-    expect(exceeds.code).toBe('COLLECTION_EXCEEDS_OUTSTANDING');
-    expect(exceeds.message).toBe('Collection exceeds the outstanding commission in that currency.');
-    expect(exceeds.details).toEqual({ outstandingAmount: { amountMinor: 5000, currency: 'USD' } });
-
-    const noOwing = await capture(
-      collect({ amount: { amountMinor: 1, currency: 'ZWG' } }),
-    );
-    expect(noOwing.getStatus()).toBe(409);
-    expect(noOwing.code).toBe('COLLECTION_EXCEEDS_OUTSTANDING');
+    const noOwing = await collect({ amount: { amountMinor: 1000, currency: 'ZWG' } });
+    assertSchema('CommissionCollectionRecord', noOwing);
+    expect(noOwing.creditedAmount).toEqual({ amountMinor: 1000, currency: 'ZWG' });
+    expect(noOwing.outstandingByCurrencyAfter).toEqual([
+      { amountMinor: 5000, currency: 'USD' },
+    ]);
 
     const account = await receivables.account(companyId);
     expect(account.outstandingByCurrency).toEqual([{ amountMinor: 5000, currency: 'USD' }]);
-    expect(account.receivables[0]).toMatchObject({
+    expect(account.creditByCurrency).toEqual([{ amountMinor: 1000, currency: 'ZWG' }]);
+    const [usd] = account.receivables;
+    expect(usd).toMatchObject({
       status: 'open',
       collectedAmount: { amountMinor: 0, currency: 'USD' },
       remainingAmount: { amountMinor: 5000, currency: 'USD' },
     });
-    const collections = await db.query<{ count: string }>(`SELECT count(*)::text AS count FROM commission_collections`);
-    expect(collections.rows[0].count).toBe('0');
   });
 
   it('clears owing and unblocks the gate once every currency is collected', async () => {
@@ -273,7 +291,7 @@ describe('billing receivable services', () => {
     await expect(gateCheck()).resolves.toBeUndefined();
   });
 
-  it('stores commission_rate_bps without exposing it on the presented receivable', async () => {
+  it('stores and exposes commission_rate_bps on the presented receivable', async () => {
     const recognised = await recognise({ trip: { amountMinor: 100000, currency: 'USD' } });
 
     const stored = await app.get(DbService).query<{ commission_rate_bps: number }>(
@@ -281,7 +299,7 @@ describe('billing receivable services', () => {
       [recognised.receivable.id],
     );
     expect(stored.rows[0].commission_rate_bps).toBe(500);
-    expect('commissionRateBps' in recognised.receivable).toBe(false);
+    expect(recognised.receivable.commissionRateBps).toBe(500);
   });
 
   it('rejects a duplicate recognition and allows re-recognition after voiding', async () => {
@@ -341,7 +359,13 @@ describe('billing receivable services', () => {
   it('presents the commission account with outstandingAmount only for a single currency', async () => {
     const empty = await receivables.account(companyId);
     assertSchema('CommissionAccount', empty);
-    expect(empty).toEqual({ companyId, outstandingByCurrency: [], receivables: [] });
+    expect(empty).toEqual({
+      companyId,
+      outstandingByCurrency: [],
+      heldByCurrency: [],
+      creditByCurrency: [],
+      receivables: [],
+    });
     expect('outstandingAmount' in empty).toBe(false);
 
     await recognise({ trip: { amountMinor: 100000, currency: 'USD' } });

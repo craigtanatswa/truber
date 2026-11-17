@@ -129,12 +129,12 @@ describe('billing disputes and adjustments', () => {
   ) {
     return receivables.holdForDispute(null, {
       bookingId,
-      disputeRef: options.disputeRef ?? 'D-1',
+      disputeRef: options.disputeRef ?? 'd1000000-0000-4000-8000-000000000001',
       disputedAt: options.disputedAt ?? at(HOUR),
     });
   }
 
-  async function respond(bookingId: string, respondedAt = at(1.5 * HOUR), disputeRef = 'D-1') {
+  async function respond(bookingId: string, respondedAt = at(1.5 * HOUR), disputeRef = 'd1000000-0000-4000-8000-000000000001') {
     return receivables.recordDisputeResponse(null, { bookingId, disputeRef, respondedAt });
   }
 
@@ -148,7 +148,7 @@ describe('billing disputes and adjustments', () => {
   }) {
     return receivables.finaliseAfterDispute(null, {
       bookingId: options.bookingId,
-      disputeRef: options.disputeRef ?? 'D-1',
+      disputeRef: options.disputeRef ?? 'd1000000-0000-4000-8000-000000000001',
       source: options.source ?? 'admin_decision',
       outcomeReason: options.outcomeReason ?? 'No change after review',
       actorUserId: admin.id,
@@ -159,7 +159,7 @@ describe('billing disputes and adjustments', () => {
 
   async function adjust(options: {
     bookingId: string;
-    disputeRef?: string;
+    disputeRef?: string | null;
     newTripMinor?: number;
     currency?: string;
     source?: DisputeSource;
@@ -174,7 +174,8 @@ describe('billing disputes and adjustments', () => {
   }) {
     return receivables.adjustForResolvedDispute(null, {
       bookingId: options.bookingId,
-      disputeRef: options.disputeRef ?? 'D-1',
+      disputeRef:
+        options.disputeRef === null ? undefined : options.disputeRef ?? 'd1000000-0000-4000-8000-000000000001',
       source: options.source ?? 'admin_decision',
       newTripAmount: money(options.newTripMinor ?? 50000, options.currency ?? 'USD'),
       reason: options.reason ?? 'Resolved dispute',
@@ -231,8 +232,8 @@ describe('billing disputes and adjustments', () => {
     expect(result.adjustment.source).toBe('admin_decision');
     expect(result.adjustment.previousTripAmount).toEqual(money(100000));
     expect(result.adjustment.newTripAmount).toEqual(money(50000));
-    expect(result.adjustment.previousCommissionAmount).toEqual(money(5000));
-    expect(result.adjustment.newCommissionAmount).toEqual(money(2500));
+    expect(result.adjustment.previousCommission).toEqual(money(5000));
+    expect(result.adjustment.newCommission).toEqual(money(2500));
     expect(result.adjustment.reducedOpenAmount).toEqual(money(2500));
     expect(result.adjustment.creditedAmount).toEqual(money(0));
     expect(result.adjustment.fundsMovementClaimedByTruber).toBe(false);
@@ -325,9 +326,10 @@ describe('billing disputes and adjustments', () => {
     expect((await balances()).outstandingByCurrency).toEqual([]);
     await expect(gateCheck()).resolves.toBeUndefined();
 
-    const collection = await capture(collect(1));
-    expect(collection.getStatus()).toBe(409);
-    expect(collection.code).toBe('COLLECTION_EXCEEDS_OUTSTANDING');
+    const collection = await collect(1, 'ZWG');
+    expect(collection.creditedAmount).toEqual(money(1, 'ZWG'));
+    expect((await balances()).creditByCurrency).toEqual([money(1, 'ZWG')]);
+    expect((await rawReceivable(trip.receivable.id)).remaining_minor).toBe('5000');
 
     await respond(trip.bookingId, at(2 * HOUR));
     const finalised = await finalise({
@@ -378,9 +380,9 @@ describe('billing disputes and adjustments', () => {
     });
 
     expect(result.adjustment.source).toBe('party_settlement');
-    expect(result.adjustment.shipperAgreedBy).toBe(shipperUser.id);
-    expect(result.adjustment.transporterAgreedBy).toBe(transporterUser.id);
-    expect(result.adjustment.newCommissionAmount).toEqual(money(3000));
+    expect(result.adjustment.shipperAgreedByUserId).toBe(shipperUser.id);
+    expect(result.adjustment.transporterAgreedByUserId).toBe(transporterUser.id);
+    expect(result.adjustment.newCommission).toEqual(money(3000));
     expect(result.receivable).toMatchObject({
       status: 'open',
       remainingAmount: money(3000),
@@ -541,11 +543,11 @@ describe('billing disputes and adjustments', () => {
     expect(outcomeCount.rows[0].count).toBe('1');
 
     const different = await recognise({ method: 'cash' });
-    await hold(different.bookingId, { disputeRef: 'D-1' });
-    const alreadyOpen = await capture(hold(different.bookingId, { disputeRef: 'D-2' }));
+    await hold(different.bookingId, { disputeRef: 'd1000000-0000-4000-8000-000000000001' });
+    const alreadyOpen = await capture(hold(different.bookingId, { disputeRef: 'd2000000-0000-4000-8000-000000000002' }));
     expect(alreadyOpen.getStatus()).toBe(409);
     expect(alreadyOpen.code).toBe('DISPUTE_ALREADY_OPEN');
-    const same = await hold(different.bookingId, { disputeRef: 'D-1' });
+    const same = await hold(different.bookingId, { disputeRef: 'd1000000-0000-4000-8000-000000000001' });
     expect(same.id).toBe(different.receivable.id);
   });
 
@@ -707,7 +709,7 @@ describe('billing disputes and adjustments', () => {
       decidedAt: at(50 * HOUR),
     });
     expect(second.adjustment.previousTripAmount).toEqual(money(60000));
-    expect(second.adjustment.previousCommissionAmount).toEqual(money(3000));
+    expect(second.adjustment.previousCommission).toEqual(money(3000));
     expect(second.adjustment.reducedOpenAmount).toEqual(money(500));
     expect(second.receivable.remainingAmount).toEqual(money(2500));
   });
@@ -739,6 +741,35 @@ describe('billing disputes and adjustments', () => {
     );
     expect(party.getStatus()).toBe(409);
     expect(party.code).toBe('COMMISSION_FINAL');
+  });
+
+  it('records a support-case admin adjustment with no dispute reference', async () => {
+    const trip = await recognise({ method: 'cash' });
+
+    const result = await adjust({
+      bookingId: trip.bookingId,
+      disputeRef: null,
+      newTripMinor: 50000,
+      decidedAt: at(25 * HOUR),
+    });
+
+    expect(result.adjustment.disputeRef).toBeNull();
+    expect(result.adjustment.source).toBe('admin_decision');
+    expect(result.receivable.remainingAmount).toEqual(money(2500));
+    expect(result.adjustment).not.toHaveProperty('currency');
+    expect(result.adjustment).not.toHaveProperty('idempotencyKey');
+    expect(result.adjustment).not.toHaveProperty('requestHash');
+
+    const row = await db.query<{ dispute_ref: string | null }>(
+      'SELECT dispute_ref FROM commission_adjustments WHERE id = $1',
+      [result.adjustment.id],
+    );
+    expect(row.rows[0].dispute_ref).toBeNull();
+    const outcome = await db.query<{ dispute_ref: string | null }>(
+      'SELECT dispute_ref FROM commission_dispute_outcomes WHERE adjustment_id = $1',
+      [result.adjustment.id],
+    );
+    expect(outcome.rows[0].dispute_ref).toBeNull();
   });
 
   it('counts adjustments against a transporter since a timestamp', async () => {
@@ -825,13 +856,18 @@ describe('billing disputes and adjustments', () => {
       `SELECT table_name, column_name
          FROM information_schema.columns
         WHERE table_schema = current_schema()
-          AND table_name IN ('commission_credits', 'commission_adjustments')
+          AND table_name IN (
+            'commission_credits',
+            'commission_credit_allocations',
+            'commission_adjustments',
+            'commission_dispute_outcomes'
+          )
           AND (column_name ~ 'payout' OR column_name ~ 'cash_out' OR column_name ~ 'refund')`,
     );
     expect(result.rows).toEqual([]);
   });
 
-  it('serialises adjust, recognise, and collection on one company', async () => {
+  it('serialises adjust, recognise, collection and an overpayment on one company', async () => {
     const adjustedTrip = await recognise({ method: 'cash' });
     await collect(5000);
     await hold(adjustedTrip.bookingId);
@@ -846,7 +882,34 @@ describe('billing disputes and adjustments', () => {
       }),
       recognise({ trip: 100000, completedAt: at(3 * HOUR) }),
       collect(1000),
+      collect(50000),
     ]);
+
+    // Conservation: every collection splits exactly into allocations plus credited excess,
+    // and each credited excess has exactly one 'collection' credit of the same amount.
+    const collectionRows = await db.query<{
+      amount_minor: string;
+      credited_minor: string;
+      allocated: string;
+      credit_amount: string | null;
+    }>(
+      `SELECT c.amount_minor::text, c.credited_minor::text,
+              COALESCE((SELECT sum(a.amount_minor) FROM commission_collection_allocations a
+                         WHERE a.collection_id = c.id), 0)::text AS allocated,
+              (SELECT sum(cr.amount_minor) FROM commission_credits cr
+                WHERE cr.source_collection_id = c.id)::text AS credit_amount
+         FROM commission_collections c`,
+    );
+    expect(collectionRows.rows).toHaveLength(3);
+    for (const row of collectionRows.rows) {
+      expect(BigInt(row.allocated) + BigInt(row.credited_minor)).toBe(BigInt(row.amount_minor));
+      expect(BigInt(row.credit_amount ?? '0')).toBe(BigInt(row.credited_minor));
+    }
+    // Order-independent totals (flag on): effective commission 2500 + 5000 + 5000 = 12500,
+    // paid 5000 + 1000 + 50000 = 56000, so nothing owing and 43500 USD credit left.
+    const balances = await receivables.commissionBalances(null, transporterId);
+    expect(balances.outstandingByCurrency).toEqual([]);
+    expect(balances.creditByCurrency).toEqual([{ amountMinor: 43500, currency: 'USD' }]);
 
     const creditRows = await db.query<RawCredit & { allocated: string }>(
       `SELECT c.*, COALESCE(sum(a.amount_minor), 0)::text AS allocated
@@ -862,8 +925,10 @@ describe('billing disputes and adjustments', () => {
     }
 
     const receivablesRows = await db.query<RawReceivable>(
-      `SELECT * FROM commission_receivables WHERE status <> 'voided'`,
+      `SELECT * FROM commission_receivables
+        WHERE status IN ('open', 'held', 'collected')`,
     );
+    expect(receivablesRows.rows.length).toBeGreaterThan(0);
     for (const row of receivablesRows.rows) {
       expect(
         BigInt(row.remaining_minor) +
