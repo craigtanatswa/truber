@@ -8,6 +8,19 @@ import { ReceivablesService } from './receivables.service';
 export const COMMISSION_OUTSTANDING_MESSAGE =
   'Outstanding commission must be settled before taking new work.';
 
+export type CommissionOutstandingDetails = {
+  outstandingAmount?: Money;
+  outstandingByCurrency: Money[];
+};
+
+export function commissionOutstandingDetails(
+  outstandingByCurrency: Money[],
+): CommissionOutstandingDetails {
+  return outstandingByCurrency.length === 1
+    ? { outstandingAmount: outstandingByCurrency[0], outstandingByCurrency }
+    : { outstandingByCurrency };
+}
+
 @Injectable()
 export class CommissionGateService {
   constructor(private readonly receivables: ReceivablesService) {}
@@ -26,10 +39,7 @@ export class CommissionGateService {
       return;
     }
 
-    const details: { outstandingAmount?: Money; outstandingByCurrency: Money[] } =
-      outstandingByCurrency.length === 1
-        ? { outstandingAmount: outstandingByCurrency[0], outstandingByCurrency }
-        : { outstandingByCurrency };
+    const details = commissionOutstandingDetails(outstandingByCurrency);
 
     throw new ApiException(
       409,
