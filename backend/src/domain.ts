@@ -90,6 +90,59 @@ export interface LoadResponse {
   updatedAt: string;
 }
 
+export type QuotationStatus = 'submitted' | 'withdrawn' | 'accepted' | 'not_selected' | 'rejected' | 'expired';
+
+export interface QuotationResponse {
+  id: string;
+  loadId: string;
+  transporterCompanyId: string;
+  truckId: string | null;
+  amount: MoneyResponse;
+  status: QuotationStatus;
+  notes: string | null;
+  validUntil: string;
+  createdAt: string;
+  updatedAt: string;
+  counterpartyRestrictedUntil: string | null;
+}
+
+export type BookingStatus = 'pending_payment_arrangement' | 'confirmed' | 'cancelled';
+export type TripStatus = 'not_started' | 'truck_dispatched' | 'goods_collected' | 'in_transit' | 'delivered';
+export type CompletionStatus =
+  | 'not_complete'
+  | 'awaiting_shipper_acceptance'
+  | 'completed'
+  | 'disputed'
+  | 'locked'
+  | 'cancelled';
+
+export interface BookingResponse {
+  id: string;
+  loadId: string;
+  quotationId: string;
+  shipperCompanyId: string;
+  transporterCompanyId: string;
+  truckId: string | null;
+  status: BookingStatus;
+  tripStatus: TripStatus;
+  completionStatus: CompletionStatus;
+  agreedAmount: MoneyResponse;
+  adjustedAgreedAmount: MoneyResponse | null;
+  commissionRateBps: 500;
+  deliveryConfirmedAt: string | null;
+  disputeWindowEndsAt: string | null;
+  lockedAt: string | null;
+  confirmedPaymentArrangementId: string | null;
+  confirmedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AcceptQuotationResponse {
+  quotation: QuotationResponse;
+  booking: BookingResponse;
+}
+
 export interface PageMeta {
   page: number;
   pageSize: number;

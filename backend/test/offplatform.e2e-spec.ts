@@ -1,7 +1,5 @@
-// Bookings are not implemented in this codebase. The app provides an
-// UnavailableBookingDirectory that always returns null, so these tests spy on it
-// and return fixture BookingParties for specific ids. That fixture stands in for
-// the absent bookings domain.
+// These tests spy on the real BookingDirectory and return fixture BookingParties
+// for specific ids, so the off-platform flows do not need real booking rows.
 import { INestApplication } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { createApp } from '../src/create-app';

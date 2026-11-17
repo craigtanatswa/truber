@@ -11,10 +11,10 @@ import { DeliveryService } from './delivery/delivery.service';
 import { RateLimitService } from './delivery/rate-limit.service';
 import { LoadsController } from './loads/loads.controller';
 import { LoadsService } from './loads/loads.service';
+import { PostgresBookingDirectory } from './bookings/postgres-booking-directory';
 import {
   BookingDirectory,
   DevFixtureBookingDirectory,
-  UnavailableBookingDirectory,
 } from './offplatform/booking-directory';
 import {
   BookingOffPlatformReportsController,
@@ -22,12 +22,18 @@ import {
 } from './offplatform/offplatform.controller';
 import { OffPlatformBanService } from './offplatform/offplatform-ban.service';
 import { OffPlatformReportService } from './offplatform/offplatform-report.service';
+import { NewWorkCommissionGate, NoCommissionRecordsGate } from './quotations/commission-gate';
+import { LoadQuotationsController, QuotationsController } from './quotations/quotations.controller';
+import { QuotationsService } from './quotations/quotations.service';
+import { TruckQuoteCheck, UnavailableTruckQuoteCheck } from './quotations/truck-quote-check';
 
 @Module({
   controllers: [
     AuthController,
     CompaniesController,
     LoadsController,
+    LoadQuotationsController,
+    QuotationsController,
     BookingOffPlatformReportsController,
     OffPlatformAdminController,
   ],
@@ -39,6 +45,7 @@ import { OffPlatformReportService } from './offplatform/offplatform-report.servi
     AuthService,
     CompaniesService,
     LoadsService,
+    QuotationsService,
     OffPlatformBanService,
     OffPlatformReportService,
     {
@@ -46,9 +53,11 @@ import { OffPlatformReportService } from './offplatform/offplatform-report.servi
       useFactory: (env: Env) =>
         env.NODE_ENV !== 'production' && env.DEV_BOOKING_FIXTURES_FILE
           ? new DevFixtureBookingDirectory(env.DEV_BOOKING_FIXTURES_FILE)
-          : new UnavailableBookingDirectory(),
+          : new PostgresBookingDirectory(),
       inject: [ENV],
     },
+    { provide: NewWorkCommissionGate, useClass: NoCommissionRecordsGate },
+    { provide: TruckQuoteCheck, useClass: UnavailableTruckQuoteCheck },
     JwtAuthGuard,
     AdminOnlyGuard,
   ],
