@@ -37,6 +37,48 @@ export interface UserResponse {
   updatedAt: string;
 }
 
+export interface UserDetailResponse extends UserResponse {
+  bannedUntil: string | null;
+}
+
+export interface TruckResponse {
+  id: string;
+  companyId: string;
+  registrationNumber: string;
+  truckType: TruckType;
+  capacityKg: number;
+  trailerSpecs: string | null;
+  insuranceReference: string | null;
+  currentLocationText: string | null;
+  verificationStatus: VerificationStatus;
+  createdAt: string;
+  updatedAt: string;
+  counterpartyRestrictedUntil: string | null;
+}
+
+export type VerificationDocumentType =
+  | 'national_id'
+  | 'company_registration'
+  | 'tax_clearance'
+  | 'vehicle_registration'
+  | 'insurance'
+  | 'other';
+
+export type VerificationDocumentStatus = 'submitted' | 'approved' | 'rejected';
+
+export interface VerificationDocumentResponse {
+  id: string;
+  ownerUserId: string;
+  companyId: string | null;
+  truckId: string | null;
+  documentType: VerificationDocumentType;
+  documentUri: string;
+  status: VerificationDocumentStatus;
+  reviewNotes: string | null;
+  createdAt: string;
+  reviewedAt: string | null;
+}
+
 export interface AuthTokenResponseBody {
   accessToken: string;
   refreshToken: string;
@@ -98,6 +140,7 @@ export interface PageMeta {
 }
 
 export const TRUCK_TYPES = ['flatbed', 'box', 'refrigerated', 'tanker', 'tipper', 'side_loader', 'other'] as const;
+export type TruckType = (typeof TRUCK_TYPES)[number];
 export const LOAD_STATUSES: LoadStatus[] = [
   'draft',
   'posted',

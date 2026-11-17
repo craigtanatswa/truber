@@ -10,6 +10,7 @@ process.env.RESET_SOURCE_MAX ??= '1000';
 process.env.CONFIRM_SOURCE_MAX ??= '1000';
 process.env.OTP_SOURCE_MAX ??= '1000';
 process.env.OTP_VERIFY_MAX ??= '1000';
+process.env.VERIFICATION_DOC_URI_HOSTS ??= 'files.truber.local';
 process.env.BIND_HOST ??= '127.0.0.1';
 process.env.DB_TARGET ??= 'local';
 process.env.DB_SCHEMA ??= 'public';

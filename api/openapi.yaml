@@ -1,9 +1,83 @@
 openapi: 3.0.3
 info:
   title: Truber API
-  version: 0.4.0
+  version: 0.5.0
   description: |
-    Truber API v0.4.0 — **authoritative** contract (published 2026-11-10 Africa/Harare).
+    Truber API **v0.5.0** — **authoritative** contract (published 2026-11-11 Africa/Harare).
+    User approval: launch-scope decisions in Charlie's chat, 2026-11-11 16:15 Africa/Harare
+    ("Publish v0.5.0: approved with these answers"), plus the commission-adjustment answer in
+    Charlie's chat, 2026-11-11 16:20 Africa/Harare. Built from published v0.4.0 (SHA-256
+    `7f44d228ba8129398a9d2790e3e08770efbfed381fab7be391bef592f38221f4`, archived as
+    `api/archive/openapi-v0.4.0.yaml`) plus reviewed draft rev 4 (SHA-256
+    `cd7218e74586ed12e1e72bbdba70529fdf7ed78bf522abdfdcd606f6050d4dc3`) and the user decisions
+    below. Change log: `api/CHANGELOG.md`.
+
+    v0.5.0 changes:
+    - New `getBookingPayoutBreakdown` (`GET /bookings/{bookingId}/payout-breakdown`):
+      transporter + admin read of agreed amount, 5% commission, recorded fees, net payout,
+      payment method, protection, release status and payout blockers. **Shippers never see
+      the payout breakdown** (user decision 2026-11-11): they get 404, and transaction
+      `processingFee` values are null for shipper-side callers.
+    - New `previewQuotationPayout` (`POST /quotations/payout-preview`): side-effect-free
+      net-payout preview for a proposed quote amount. Provider fees are not confirmed, so
+      they are reported as unknown, never as 0. Allowed while banned or owing; returns
+      `submissionBlockers` (`ACCOUNT_BANNED`, `COMMISSION_OUTSTANDING`) for UI warnings.
+    - `getBookingPayoutBreakdown` never returns 409: a negative net is 200 with `netPayout`
+      null and `net_payout_negative` in `payoutBlockedReasons`.
+    - `CommissionReceivable.commissionRateBps` is required and immutable (rate at recognition).
+    - `Booking.agreedAmount` is the canonical agreed price. `PaymentReleaseRecord.tripAmount`
+      is a copy of the effective agreed amount; `RecordPaymentReleaseRequest.tripAmount`
+      becomes optional and must equal it when sent (409 `TRIP_AMOUNT_MISMATCH`).
+      `PaymentReleaseRecord.commissionRateBps` becomes required and immutable.
+    - New `listOwnOffPlatformReports` (`GET /off-platform-reports`): the caller lists only
+      reports they themselves filed. No admin notes, findings, evidence, or reports filed
+      about the caller.
+    - **Counterparty ban notice** (user decision 2026-11-11: "tell the other party when
+      someone is banned"): `counterpartyRestrictedUntil` on `Quotation` and `Truck`, and the
+      notification events in `x-notification-events` (`counterparty_restricted`,
+      `counterparty_restriction_lifted`). Only the company and the end date are disclosed;
+      never the reason, finding, report, evidence, or who reported.
+    - **Completion, dispute window and commission adjustments** (user decision 2026-11-11
+      16:20 and 16:24): the shipper's delivery acceptance (with POD) completes the trip and
+      opens a **24-hour dispute window** (`Booking.deliveryConfirmedAt`, `Booking.disputeWindowEndsAt`).
+      If no dispute is raised, the trip locks (`completionStatus=locked`, `lockedAt`) and
+      the 5% commission is final. The shipper opens disputes only inside the window
+      (`raiseBookingDispute`); the transporter is notified at once and has **48 hours**
+      (`responseDueAt`) to respond with evidence or a counter-offer (`respondToDispute`).
+      The parties may settle by accepting an offer (`acceptDisputeSettlement`, recorded as an
+      adjustment); otherwise an admin decides on both sides' evidence, or on what is there
+      if the transporter did not respond (`resolveBookingDispute`). Both sides see the
+      outcome and reason (`listBookingDisputes`). An open dispute keeps the trip unlocked.
+      After lock there are no voids or cancellations; an admin resolves later problems as
+      **adjustments** (`recordBookingAdjustment`), never an undo.
+      Commission follows the money: when an admin reverses or reduces a trip, the commission
+      difference first cancels or reduces unpaid owing on that trip, and any part already
+      paid becomes **commission credit** on the transporter's Truber balance
+      (`CommissionAccount.creditByCurrency`): credit is applied to future commission and, where server policy allows, to outstanding commission. Credit is
+      **never paid out or refunded in cash** and is not money held by Truber. Each
+      change is an append-only `CommissionAdjustment` (`source: party_settlement` or
+      `admin_decision`; `listCommissionAdjustments`). While a dispute is open the
+      receivable is `held`: not final, and held commission does not block work (excluded
+      from `outstandingByCurrency` and the commission gate). Overpaid commission
+      collections also become credit (`CommissionCollectionRecord.creditedAmount`). Example: on a US$1,000 trip an admin cuts the agreed amount to US$500;
+      commission drops from US$50 to US$25 and US$25 is credited (or, on a cash trip whose
+      commission is unpaid, US$25 of owing is cancelled instead).
+    - **Repeat abuse** of disputes or reversals is reviewed through the existing
+      report/finding flow (`category: repeated_dispute_abuse`, admin-filed) and gets the same
+      fixed 14-day ban as off-platform dealing.
+
+    Launch payment posture (user decision 2026-11-11): payments at launch are **recorded**
+    (cash, or a transfer recorded against `prepay` / `deposit_balance`) and are **not
+    payment-protected** unless independent-provider evidence exists (`escrow` only). A Paynow
+    integration will be built and tested in test mode without real money; no Paynow
+    operation, credential or merchant detail is part of this contract version, and
+    `providerHint` is still not proof of an integration. Support is by email; the support
+    address, email sender and domain come from deployment configuration and are never
+    hard-coded in clients or in this contract.
+
+    --- Carried forward from v0.4.0 (still in force unless changed above) ---
+
+    Truber API v0.4.0 (superseded by v0.5.0; published 2026-11-10 Africa/Harare).
     User approval: publish card reply `Yes, publish v0.4.0` (Charlie transcript, 2026-11-10 09:35).
     Published from reviewed draft SHA-256
     `b731748ca23c7d0f5f6c145617cfafcc5a69dd4555018251aca8d4a6033fc38b` (Mark and Charlie sign-off).
@@ -82,6 +156,59 @@ info:
   license:
     name: Proprietary
     url: https://truber.example/license
+
+x-notification-events:
+  description: |
+    Server-side notification events (v0.5.0). Delivered through the configured notification
+    channel (email at launch; provider, sender and support address from deployment
+    configuration, never hard-coded). This contract performs no real send: when no channel
+    is configured the event is recorded and not delivered. Events are emitted after the
+    triggering transaction commits (outbox); a delivery failure never rolls back or blocks
+    the finding, lift, or any other write. There is no public notification API in v0.5.0;
+    clients also learn the state from `counterpartyRestrictedUntil`.
+  events:
+    counterparty_restricted:
+      trigger: |
+        `recordOffPlatformFinding` with outcome `confirmed` applies one or more bans
+        (user decision 2026-11-11: the other party is told when someone is banned).
+      recipients: |
+        Members of each company that is a counterparty of a newly banned company:
+        (1) the other party on the reported booking, unless that party is itself banned by
+        the same finding; (2) companies with an `open` quotation or a
+        `pending_payment_arrangement` booking with the banned company. Each recipient
+        company is notified at most once per finding. The banned users and companies are not
+        sent this event (they see their own `bannedUntil`).
+      payload: |
+        `event`, `restrictedCompanyId`, `restrictedCompanyName`, `restrictedUntil` (ban
+        `endsAt`), and only the recipient's own affected `bookingIds` / `quotationIds`.
+        Never included: ban or finding reason, report id or text, evidence, admin notes,
+        which user was banned, or who reported.
+    counterparty_restriction_lifted:
+      trigger: '`liftOffPlatformBan` lifts a ban early.'
+      recipients: The same recipient set as `counterparty_restricted` for that ban.
+      payload: |
+        `event`, `restrictedCompanyId`, `restrictedCompanyName`, `restrictedUntil: null`.
+        No reason. Natural expiry at `endsAt` sends no event.
+    dispute_opened:
+      trigger: '`raiseBookingDispute`, or `confirmDelivery` with `decision: disputed`.'
+      recipients: Members of the booking's transporter company, immediately.
+      payload: |
+        `event`, `disputeId`, `bookingId`, `reason`, `responseDueAt` (openedAt + 48 hours),
+        `proposedAmount` (or null). Evidence is linked, not attached.
+    dispute_responded:
+      trigger: '`respondToDispute`.'
+      recipients: Members of the booking's shipper company.
+      payload: '`event`, `disputeId`, `bookingId`, `counterOfferAmount` (or null).'
+    dispute_settled:
+      trigger: '`acceptDisputeSettlement`.'
+      recipients: Members of both booking companies.
+      payload: '`event`, `disputeId`, `bookingId`, settled `amount`.'
+    dispute_resolved:
+      trigger: '`resolveBookingDispute`.'
+      recipients: Members of both booking companies.
+      payload: |
+        `event`, `disputeId`, `bookingId`, `outcome`, `reason`, `adjustedAgreedAmount`
+        (or null). Never commission or payout figures.
 
 servers:
   - url: https://api.truber.example/v0
@@ -977,6 +1104,140 @@ paths:
         '409':
           $ref: '#/components/responses/NewWorkGateConflict'
 
+  /quotations/payout-preview:
+    post:
+      operationId: previewQuotationPayout
+      tags: [Quotations, Payments]
+      summary: Preview the transporter net payout for a proposed quote amount (no side effects)
+      description: |
+        **v0.5.0.** Lets the transporter app show "you will receive" for a
+        quote amount it is about to submit, so the app never computes commission or net itself.
+
+        Server-computed, side-effect free: creates no quotation, no booking, no receivable,
+        no idempotency record. Allowed for a banned transporter or one owing commission (it
+        is a read-only calculation). The response lists `submissionBlockers` so the UI can
+        warn before submitting; they use the existing pinned codes `ACCOUNT_BANNED` and
+        `COMMISSION_OUTSTANDING`. Submission itself stays gated: `createQuotation` still
+        returns 409 `AccountBannedError` / `CommissionOutstandingError`.
+
+        Rules (user-approved 2026-11-09):
+        - The shipper pays the full agreed amount; commission and fees come out of the
+          transporter payout (never added on for the shipper).
+        - `commissionAmount` = half-up 5% (`commissionRateBps` 500) of `amount`, integer
+          minor units.
+        - `netPayoutBeforeUnknownFees = agreedAmount − commissionAmount − knownFeesTotal`.
+
+        **Provider fees are not confirmed.** Truber has no contracted payment provider
+        (Paynow, EcoCash, InnBucks are candidates only; research `research/payments.md`
+        2026-11-06 lists published or secondary rates but no Truber contract). The server
+        therefore never reports an unknown fee as 0: `feeStatus` is `unknown` and
+        `unknownFees` lists the fee that may still apply. Processing fees become known only
+        when an actual transaction records them (`recordPaymentTransaction.processingFee`).
+
+        For `paymentMethod=cash`, Truber never holds the fare: `farePayoutDueThroughTruber`
+        is false and the commission is a receivable the transporter owes later.
+        `netPayoutBeforeUnknownFees` is still returned as what the transporter keeps after
+        the commission they owe.
+
+        **Company scope:** `transporterCompanyId` is required (same field as
+        `createQuotation`). The caller must be a member of that company; admin must name it
+        explicitly and gets no default tenant. Bans, owing and `submissionBlockers` are
+        computed for that company (and the calling user's own ban) only.
+
+        400 if `amount` is not a strictly positive integer amount, or if `loadId` is given and
+        `amount.currency` differs from the load currency (`CURRENCY_MISMATCH`). 403 for a
+        caller who is not a transporter (or admin), or if the named company is not a
+        transporter company (`COMPANY_TYPE_MISMATCH`). 404 if the company does not exist or
+        the caller is not a member of it (the shared `NotFound` body; existence is not
+        revealed, matching the implemented company-scoped writes such as `createLoad`), or if
+        `loadId` is not visible to the caller.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PayoutPreviewRequest'
+      responses:
+        '200':
+          description: Computed preview (nothing stored)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PayoutPreview'
+              examples:
+                noBlockers:
+                  summary: Prepay quote, nothing blocks submission
+                  value:
+                    agreedAmount: { amountMinor: 100000, currency: USD }
+                    commissionRateBps: 500
+                    commissionAmount: { amountMinor: 5000, currency: USD }
+                    knownFees: []
+                    knownFeesTotal: { amountMinor: 0, currency: USD }
+                    netPayoutBeforeUnknownFees: { amountMinor: 95000, currency: USD }
+                    feeStatus: unknown
+                    unknownFees:
+                      - feeType: processing_fee
+                        reason: provider_not_contracted
+                    paymentMethod: prepay
+                    farePayoutDueThroughTruber: true
+                    paymentProtectedPossible: true
+                    submissionBlockers: []
+                bothBlockers:
+                  summary: Banned and owing commission in one currency (preview still allowed)
+                  value:
+                    agreedAmount: { amountMinor: 25010, currency: USD }
+                    commissionRateBps: 500
+                    commissionAmount: { amountMinor: 1251, currency: USD }
+                    knownFees: []
+                    knownFeesTotal: { amountMinor: 0, currency: USD }
+                    netPayoutBeforeUnknownFees: { amountMinor: 23759, currency: USD }
+                    feeStatus: unknown
+                    unknownFees:
+                      - feeType: processing_fee
+                        reason: provider_not_contracted
+                    paymentMethod: escrow
+                    farePayoutDueThroughTruber: true
+                    paymentProtectedPossible: true
+                    submissionBlockers:
+                      - code: ACCOUNT_BANNED
+                        details:
+                          bannedUntil: '2026-11-24T09:00:00Z'
+                      - code: COMMISSION_OUTSTANDING
+                        details:
+                          outstandingAmount: { amountMinor: 1500, currency: USD }
+                          outstandingByCurrency:
+                            - { amountMinor: 1500, currency: USD }
+                owingTwoCurrencies:
+                  summary: Cash quote, owing in two currencies
+                  value:
+                    agreedAmount: { amountMinor: 50000, currency: USD }
+                    commissionRateBps: 500
+                    commissionAmount: { amountMinor: 2500, currency: USD }
+                    knownFees: []
+                    knownFeesTotal: { amountMinor: 0, currency: USD }
+                    netPayoutBeforeUnknownFees: { amountMinor: 47500, currency: USD }
+                    feeStatus: not_applicable
+                    unknownFees: []
+                    paymentMethod: cash
+                    farePayoutDueThroughTruber: false
+                    paymentProtectedPossible: false
+                    submissionBlockers:
+                      - code: COMMISSION_OUTSTANDING
+                        details:
+                          outstandingByCurrency:
+                            - { amountMinor: 1500, currency: USD }
+                            - { amountMinor: 40000, currency: ZWG }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   /quotations/{quotationId}:
     get:
       operationId: getQuotation
@@ -1266,6 +1527,120 @@ paths:
                   - $ref: '#/components/schemas/AccountBannedError'
                   - $ref: '#/components/schemas/OtherConflictError'
 
+  /bookings/{bookingId}/payout-breakdown:
+    get:
+      operationId: getBookingPayoutBreakdown
+      tags: [Bookings, Payments]
+      summary: Get the transporter payout breakdown for a booking
+      description: |
+        **v0.5.0.** Read-only, server-computed view of how the booking's
+        agreed amount splits into Truber commission, recorded fees, and the transporter net
+        payout. Records only; does not move funds and does not request a release.
+
+        **Canonical amount:** `agreedAmount` is `Booking.agreedAmount` (the shipper pays it in
+        full). It is the single source for commission and net. Release records copy it as
+        `tripAmount` when they are written.
+
+        - `commissionAmount` = half-up 5% of `agreedAmount` (`commissionRateBps` 500). Once the
+          trip is completed this equals the recognised `CommissionReceivable.amount`.
+        - `fees` lists **recorded** processing fees only (from `recordPaymentTransaction`), in
+          the booking currency. No estimated or provider-published rate is included.
+        - `netPayout = agreedAmount − commissionAmount − feesTotal`. This read never returns
+          409: if the net would be negative, the response is 200 with `netPayout` null and
+          `net_payout_negative` in `payoutBlockedReasons`. Write operations
+          (`recordPaymentRelease`) keep their 409 `NET_PAYOUT_NEGATIVE`.
+        - `cash`: never payment-protected (`paymentProtected` false); no fare payout is due
+          through Truber (`farePayoutDueThroughTruber` false, `netPayout` null); the
+          commission stays an open receivable until `recordCommissionCollection`.
+        - `corporate_credit`: `payoutBlockedReasons` contains `shipper_payment_not_recorded`
+          until the shipper payment is recorded.
+        - `deposit_balance`: an unreceipted remainder is not payable;
+          `payoutBlockedReasons` contains `balance_not_receipted` until it is receipted.
+        - Truber never lends: no reason other than a recorded shipper payment unblocks payout.
+
+        **Access:** members of the booking's transporter company, and admin. Everyone else,
+        **including the shipper**, gets 404 (the shipper already sees `agreedAmount` on
+        `getBooking`; commission and transporter fees are the transporter's commercial terms).
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/BookingId'
+      responses:
+        '200':
+          description: Payout breakdown
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingPayoutBreakdown'
+              examples:
+                cash:
+                  summary: Cash trip, completed; commission owed as a receivable, no fare payout
+                  value:
+                    bookingId: 6f1c2a3e-1b2c-4d5e-8f90-0a1b2c3d4e01
+                    transporterCompanyId: 7a2d3b4f-2c3d-4e5f-9a01-1b2c3d4e5f02
+                    agreedAmount: { amountMinor: 80000, currency: USD }
+                    commissionRateBps: 500
+                    commissionAmount: { amountMinor: 4000, currency: USD }
+                    commissionStatus: open
+                    fees: []
+                    feesTotal: { amountMinor: 0, currency: USD }
+                    netPayout: null
+                    paymentMethod: cash
+                    paymentArrangementId: 8b3e4c5a-3d4e-4f60-8b12-2c3d4e5f6a03
+                    paymentProtected: false
+                    farePayoutDueThroughTruber: false
+                    releaseStatus: not_applicable
+                    payoutBlockedReasons: [cash_fare_not_held]
+                    fundsMovementClaimedByTruber: false
+                    computedAt: '2026-11-10T11:00:00Z'
+                creditBlocked:
+                  summary: Corporate credit, completed; blocked until the shipper payment is recorded
+                  value:
+                    bookingId: 6f1c2a3e-1b2c-4d5e-8f90-0a1b2c3d4e11
+                    transporterCompanyId: 7a2d3b4f-2c3d-4e5f-9a01-1b2c3d4e5f02
+                    agreedAmount: { amountMinor: 200000, currency: USD }
+                    commissionRateBps: 500
+                    commissionAmount: { amountMinor: 10000, currency: USD }
+                    commissionStatus: open
+                    fees: []
+                    feesTotal: { amountMinor: 0, currency: USD }
+                    netPayout: { amountMinor: 190000, currency: USD }
+                    paymentMethod: corporate_credit
+                    paymentArrangementId: 8b3e4c5a-3d4e-4f60-8b12-2c3d4e5f6a13
+                    paymentProtected: false
+                    farePayoutDueThroughTruber: true
+                    releaseStatus: not_applicable
+                    payoutBlockedReasons: [shipper_payment_not_recorded]
+                    fundsMovementClaimedByTruber: false
+                    computedAt: '2026-11-10T11:00:00Z'
+                netPayoutNegative:
+                  summary: Recorded fees exceed what is left after commission; 200 with null net, no 409
+                  value:
+                    bookingId: 6f1c2a3e-1b2c-4d5e-8f90-0a1b2c3d4e21
+                    transporterCompanyId: 7a2d3b4f-2c3d-4e5f-9a01-1b2c3d4e5f02
+                    agreedAmount: { amountMinor: 1000, currency: USD }
+                    commissionRateBps: 500
+                    commissionAmount: { amountMinor: 50, currency: USD }
+                    commissionStatus: open
+                    fees:
+                      - feeType: processing_fee
+                        amount: { amountMinor: 980, currency: USD }
+                        transactionId: 9c4f5d6b-4e5f-4a71-9c23-3d4e5f6a7b24
+                    feesTotal: { amountMinor: 980, currency: USD }
+                    netPayout: null
+                    paymentMethod: prepay
+                    paymentArrangementId: 8b3e4c5a-3d4e-4f60-8b12-2c3d4e5f6a23
+                    paymentProtected: false
+                    farePayoutDueThroughTruber: true
+                    releaseStatus: held
+                    payoutBlockedReasons: [net_payout_negative]
+                    fundsMovementClaimedByTruber: false
+                    computedAt: '2026-11-10T11:00:00Z'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   /bookings/{bookingId}/payment-arrangements:
     get:
       operationId: listPaymentArrangements
@@ -1444,6 +1819,10 @@ paths:
       operationId: listPaymentTransactions
       tags: [Payments]
       summary: List payment transaction records under an arrangement
+      description: |
+        Visible to the booking's shipper company, transporter company, and admin.
+        `processingFee` is null for shipper-side callers (user decision 2026-11-11:
+        shippers do not see the payout breakdown).
       security:
         - bearerAuth: []
       parameters:
@@ -1517,11 +1896,14 @@ paths:
 
         **Never claims Truber moved funds. No float. No live provider API.** Commission 5%
         is server-computed, half-up on positive `tripAmount` (do not trust a client-supplied
-        commission figure). `processingFeesTotal` must equal the sum of already-recorded
+        commission figure). The commission base is the effective agreed amount
+        (`Booking.adjustedAgreedAmount` when set, else `Booking.agreedAmount`; v0.5.0); a
+        supplied `tripAmount` that differs returns 409
+        `TRIP_AMOUNT_MISMATCH`. `processingFeesTotal` must equal the sum of already-recorded
         transaction `processingFee` values on this arrangement in the same currency, or the
         server returns 409; do not blindly trust a typed total. Mixed-currency amounts are
         rejected (400/409). If commission + processing fees would make
-        `transporterNetAmount` negative, return 409.
+        `transporterNetAmount` negative, return 409 `NET_PAYOUT_NEGATIVE`.
 
         `transporterNetAmount = tripAmount − commissionAmount − processingFeesTotal`
         (integer minor units, same currency). The shipper paid (or owes) the agreed trip
@@ -1656,16 +2038,26 @@ paths:
         POD and from `tripStatus=delivered`.
 
         **Preconditions:** at least one POD artifact must exist for the booking (409 otherwise).
-        On `accepted`: `completionStatus` → `completed` (**provisional** Charlie policy —
-        completion is separate from release). Does not move funds and does not record release.
+        On `accepted`: `completionStatus` → `completed` (user decision 2026-11-11: the
+        shipper's acceptance from the POD completes the trip; completion is separate from
+        release). The server sets `Booking.deliveryConfirmedAt` and
+        `Booking.disputeWindowEndsAt = deliveryConfirmedAt + 24 hours`. Does not move funds and does
+        not record release.
         **Commission recognition (user-approved 2026-11-09):** the server creates an open
         commission receivable for the transporter company, amount = half-up 5% of
         `booking.agreedAmount` (minor units, same currency). Recognition is at completion,
-        not at release. If an admin later voids that completion (cancel/refund), the
-        receivable is `voided` and recognised revenue is reversed. For `cash`, the
-        receivable remains a collect-later owing; no fare payout due is booked.
-        On `disputed`: `completionStatus` → `disputed`; release endpoints return 409 until
-        admin resolves the dispute via `POST /bookings/{bookingId}/disputes/resolve`.
+        not at release. For `cash`, the receivable remains a collect-later owing; no fare
+        payout due is booked.
+        **Dispute window (user decision 2026-11-11):** the shipper may open a dispute with
+        `raiseBookingDispute` until `disputeWindowEndsAt`. If none is raised, the trip
+        locks at `disputeWindowEndsAt` (`completionStatus=locked`, `lockedAt`) and the 5%
+        commission is final. Until lock an admin may still cancel (`cancelBooking`), which
+        voids the receivable; after lock only adjustments are possible
+        (`recordBookingAdjustment`).
+        On `disputed`: `completionStatus` → `disputed` and a `BookingDispute` opens (stage
+        `at_delivery_confirmation`, `notes` as its reason) with the same 48-hour transporter
+        response, settlement and admin-resolution flow as `raiseBookingDispute`. Release
+        endpoints return 409 until the dispute is settled or resolved.
       security:
         - bearerAuth: []
       parameters:
@@ -1979,7 +2371,12 @@ paths:
         cancellation never creates an off-platform report, finding, or ban by itself — a
         suspected circumvention is reported separately (`createOffPlatformReport`). Does not automate refunds or
         move funds. Refund recording remains a separate path and is not retagged here.
-        Commission is not charged when cancelled before completion. Pair with
+        Commission is not charged when cancelled before completion.
+        **Lock (user decision 2026-11-11):** allowed before completion and during the 24-hour
+        dispute window (receivable `voided`; any part already paid becomes commission
+        credit, never refunded in cash). While a dispute is open this returns 409
+        `DISPUTE_OPEN`. At or after `disputeWindowEndsAt` (trip `locked`) it returns 409
+        `COMMISSION_FINAL`; use `recordBookingAdjustment`. Pair with
         `POST /payment-arrangements/{id}/refunds` when a refund audit record is required.
         Shipper load `cancel` remains 409 once booking is confirmed.
       security:
@@ -2015,13 +2412,30 @@ paths:
       tags: [Admin, DeliveryConfirmation]
       summary: Admin resolve delivery dispute with audit (QA-005)
       description: |
-        When `completionStatus=disputed`, admin resolves to `completed` or `cancelled`.
-        Resolution is audited. Completing unlocks release recording eligibility; cancelling
-        keeps release blocked. Does not move funds.
-        If resolved to `completed` and no commission receivable exists yet for the booking,
-        the server creates the same open 5% receivable as `confirmDelivery` accepted.
-        If resolved to `cancelled`, no commission is recognised; any open receivable for
-        this booking is `voided`.
+        When `completionStatus=disputed` (raised at delivery confirmation, or inside the
+        24-hour window with `raiseBookingDispute`) and the parties have not settled, admin
+        decides using both sides' evidence. Allowed once the open dispute is
+        `transporter_responded`, or `awaiting_transporter_response` with `responseDueAt`
+        passed (the admin then decides on what is there); otherwise 409
+        `DISPUTE_RESPONSE_WINDOW_OPEN` (a decision at exactly `responseDueAt` is allowed). The dispute becomes `resolved` with `outcome` and
+        `reason`, both visible to both parties, and `dispute_resolved` is sent to both.
+        Resolution is audited and final: the trip does not get a new dispute window. Does
+        not move funds.
+        - `complete_trip`: `completionStatus` → `locked`. If no commission receivable exists
+          yet, the server creates the same open 5% receivable as `confirmDelivery` accepted.
+          Release recording becomes eligible.
+        - `adjust_amount` (requires `adjustedAgreedAmount`, same currency, lower than the
+          current effective agreed amount; `0` reverses the trip): `completionStatus` →
+          `locked` and the server records a `CommissionAdjustment` (`source: admin_decision`)
+          exactly as `recordBookingAdjustment` does (commission follows the money; paid
+          commission above the new figure becomes credit, never refunded in cash). If no
+          receivable exists yet, it
+          is recognised on the adjusted amount instead.
+        - `cancel_trip`: `completionStatus` → `cancelled`; release stays blocked. The
+          receivable for this booking is `voided`; any part already collected, settled, or
+          paid with credit becomes commission credit (never refunded in cash).
+        A dispute on a `locked` trip is not reopened here: admins use
+        `recordBookingAdjustment`.
       security:
         - bearerAuth: []
       parameters:
@@ -2048,6 +2462,318 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+
+  /bookings/{bookingId}/disputes:
+    get:
+      operationId: listBookingDisputes
+      tags: [Bookings, DeliveryConfirmation]
+      summary: List disputes on a booking (both parties and admin)
+      description: |
+        **User decision 2026-11-11.** Both booking parties and admins see every dispute on
+        the booking, including the other side's evidence, any offers, and the outcome with
+        its reason. Non-parties get 404. Never includes commission or payout figures.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/BookingId'
+      responses:
+        '200':
+          description: Disputes, newest first
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingDisputeListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      operationId: raiseBookingDispute
+      tags: [Bookings, DeliveryConfirmation]
+      summary: Shipper opens a dispute on a completed trip inside the 24-hour window
+      description: |
+        **User decision 2026-11-11.** A shipper member of the booking opens a dispute while
+        `completionStatus=completed` and the server time is before
+        `Booking.disputeWindowEndsAt`. `completionStatus` → `disputed`: the trip is **not
+        locked and commission is not final** while the dispute is open, even after
+        `disputeWindowEndsAt`. Release recording returns 409 until the dispute closes.
+        The dispute starts in `awaiting_transporter_response` with
+        `responseDueAt = openedAt + 48 hours`, and `dispute_opened` is sent to the
+        transporter company immediately (root `x-notification-events`). An optional
+        `proposedAmount` is the shipper's settlement offer.
+        - The window is half-open, `[deliveryConfirmedAt, disputeWindowEndsAt)`: a dispute at
+          exactly `disputeWindowEndsAt` or later, or on a `locked` trip, is 409
+          `DISPUTE_WINDOW_CLOSED`. Later problems go to support by email and an admin
+          records an adjustment (`recordBookingAdjustment`).
+        - A dispute already open on the booking: 409 `DISPUTE_ALREADY_OPEN`.
+        - Opening a dispute puts the trip's commission receivable in `held` (not final;
+          `finalAt` null).
+        - Before completion: use `confirmDelivery` with `decision: disputed`, which opens the
+          same kind of dispute (409 `TRIP_NOT_COMPLETED` here).
+        - Transporter members get 403 (they respond instead; their own issues go to support).
+          Non-parties get 404. Admins resolve rather than open.
+        Repeated bad-faith disputes can lead to the same 14-day ban as off-platform dealing
+        (admin report with `category: repeated_dispute_abuse`).
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/BookingId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RaiseDisputeRequest'
+      responses:
+        '201':
+          description: Dispute opened; trip is now `disputed`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingDispute'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /disputes/{disputeId}/response:
+    post:
+      operationId: respondToDispute
+      tags: [Bookings, DeliveryConfirmation]
+      summary: Transporter responds with evidence and an optional counter-offer
+      description: |
+        **User decision 2026-11-11.** A transporter member of the booking responds once,
+        while `status=awaiting_transporter_response` and before `responseDueAt`. The response
+        carries a statement, evidence (photos, the signed POD, messages) and an optional
+        `counterOfferAmount`. Status → `transporter_responded`; `dispute_responded` is sent
+        to the shipper company.
+        - After `responseDueAt`: 409 `DISPUTE_RESPONSE_WINDOW_CLOSED` (the admin decides on
+          what is there).
+        - Already responded or dispute closed: 409 `DISPUTE_NOT_AWAITING_RESPONSE`.
+        - Shipper members get 403; non-parties 404.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/DisputeId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RespondToDisputeRequest'
+      responses:
+        '200':
+          description: Response recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingDispute'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /disputes/{disputeId}/settlement:
+    post:
+      operationId: acceptDisputeSettlement
+      tags: [Bookings, DeliveryConfirmation]
+      summary: Accept the other side's offer and settle the dispute between the parties
+      description: |
+        **User decision 2026-11-11.** The parties may settle a dispute themselves while it is
+        open (`awaiting_transporter_response` or `transporter_responded`). The shipper
+        accepts the transporter's `counterOfferAmount`, or the transporter accepts the
+        shipper's `proposedAmount`; `amount` must equal the offer being accepted (409
+        `SETTLEMENT_AMOUNT_MISMATCH`; 409 `NO_OFFER_TO_ACCEPT` if the other side made none).
+        A party cannot accept its own offer (403).
+
+        Status → `settled`; `completionStatus` → `locked`. When `amount` is lower than the
+        current effective agreed amount the server records a `CommissionAdjustment` with
+        `source: party_settlement` (offer maker and acceptor recorded as
+        `shipperAgreedByUserId` / `transporterAgreedByUserId`) and the same
+        commission-follows-money rules as `recordBookingAdjustment` (linked as
+        `settlement.adjustmentId`); when equal, the held commission is finalised unchanged and
+        no adjustment is recorded. `amount` above the current effective agreed amount is 409
+        `ADJUSTMENT_INCREASE_NOT_ALLOWED`; another currency is 409 `CURRENCY_MISMATCH`.
+        `dispute_settled` is sent to both parties.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/DisputeId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AcceptDisputeSettlementRequest'
+      responses:
+        '200':
+          description: Dispute settled by the parties
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingDispute'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /admin/bookings/{bookingId}/adjustments:
+    post:
+      operationId: recordBookingAdjustment
+      tags: [Admin, Bookings, Payments]
+      summary: Record an admin adjustment on a locked trip (reverse or reduce; never an undo)
+      description: |
+        **User decision 2026-11-11.** Admin-only. After the 24-hour window the trip is
+        `locked` and commission is final: there are no voids or cancellations
+        (`cancelBooking` returns 409 `COMMISSION_FINAL`), only problems an admin resolves
+        (for example a support case by email) and records here as an append-only
+        `CommissionAdjustment` with `source: admin_decision`. `Booking.agreedAmount` and the
+        receivable `amount` are never rewritten. A second adjustment uses the previous
+        adjustment's `newTripAmount` as its baseline.
+        - Requires `completionStatus=locked`: 409 `DISPUTE_OPEN` while a dispute is open
+          (use `resolveBookingDispute`), 409 `BOOKING_NOT_LOCKED` before lock.
+        - `adjustedAgreedAmount` must be in the booking currency (409 `CURRENCY_MISMATCH`)
+          and lower than the current effective agreed amount (`Booking.adjustedAgreedAmount`,
+          else `Booking.agreedAmount`): higher is 409 `ADJUSTMENT_INCREASE_NOT_ALLOWED`, equal
+          is 400. `0` is a full reversal.
+
+        **Commission follows the money:**
+        - `newCommission` = half-up 5% of `newTripAmount`;
+          `delta = previousCommission − newCommission`.
+        - The delta first cancels or reduces this trip's unpaid owing:
+          `reducedOpenAmount = min(remainingAmount, delta)`.
+        - The rest, `creditedAmount = delta − reducedOpenAmount`, becomes commission credit
+          on the transporter company's Truber balance in the same currency
+          (`CommissionAccount.creditByCurrency`): credit is applied to future commission and, where server policy allows, to outstanding commission. It is **never paid out or
+          refunded in cash**; it is not money held by Truber (no float).
+          `fundsMovementClaimedByTruber` is always false.
+        - Example: US$1,000 trip, commission US$50 already settled, cut to US$500:
+          commission US$25, delta US$25, credited US$25. Same trip on cash with US$50 unpaid:
+          US$25 of owing is cancelled and nothing is credited.
+        Refunds of the fare itself between shipper and transporter stay outside Truber's
+        money flow; record them separately with `recordPaymentRefund` if needed.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/BookingId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecordBookingAdjustmentRequest'
+      responses:
+        '201':
+          description: Adjustment recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommissionAdjustment'
+              examples:
+                reducedSettledTrip:
+                  summary: US$1,000 trip cut to US$500 after commission was settled
+                  value:
+                    id: 7d1c2c60-7b55-4a7e-9a52-2f1d6b1f8a01
+                    bookingId: 3f0c3a0e-1d2b-4c5d-8e9f-0a1b2c3d4e5f
+                    receivableId: 6c5b4a39-2817-4f6e-9d5c-4b3a29180f7e
+                    transporterCompanyId: 9b8a7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d
+                    disputeRef: null
+                    source: admin_decision
+                    shipperAgreedByUserId: null
+                    transporterAgreedByUserId: null
+                    decidedAt: '2026-11-20T10:00:00Z'
+                    previousTripAmount: {amountMinor: 100000, currency: USD}
+                    newTripAmount: {amountMinor: 50000, currency: USD}
+                    previousCommission: {amountMinor: 5000, currency: USD}
+                    newCommission: {amountMinor: 2500, currency: USD}
+                    reducedOpenAmount: {amountMinor: 0, currency: USD}
+                    creditedAmount: {amountMinor: 2500, currency: USD}
+                    reason: Half the load was rejected at delivery; confirmed by support.
+                    recordedByUserId: 1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d
+                    recordedAt: '2026-11-20T10:00:00Z'
+                    fundsMovementClaimedByTruber: false
+                cashOwingReduced:
+                  summary: Cash trip with US$50 commission unpaid, cut to US$500
+                  value:
+                    id: 7d1c2c60-7b55-4a7e-9a52-2f1d6b1f8a02
+                    bookingId: 3f0c3a0e-1d2b-4c5d-8e9f-0a1b2c3d4e60
+                    receivableId: 6c5b4a39-2817-4f6e-9d5c-4b3a29180f7f
+                    transporterCompanyId: 9b8a7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d
+                    disputeRef: null
+                    source: admin_decision
+                    shipperAgreedByUserId: null
+                    transporterAgreedByUserId: null
+                    decidedAt: '2026-11-20T10:00:00Z'
+                    previousTripAmount: {amountMinor: 100000, currency: USD}
+                    newTripAmount: {amountMinor: 50000, currency: USD}
+                    previousCommission: {amountMinor: 5000, currency: USD}
+                    newCommission: {amountMinor: 2500, currency: USD}
+                    reducedOpenAmount: {amountMinor: 2500, currency: USD}
+                    creditedAmount: {amountMinor: 0, currency: USD}
+                    reason: Half the load was rejected at delivery; confirmed by support.
+                    recordedByUserId: 1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d
+                    recordedAt: '2026-11-20T10:00:00Z'
+                    fundsMovementClaimedByTruber: false
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /companies/{companyId}/commission-adjustments:
+    get:
+      operationId: listCommissionAdjustments
+      tags: [Companies, Payments]
+      summary: List commission adjustments for a transporter company
+      description: |
+        **v0.5.0.** Append-only `CommissionAdjustment` entries for the company, newest
+        first, from both party settlements and admin decisions. Members of that transporter
+        company and admins only; everyone else, **including shippers**, gets 404 (shippers
+        never see commission or payout internals).
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Adjustments
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommissionAdjustmentListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
 
   /payment-arrangements/{arrangementId}/deposit-receipt:
     post:
@@ -2190,7 +2916,9 @@ paths:
       summary: Get transporter commission owing and history
       description: |
         Returns the transporter company's commission receivables and outstanding
-        balances. `outstandingByCurrency` is the sum of `remainingAmount` on `open`
+        balances, plus (v0.5.0) `heldByCurrency` (dispute open, not owing yet, not gated)
+        and `creditByCurrency` (commission credit, never refunded in cash). Members of the
+        transporter company and admins only; shippers never see commission internals. `outstandingByCurrency` is the sum of `remainingAmount` on `open`
         receivables, one entry per currency (not the original recognised `amount`).
         Created at trip completion (user-approved 2026-11-09). Load search and view
         remain allowed with outstanding owing; `createQuotation`, `acceptQuotation`,
@@ -2228,11 +2956,14 @@ paths:
         (user-approved 2026-11-09 — collect later). **Recording a collection is not
         moving funds.** No live provider API and no automatic debit.
 
-        `amount` must be strictly positive and in one currency, and must not exceed
-        remaining outstanding in that same currency (409 otherwise). Applied only to
-        open receivables in that currency, oldest-first, updating each receivable's
-        `collectedAmount` and `remainingAmount`. When a receivable's `remainingAmount`
-        reaches zero, its status becomes `collected`. After this call, if
+        `amount` must be strictly positive and in one currency. Applied only to `open`
+        receivables in that currency (never `held`), oldest-first, updating each
+        receivable's `collectedAmount` and `remainingAmount`. When a receivable's
+        `remainingAmount` reaches zero, its status becomes `collected`.
+        **Overpayment (user decision 2026-11-11):** an `amount` greater than what is owed in
+        that currency is accepted. The excess is recorded as `creditedAmount` and held as
+        commission credit against future commission (`CommissionAccount.creditByCurrency`);
+        it is never paid out in cash. After this call, if
         `outstandingByCurrency` is empty, `createQuotation`, `acceptQuotation`, and
         `confirmBooking` are unblocked.
       security:
@@ -2280,6 +3011,7 @@ paths:
         The system does not detect circumvention automatically, and a legitimate cancel
         (for example a breakdown or goods not ready) never creates a report by itself.
         A banned user may still file a report. Non-parties get 403/404.
+        `category: repeated_dispute_abuse` (v0.5.0) is admin-only; other callers get 403.
       security:
         - bearerAuth: []
       parameters:
@@ -2308,6 +3040,95 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+
+  /off-platform-reports:
+    get:
+      operationId: listOwnOffPlatformReports
+      tags: [Safeguards]
+      summary: List off-platform reports the caller filed
+      description: |
+        **v0.5.0.** First-party list of off-platform
+        circumvention reports the **caller personally filed** (`reportedByUserId` is the
+        calling user). This follows the existing caller-scoped list convention
+        (`GET /loads`, `GET /companies`), not `/mine` and not a query on the admin
+        collection (`GET /admin/off-platform-reports` remains the admin review queue).
+
+        Reports are filed by a user (`createOffPlatformReport` records `reportedByUserId`),
+        not by a company, so the list is scoped to the calling user. Other members of the
+        caller's company do not see these rows. Reports **about** the caller (filed by a
+        counterparty) are never returned.
+
+        Each item is a reduced view: `id`, `status`, `createdAt`, the booking and
+        counterparty company the reporter already knows from the booking, and `decidedAt`
+        (null while the report is still `open`). It does not include description, evidence,
+        suspected-party detail, admin notes, findings, bans, or any other review internals.
+
+        Status reuses `OffPlatformReportStatus`: `open` (the pending/undecided state, until
+        an admin records a finding), `confirmed`, and `not_confirmed`. Pagination is the
+        existing page/`pageSize` + `PaginationMeta` used by every list in this contract
+        (this API does not use cursor pagination).
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/OffPlatformReportStatus'
+        - name: bookingId
+          in: query
+          schema:
+            $ref: '#/components/schemas/Uuid'
+      responses:
+        '200':
+          description: Paginated reports the caller filed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OwnOffPlatformReportListResponse'
+              examples:
+                openReport:
+                  summary: One open (pending) report
+                  value:
+                    data:
+                      - id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+                        status: open
+                        createdAt: '2026-11-10T09:00:00.000Z'
+                        bookingId: 7c9e6679-7425-40de-944b-e07fc1f90ae7
+                        counterpartyCompanyId: 0f14d0ab-9605-4a62-a9e4-90f8267b93d7
+                        decidedAt: null
+                    meta:
+                      page: 1
+                      pageSize: 20
+                      totalItems: 1
+                      totalPages: 1
+                decidedConfirmed:
+                  summary: A confirmed report after an admin finding
+                  value:
+                    data:
+                      - id: 1b4e28ba-2fa1-11d2-883f-0004ac430514
+                        status: confirmed
+                        createdAt: '2026-11-01T08:00:00.000Z'
+                        bookingId: 6ba7b810-9dad-11d1-80b4-00c04fd430c8
+                        counterpartyCompanyId: 6ba7b811-9dad-11d1-80b4-00c04fd430c8
+                        decidedAt: '2026-11-02T12:00:00.000Z'
+                    meta:
+                      page: 1
+                      pageSize: 20
+                      totalItems: 1
+                      totalPages: 1
+                empty:
+                  summary: Caller has filed no reports
+                  value:
+                    data: []
+                    meta:
+                      page: 1
+                      pageSize: 20
+                      totalItems: 0
+                      totalPages: 0
+        '401':
+          $ref: '#/components/responses/Unauthorized'
 
   /admin/off-platform-reports:
     get:
@@ -2392,6 +3213,15 @@ paths:
         company must be the booking's shipper or transporter company for the stated role
         (400/409 otherwise). A ban never changes `accountStatus` and never hides existing
         records.
+
+        **Counterparty notice (user decision 2026-11-11):** after a confirmed finding
+        commits, the server emits `counterparty_restricted` (see root
+        `x-notification-events`) to the banned company's counterparties, and their
+        `Quotation` / `Truck` reads show `counterpartyRestrictedUntil`. The notice carries
+        only the company and `endsAt`; never the reason, finding, report, evidence, or
+        reporter. A failed delivery never blocks or rolls back the finding.
+        For a report with `category: repeated_dispute_abuse`, a confirmed finding applies
+        the same fixed 14-day bans.
       security:
         - bearerAuth: []
       parameters:
@@ -2470,6 +3300,9 @@ paths:
         `liftedAt`, `liftedByUserId`, and `liftReason`. `endsAt` is kept as originally
         applied. Lifting an `expired` or already `lifted` ban returns 409. The ban
         otherwise expires automatically at `endsAt`; no call is needed.
+        After an early lift commits, the server emits `counterparty_restriction_lifted` to
+        the same recipients as the original `counterparty_restricted` (root
+        `x-notification-events`). No reason is sent.
       security:
         - bearerAuth: []
       parameters:
@@ -2554,6 +3387,12 @@ components:
       required: true
       schema:
         $ref: '#/components/schemas/Uuid'
+    DisputeId:
+      name: disputeId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Uuid'
     ReportId:
       name: reportId
       in: path
@@ -2622,7 +3461,17 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
     Conflict:
-      description: State conflict, duplicate, or failed precondition
+      description: |
+        State conflict, duplicate, or failed precondition. Body `code` values added in v0.5.0
+        (generic `Error` / `OtherConflictError` shape, not pinned schemas):
+        `COMMISSION_FINAL` (trip locked; void or cancel refused, use an adjustment),
+        `ADJUSTMENT_INCREASE_NOT_ALLOWED`, `CURRENCY_MISMATCH`, `DISPUTE_WINDOW_CLOSED`
+        (a dispute at exactly `disputeWindowEndsAt` is closed), `DISPUTE_OPEN`,
+        `DISPUTE_ALREADY_OPEN`, `DISPUTE_RESPONSE_WINDOW_OPEN` (admin decision before
+        `responseDueAt` without a transporter response), `DISPUTE_RESPONSE_WINDOW_CLOSED`,
+        `DISPUTE_NOT_AWAITING_RESPONSE`, `TRIP_NOT_COMPLETED`, `BOOKING_NOT_LOCKED`,
+        `SETTLEMENT_AMOUNT_MISMATCH`, `NO_OFFER_TO_ACCEPT`, `TRIP_AMOUNT_MISMATCH`,
+        `NET_PAYOUT_NEGATIVE`.
       content:
         application/json:
           schema:
@@ -2792,39 +3641,51 @@ components:
           enum:
             - Outstanding commission must be settled before taking new work.
         details:
-          oneOf:
-            - type: object
-              additionalProperties: false
-              required: [outstandingAmount, outstandingByCurrency]
-              properties:
-                outstandingAmount:
-                  allOf:
-                    - $ref: '#/components/schemas/PositiveMoneyAmount'
-                  description: |
-                    Required when owing is in exactly one currency. MUST equal the
-                    sole `outstandingByCurrency` entry (sum of open `remainingAmount`
-                    in that currency).
-                outstandingByCurrency:
-                  type: array
-                  minItems: 1
-                  maxItems: 1
-                  items:
-                    $ref: '#/components/schemas/PositiveMoneyAmount'
-            - type: object
-              additionalProperties: false
-              required: [outstandingByCurrency]
-              properties:
-                outstandingByCurrency:
-                  type: array
-                  minItems: 2
-                  items:
-                    $ref: '#/components/schemas/PositiveMoneyAmount'
-                  description: |
-                    One positive amount per currency with unpaid remaining commission.
-                    Present when owing spans more than one currency; do not also send
-                    a single `outstandingAmount`.
+          $ref: '#/components/schemas/CommissionOutstandingDetails'
         requestId:
           type: string
+
+    CommissionOutstandingDetails:
+      description: |
+        Shared `details` shape for unpaid commission owing (v0.5.0 extracted it from
+        `CommissionOutstandingError` without changing the wire shape). Used by the 409
+        `CommissionOutstandingError.details` and by the preview's
+        `SubmissionBlockerCommissionOutstanding.details`, so one client parser handles both.
+        Exactly one branch matches: one currency carries `outstandingAmount` plus a
+        one-entry `outstandingByCurrency`; two or more currencies carry only
+        `outstandingByCurrency`. Amounts are the sum of open `remainingAmount` for the one
+        transporter company in question, never another company's receivables.
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [outstandingAmount, outstandingByCurrency]
+          properties:
+            outstandingAmount:
+              allOf:
+                - $ref: '#/components/schemas/PositiveMoneyAmount'
+              description: |
+                Required when owing is in exactly one currency. MUST equal the
+                sole `outstandingByCurrency` entry (sum of open `remainingAmount`
+                in that currency).
+            outstandingByCurrency:
+              type: array
+              minItems: 1
+              maxItems: 1
+              items:
+                $ref: '#/components/schemas/PositiveMoneyAmount'
+        - type: object
+          additionalProperties: false
+          required: [outstandingByCurrency]
+          properties:
+            outstandingByCurrency:
+              type: array
+              minItems: 2
+              items:
+                $ref: '#/components/schemas/PositiveMoneyAmount'
+              description: |
+                One positive amount per currency with unpaid remaining commission.
+                Present when owing spans more than one currency; do not also send
+                a single `outstandingAmount`.
 
     OtherConflictError:
       description: |
@@ -2917,14 +3778,17 @@ components:
       type: string
       enum: [open, confirmed, not_confirmed]
       description: |
-        `open` until an admin records a finding. `confirmed` / `not_confirmed` mirror the
-        finding outcome (user-approved 2026-11-10).
+        `open` until an admin records a finding. `open` is the pending/undecided state
+        (this contract does not use a separate `pending` value). `confirmed` /
+        `not_confirmed` mirror the finding outcome (user-approved 2026-11-10).
 
     CreateOffPlatformReportRequest:
       type: object
       additionalProperties: false
       required: [suspectedParty, description]
       properties:
+        category:
+          $ref: '#/components/schemas/OffPlatformReportCategory'
         suspectedParty:
           type: string
           enum: [shipper, transporter, both, unknown]
@@ -2939,6 +3803,16 @@ components:
           items:
             type: string
             format: uri
+
+    OffPlatformReportCategory:
+      type: string
+      enum: [off_platform_circumvention, repeated_dispute_abuse]
+      default: off_platform_circumvention
+      description: |
+        v0.5.0. `off_platform_circumvention` (default) is the v0.4.0 report.
+        `repeated_dispute_abuse` (user decision 2026-11-11: repeat abuse gets the same
+        time-limited ban): repeated bad-faith disputes or reversal requests. Admin-filed only
+        (403 for other callers); a confirmed finding applies the same fixed 14-day bans.
 
     OffPlatformReport:
       type: object
@@ -2959,6 +3833,8 @@ components:
           $ref: '#/components/schemas/Uuid'
         reporterRole:
           $ref: '#/components/schemas/UserRole'
+        category:
+          $ref: '#/components/schemas/OffPlatformReportCategory'
         suspectedParty:
           type: string
           enum: [shipper, transporter, both, unknown]
@@ -2988,6 +3864,59 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/OffPlatformReport'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    OwnOffPlatformReport:
+      type: object
+      additionalProperties: false
+      description: |
+        v0.5.0. Reduced first-party view of a report the caller filed.
+        Never includes admin notes, findings, evidence, or another party's filing.
+      required: [id, status, createdAt, bookingId, decidedAt]
+      properties:
+        id:
+          $ref: '#/components/schemas/Uuid'
+        status:
+          $ref: '#/components/schemas/OffPlatformReportStatus'
+        createdAt:
+          $ref: '#/components/schemas/DateTime'
+        bookingId:
+          allOf:
+            - $ref: '#/components/schemas/Uuid'
+          description: The booking the caller filed this report against (already known to them).
+        counterpartyCompanyId:
+          type: string
+          format: uuid
+          nullable: true
+          description: |
+            The other company on that booking (shipper if the reporter acted as transporter,
+            or transporter if the reporter acted as shipper). The reporter already sees this
+            on `getBooking`. Null when the reporter is an admin (no single counterparty).
+        decidedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: |
+            When an admin recorded a finding (`OffPlatformFinding.reviewedAt`). Null while
+            `status` is `open`. No finding internals are included.
+      example:
+        id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+        status: open
+        createdAt: '2026-11-10T09:00:00.000Z'
+        bookingId: 7c9e6679-7425-40de-944b-e07fc1f90ae7
+        counterpartyCompanyId: 0f14d0ab-9605-4a62-a9e4-90f8267b93d7
+        decidedAt: null
+
+    OwnOffPlatformReportListResponse:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/OwnOffPlatformReport'
         meta:
           $ref: '#/components/schemas/PaginationMeta'
 
@@ -3598,6 +4527,18 @@ components:
           $ref: '#/components/schemas/DateTime'
         updatedAt:
           $ref: '#/components/schemas/DateTime'
+        counterpartyRestrictedUntil:
+          type: string
+          format: date-time
+          nullable: true
+          readOnly: true
+          description: |
+            User decision 2026-11-11 (the other party is told when someone is banned).
+            Server-computed per caller. For a caller outside the truck's owning company:
+            the latest `endsAt` of active off-platform bans on the owning company, or null
+            when none is active. Always null for members of the owning company (they see
+            `Company.bannedUntil`) and for admins (they use `listOffPlatformBans`).
+            Date-time only: no reason, finding, report, evidence, or reporter is disclosed.
 
     CreateTruckRequest:
       type: object
@@ -3929,6 +4870,21 @@ components:
           $ref: '#/components/schemas/DateTime'
         updatedAt:
           $ref: '#/components/schemas/DateTime'
+        counterpartyRestrictedUntil:
+          type: string
+          format: date-time
+          nullable: true
+          readOnly: true
+          description: |
+            User decision 2026-11-11 (the other party is told when someone is banned).
+            Server-computed per caller: the latest `endsAt` of active off-platform bans on
+            the caller's counterparty for this quotation, or null when none is active.
+            Shipper-side callers see the quotation's transporter company (or submitting
+            user); transporter-side callers see the load's shipper company. Always null for
+            admins (they use `listOffPlatformBans`). A non-null value means
+            `acceptQuotation` / `confirmBooking` would return 409 `ACCOUNT_BANNED` with
+            `bannedParty: counterparty_company`. Date-time only: no reason, finding, report,
+            evidence, or reporter is disclosed. See `x-notification-events`.
 
     CreateQuotationRequest:
       type: object
@@ -4000,15 +4956,23 @@ components:
         - awaiting_shipper_acceptance
         - completed
         - disputed
+        - locked
         - cancelled
       description: |
-        Trip completion is distinct from transporter `delivered` and from payment release
-        (QA-003 provisional Charlie policy — not user-approved).
-        On shipper delivery acceptance (with POD present), status becomes `completed`.
+        Trip completion is distinct from transporter `delivered` and from payment release.
+        On shipper delivery acceptance (with POD present), status becomes `completed`
+        (user decision 2026-11-11) and a 24-hour dispute window opens
+        (`Booking.disputeWindowEndsAt`).
+        `locked` (v0.5.0): the window closed with no dispute, or an admin resolved a dispute.
+        Commission is final; no void or cancel is possible, only admin adjustments
+        (`recordBookingAdjustment`). The server treats `completed` with
+        `disputeWindowEndsAt <= now` as `locked` on every read and write.
         Release remains a separate admin/ops recording step and must not redefine completion.
         **Commission (user-approved 2026-11-09):** 5% is recognised when status becomes
         `completed`, not when payment is released.
-        `disputed` holds release until admin resolution (QA-005).
+        `disputed` holds release until the dispute is settled by the parties or resolved by
+        an admin (QA-005). An open dispute keeps the trip unlocked and commission not final,
+        even after `disputeWindowEndsAt`.
         `awaiting_release` was removed in v0.2.0 as unsafe conflation with completion.
 
     Booking:
@@ -4049,11 +5013,56 @@ components:
         completionStatus:
           $ref: '#/components/schemas/CompletionStatus'
         agreedAmount:
-          $ref: '#/components/schemas/PositiveMoneyAmount'
+          allOf:
+            - $ref: '#/components/schemas/PositiveMoneyAmount'
+          description: |
+            **Canonical agreed price** (v0.5.0). Set from the accepted quotation amount and
+            immutable after accept. The shipper pays this in full. Commission recognition,
+            `getBookingPayoutBreakdown`, and release records all use this value;
+            `PaymentReleaseRecord.tripAmount` is a copy of it.
         commissionRateBps:
           type: integer
           description: Commission in basis points; MVP fixed at 500 (5.00%)
           enum: [500]
+        adjustedAgreedAmount:
+          type: object
+          nullable: true
+          readOnly: true
+          required: [amountMinor, currency]
+          properties:
+            amountMinor:
+              type: integer
+              minimum: 0
+            currency:
+              $ref: '#/components/schemas/CurrencyCode'
+          description: |
+            v0.5.0. Effective agreed amount after the latest admin adjustment or
+            `adjust_amount` dispute resolution; null when never adjusted. `agreedAmount`
+            itself is never rewritten. Commission, payout breakdown and release use this value
+            when set. `0` means the trip was fully reversed.
+        deliveryConfirmedAt:
+          type: string
+          format: date-time
+          nullable: true
+          readOnly: true
+          description: v0.5.0. When the shipper accepted delivery and the trip became `completed`.
+        disputeWindowEndsAt:
+          type: string
+          format: date-time
+          nullable: true
+          readOnly: true
+          description: |
+            v0.5.0. Exactly `deliveryConfirmedAt` + 24 hours, server-set. The shipper may call
+            `raiseBookingDispute` only before this time.
+        lockedAt:
+          type: string
+          format: date-time
+          nullable: true
+          readOnly: true
+          description: |
+            v0.5.0. When the trip locked: `disputeWindowEndsAt` if no dispute was raised, or
+            the time the dispute was settled by the parties or resolved by an admin.
+            Commission is final from here.
         confirmedPaymentArrangementId:
           allOf:
             - $ref: '#/components/schemas/Uuid'
@@ -4327,7 +5336,11 @@ components:
             - $ref: '#/components/schemas/MoneyAmount'
           type: object
           nullable: true
-          description: Processing fee recorded separately from Truber commission.
+          description: |
+            Processing fee recorded separately from Truber commission; deducted from the
+            transporter payout. Returned only to transporter-company members and admins.
+            Shipper-side callers always receive null (user decision 2026-11-11: shippers do
+            not see the payout breakdown).
         notes:
           type: string
           nullable: true
@@ -4382,6 +5395,7 @@ components:
         - releaseStatus
         - tripAmount
         - commissionAmount
+        - commissionRateBps
         - transporterNetAmount
         - recordedAt
         - recordedByUserId
@@ -4397,7 +5411,9 @@ components:
         tripAmount:
           allOf:
             - $ref: '#/components/schemas/PositiveMoneyAmount'
-          description: Completed trip amount used as commission base.
+          description: |
+            Copy of `Booking.agreedAmount` (the canonical agreed price), fixed when the record
+            is written after completion. Never an independently typed figure (v0.5.0).
         commissionAmount:
           allOf:
             - $ref: '#/components/schemas/NonNegativeMoneyAmount'
@@ -4405,6 +5421,9 @@ components:
         commissionRateBps:
           type: integer
           enum: [500]
+          description: |
+            Rate applied on this record. **Required and immutable** (v0.5.0) so historical
+            records keep their rate if the commission rate ever changes.
         processingFeesTotal:
           allOf:
             - $ref: '#/components/schemas/NonNegativeMoneyAmount'
@@ -4444,7 +5463,9 @@ components:
         (shipper accepted delivery with POD, or admin resolved dispute to completed with
         audit — QA-001/QA-005). Release is held while `disputed`. Manually recorded only;
         never claims Truber moved funds; no float; no live provider API.
-        `tripAmount` must be positive; `processingFeesTotal` may be zero (QA-007).
+        `tripAmount` is optional (v0.5.0): the server uses `Booking.agreedAmount`;
+        if `tripAmount` is sent it must equal that amount exactly, else 409
+        `TRIP_AMOUNT_MISMATCH`. `processingFeesTotal` may be zero (QA-007).
         Server computes `commissionAmount` (half-up 5%). `processingFeesTotal`, if supplied,
         must match the sum of recorded transaction processing fees in the same currency
         (409 if it does not). Mixed currency rejected. 409 if commission + fees would
@@ -4452,7 +5473,7 @@ components:
         payment is recorded. For cash, no fare payout due is created and commission
         owing is not settled by this call. For `deposit_balance`, an unreceipted
         balance remainder is not payable (no float / no lending).
-      required: [releaseChannel, tripAmount]
+      required: [releaseChannel]
       properties:
         releaseChannel:
           $ref: '#/components/schemas/ReleaseChannel'
@@ -4466,6 +5487,331 @@ components:
         notes:
           type: string
           maxLength: 2000
+
+    PayoutFeeType:
+      type: string
+      enum: [processing_fee]
+      description: |
+        v0.5.0. Fee kinds deducted from the transporter payout. Only processing fees
+        recorded on payment transactions exist today; Truber charges no fee besides the
+        commission.
+
+    RecordedFee:
+      type: object
+      description: v0.5.0. One recorded fee, taken from a payment transaction.
+      required: [feeType, amount, transactionId]
+      properties:
+        feeType:
+          $ref: '#/components/schemas/PayoutFeeType'
+        amount:
+          $ref: '#/components/schemas/NonNegativeMoneyAmount'
+        transactionId:
+          $ref: '#/components/schemas/Uuid'
+
+    UnknownFee:
+      type: object
+      description: |
+        v0.5.0. A fee that may still be deducted but has no confirmed figure. No amount
+        is given on purpose; the client must not show it as 0.
+      required: [feeType, reason]
+      properties:
+        feeType:
+          $ref: '#/components/schemas/PayoutFeeType'
+        reason:
+          type: string
+          enum: [provider_not_contracted, payment_rail_not_selected]
+          description: |
+            `provider_not_contracted`: no Truber contract fixes the provider fee.
+            `payment_rail_not_selected`: the payment method/rail is not chosen yet.
+
+    PayoutBlockedReason:
+      type: string
+      enum:
+        - no_confirmed_arrangement
+        - trip_not_completed
+        - disputed
+        - cash_fare_not_held
+        - shipper_payment_not_recorded
+        - balance_not_receipted
+        - shipper_funds_not_received
+        - protection_evidence_missing
+        - already_released
+        - net_payout_negative
+      description: |
+        v0.5.0. Why a transporter payout is not payable now. `cash_fare_not_held`:
+        Truber never held the fare. `shipper_payment_not_recorded`: corporate credit before
+        the shipper pays. `balance_not_receipted`: deposit_balance remainder not receipted.
+        `shipper_funds_not_received`: prepay/escrow funds not recorded. `net_payout_negative`:
+        commission plus recorded fees exceed the agreed amount (the read-side form of the
+        write-side 409 `NET_PAYOUT_NEGATIVE`). Truber never lends.
+
+    BookingPayoutBreakdown:
+      type: object
+      description: v0.5.0. Server-computed payout split for one booking. Records only.
+      required:
+        - bookingId
+        - transporterCompanyId
+        - agreedAmount
+        - commissionRateBps
+        - commissionAmount
+        - fees
+        - feesTotal
+        - netPayout
+        - paymentMethod
+        - paymentProtected
+        - farePayoutDueThroughTruber
+        - releaseStatus
+        - payoutBlockedReasons
+        - fundsMovementClaimedByTruber
+        - computedAt
+      properties:
+        bookingId:
+          $ref: '#/components/schemas/Uuid'
+        transporterCompanyId:
+          $ref: '#/components/schemas/Uuid'
+        agreedAmount:
+          allOf:
+            - $ref: '#/components/schemas/PositiveMoneyAmount'
+          description: Equals `Booking.agreedAmount`, the canonical amount the shipper pays in full.
+        adjustedAgreedAmount:
+          type: object
+          nullable: true
+          required: [amountMinor, currency]
+          properties:
+            amountMinor:
+              type: integer
+              minimum: 0
+            currency:
+              $ref: '#/components/schemas/CurrencyCode'
+          description: |
+            v0.5.0. Copy of `Booking.adjustedAgreedAmount`; null when never adjusted. When
+            set, `commissionAmount` and `netPayout` are computed on this amount, not on
+            `agreedAmount`.
+        commissionRateBps:
+          type: integer
+          enum: [500]
+        commissionAmount:
+          allOf:
+            - $ref: '#/components/schemas/NonNegativeMoneyAmount'
+          description: Half-up 5% of `agreedAmount`, server-computed.
+        commissionStatus:
+          type: string
+          nullable: true
+          enum: [open, held, settled_on_release, collected, voided, cancelled, null]
+          description: |
+            Status of the recognised receivable; null before trip completion. Same values as
+            `CommissionReceivableStatus`, inlined (not `allOf` + `nullable`) so null validates
+            under strict OpenAPI 3.0.3 tooling.
+        fees:
+          type: array
+          description: Recorded fees only, same currency as `agreedAmount`. Empty when none recorded.
+          items:
+            $ref: '#/components/schemas/RecordedFee'
+        feesTotal:
+          allOf:
+            - $ref: '#/components/schemas/NonNegativeMoneyAmount'
+          description: Sum of `fees`. 0 means no fee has been recorded, not that none will apply.
+        netPayout:
+          type: object
+          nullable: true
+          required: [amountMinor, currency]
+          properties:
+            amountMinor:
+              type: integer
+              minimum: 0
+            currency:
+              $ref: '#/components/schemas/CurrencyCode'
+          description: |
+            `agreedAmount − commissionAmount − feesTotal`. Null for cash (no fare payout through
+            Truber) and when the result would be negative (`payoutBlockedReasons` then contains
+            `net_payout_negative`). Never negative. Same shape as `NonNegativeMoneyAmount`,
+            inlined (not `allOf` + `nullable`) so null validates under strict OpenAPI 3.0.3 tooling.
+        paymentMethod:
+          type: string
+          nullable: true
+          enum: [prepay, escrow, deposit_balance, cash, corporate_credit, null]
+          description: |
+            Method of the confirmed arrangement; null when none is confirmed. Same values as
+            `PaymentMethod`, inlined so null validates under strict OpenAPI 3.0.3 tooling.
+        paymentArrangementId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Confirmed arrangement id; null when none is confirmed.
+        paymentProtected:
+          type: boolean
+          description: |
+            True only when the confirmed arrangement has `protectionStatus=protected`.
+            Always false for cash.
+        farePayoutDueThroughTruber:
+          type: boolean
+          description: False for cash and when no arrangement is confirmed.
+        releaseStatus:
+          $ref: '#/components/schemas/ReleaseStatus'
+        payoutBlockedReasons:
+          type: array
+          description: Empty only when a release may be recorded now.
+          items:
+            $ref: '#/components/schemas/PayoutBlockedReason'
+        fundsMovementClaimedByTruber:
+          type: boolean
+          enum: [false]
+        computedAt:
+          $ref: '#/components/schemas/DateTime'
+
+    SubmissionBlockerAccountBanned:
+      type: object
+      additionalProperties: false
+      description: |
+        v0.5.0. Preview-side warning that an active off-platform ban blocks new work.
+        Same code as the pinned `AccountBannedError` returned by `createQuotation`. Deliberately
+        omits `message` and `details.bannedParty`: only bans on the calling user or the
+        request's `transporterCompanyId` are considered, never a counterparty's ban.
+      required: [code, details]
+      properties:
+        code:
+          type: string
+          enum: [ACCOUNT_BANNED]
+        details:
+          type: object
+          additionalProperties: false
+          required: [bannedUntil]
+          properties:
+            bannedUntil:
+              allOf:
+                - $ref: '#/components/schemas/DateTime'
+              description: |
+                Latest `endsAt` among the active bans on the calling user or the request's
+                `transporterCompanyId`.
+
+    SubmissionBlockerCommissionOutstanding:
+      type: object
+      additionalProperties: false
+      description: |
+        v0.5.0. Preview-side warning that unpaid commission blocks new work. Same code
+        and same `details` schema (`CommissionOutstandingDetails`) as the pinned 409
+        `CommissionOutstandingError` returned by `createQuotation`, so one parser reads both.
+        No `message`. Computed only for the request's `transporterCompanyId`. Not
+        currency-scoped: any currency owed blocks.
+      required: [code, details]
+      properties:
+        code:
+          type: string
+          enum: [COMMISSION_OUTSTANDING]
+        details:
+          $ref: '#/components/schemas/CommissionOutstandingDetails'
+
+    PayoutPreviewRequest:
+      type: object
+      additionalProperties: false
+      required: [transporterCompanyId, amount]
+      properties:
+        transporterCompanyId:
+          allOf:
+            - $ref: '#/components/schemas/Uuid'
+          description: |
+            Required, as on `CreateQuotationRequest`. The transporter company the quote would be
+            submitted for. The caller must be a member (admin may name any transporter company;
+            there is no default). `submissionBlockers` are computed for this company only.
+        amount:
+          allOf:
+            - $ref: '#/components/schemas/PositiveMoneyAmount'
+          description: Proposed quote amount (what the shipper would pay in full).
+        paymentMethod:
+          $ref: '#/components/schemas/PaymentMethod'
+        loadId:
+          allOf:
+            - $ref: '#/components/schemas/Uuid'
+          description: Optional. When given, `amount.currency` must equal the load currency (400 otherwise).
+
+    PayoutPreview:
+      type: object
+      description: v0.5.0. Server-computed, nothing stored.
+      required:
+        - agreedAmount
+        - commissionRateBps
+        - commissionAmount
+        - knownFees
+        - knownFeesTotal
+        - netPayoutBeforeUnknownFees
+        - feeStatus
+        - unknownFees
+        - farePayoutDueThroughTruber
+        - paymentProtectedPossible
+        - submissionBlockers
+      properties:
+        agreedAmount:
+          $ref: '#/components/schemas/PositiveMoneyAmount'
+        commissionRateBps:
+          type: integer
+          enum: [500]
+        commissionAmount:
+          $ref: '#/components/schemas/NonNegativeMoneyAmount'
+        knownFees:
+          type: array
+          description: Fees with a confirmed figure. Empty in v0.5.0 (no contracted provider fee).
+          items:
+            type: object
+            required: [feeType, amount]
+            properties:
+              feeType:
+                $ref: '#/components/schemas/PayoutFeeType'
+              amount:
+                $ref: '#/components/schemas/NonNegativeMoneyAmount'
+        knownFeesTotal:
+          allOf:
+            - $ref: '#/components/schemas/NonNegativeMoneyAmount'
+          description: Sum of `knownFees` only. Not a claim that total fees are this amount.
+        netPayoutBeforeUnknownFees:
+          allOf:
+            - $ref: '#/components/schemas/NonNegativeMoneyAmount'
+          description: |
+            `agreedAmount − commissionAmount − knownFeesTotal`. The final net can be lower by
+            the fees in `unknownFees`.
+        feeStatus:
+          type: string
+          enum: [unknown, known, not_applicable]
+          description: |
+            `unknown`: at least one fee may apply with no confirmed figure (see `unknownFees`).
+            `known`: every applicable fee is in `knownFees`.
+            `not_applicable`: cash; Truber processes no payment, so no processing fee is
+            deducted through Truber.
+        unknownFees:
+          type: array
+          description: Non-empty exactly when `feeStatus` is `unknown`.
+          items:
+            $ref: '#/components/schemas/UnknownFee'
+        paymentMethod:
+          type: string
+          nullable: true
+          enum: [prepay, escrow, deposit_balance, cash, corporate_credit, null]
+          description: |
+            Echo of the request `paymentMethod`; null when none was given. Same values as
+            `PaymentMethod`, inlined so null validates under strict OpenAPI 3.0.3 tooling.
+        farePayoutDueThroughTruber:
+          type: boolean
+          description: False for cash (Truber never holds the fare).
+        paymentProtectedPossible:
+          type: boolean
+          description: False for cash (never protected). True otherwise; actual protection needs provider evidence.
+        submissionBlockers:
+          type: array
+          description: |
+            Why `createQuotation` would be refused right now for the request's
+            `transporterCompanyId` (and the calling user). Computed for that one company
+            only; another company's bans or receivables never appear. Empty when nothing
+            blocks. Informational only; the server re-checks on submission. When both apply,
+            `ACCOUNT_BANNED` is listed first (same order as the 409 gates). Each item matches
+            exactly one branch, selected by `code` (discriminator).
+          items:
+            oneOf:
+              - $ref: '#/components/schemas/SubmissionBlockerAccountBanned'
+              - $ref: '#/components/schemas/SubmissionBlockerCommissionOutstanding'
+            discriminator:
+              propertyName: code
+              mapping:
+                ACCOUNT_BANNED: '#/components/schemas/SubmissionBlockerAccountBanned'
+                COMMISSION_OUTSTANDING: '#/components/schemas/SubmissionBlockerCommissionOutstanding'
 
     ProofOfDelivery:
       type: object
@@ -4589,8 +5935,9 @@ components:
       type: object
       description: |
         Shipper decision. Server rejects (409) if no POD artifact exists for the booking
-        (QA-008). On `accepted`, `completionStatus` becomes `completed` (QA-003 provisional).
-        On `disputed`, `completionStatus` becomes `disputed` and release is held (QA-005).
+        (QA-008). On `accepted`, `completionStatus` becomes `completed` and the 24-hour
+        dispute window opens (user decision 2026-11-11). On `disputed`, `completionStatus`
+        becomes `disputed` and release is held (QA-005).
       required: [decision]
       properties:
         decision:
@@ -4689,15 +6036,21 @@ components:
 
     ResolveDisputeRequest:
       type: object
+      description: |
+        `adjustedAgreedAmount` is required for `adjust_amount` and rejected (400) otherwise.
       required: [resolution, reason]
       properties:
         resolution:
           type: string
-          enum: [complete_trip, cancel_trip]
+          enum: [complete_trip, adjust_amount, cancel_trip]
         reason:
           type: string
           minLength: 1
           maxLength: 2000
+        adjustedAgreedAmount:
+          allOf:
+            - $ref: '#/components/schemas/NonNegativeMoneyAmount'
+          description: v0.5.0. New effective agreed amount for `adjust_amount`; `0` reverses.
 
     DisputeResolutionRecord:
       type: object
@@ -4707,9 +6060,19 @@ components:
           $ref: '#/components/schemas/Uuid'
         resolution:
           type: string
-          enum: [complete_trip, cancel_trip]
+          enum: [complete_trip, adjust_amount, cancel_trip]
         reason:
           type: string
+        adjustmentId:
+          type: string
+          format: uuid
+          nullable: true
+          description: v0.5.0. The `CommissionAdjustment` recorded for `adjust_amount`; otherwise null.
+        disputeId:
+          type: string
+          format: uuid
+          nullable: true
+          description: v0.5.0. The `BookingDispute` this resolution closed.
         resolvedByUserId:
           $ref: '#/components/schemas/Uuid'
         resolvedAt:
@@ -4964,13 +6327,22 @@ components:
 
     CommissionReceivableStatus:
       type: string
-      enum: [open, settled_on_release, collected, voided]
+      enum: [open, held, settled_on_release, collected, voided, cancelled]
       description: |
-        `open`: recognised at completion, not yet settled or collected.
+        `open`: recognised at completion, not yet fully paid. Counts toward
+        `outstandingByCurrency` and the owing gate.
+        `held` (v0.5.0): a dispute is open on the trip. Not final (`finalAt` null). Excluded
+        from `outstandingByCurrency`, the owing gate, collections and credit netting; shown
+        in `CommissionAccount.heldByCurrency`. Leaves `held` when the dispute is settled or
+        resolved (to `open`, `collected` or `cancelled`).
         `settled_on_release`: commission deducted from held trip funds on a release record
         (not used for cash fare payouts).
-        `collected`: ops recorded a later collection (cash / residual owing).
-        `voided`: the completion was later cancelled or refunded by admin; revenue reversed.
+        `collected`: fully paid by recorded collections and/or applied credit.
+        `voided`: the trip was cancelled **before lock** with no open dispute (admin
+        `cancelBooking` before `disputeWindowEndsAt`). Any part already paid becomes
+        commission credit (user decision 2026-11-11), never refunded in cash.
+        `cancelled` (v0.5.0): an adjustment brought `effectiveAmount` to 0 with nothing
+        left owing. After lock there are no voids, only adjustments.
 
     CommissionReceivable:
       type: object
@@ -4981,6 +6353,7 @@ components:
         - amount
         - collectedAmount
         - remainingAmount
+        - commissionRateBps
         - status
         - recognisedAt
       properties:
@@ -4994,6 +6367,52 @@ components:
           allOf:
             - $ref: '#/components/schemas/NonNegativeMoneyAmount'
           description: Original recognised 5% of the booking agreed amount, half-up to minor unit. Immutable.
+        reducedAmount:
+          allOf:
+            - $ref: '#/components/schemas/NonNegativeMoneyAmount'
+          description: |
+            v0.5.0. Total commission removed by `CommissionAdjustment` entries on this
+            receivable (sum of `previousCommission − newCommission`). Starts at zero.
+        effectiveAmount:
+          allOf:
+            - $ref: '#/components/schemas/NonNegativeMoneyAmount'
+          description: |
+            v0.5.0. Commission after adjustments: `amount − reducedAmount` (= half-up 5% of the
+            latest `newTripAmount`). Equals `amount` when never adjusted.
+        creditAppliedAmount:
+          allOf:
+            - $ref: '#/components/schemas/NonNegativeMoneyAmount'
+          description: |
+            v0.5.0. Commission credit from the company's balance used to pay this receivable.
+            Starts at zero.
+        disputeWindowEndsAt:
+          allOf:
+            - $ref: '#/components/schemas/DateTime'
+          description: v0.5.0. `recognisedAt` + 24 hours (copy of `Booking.disputeWindowEndsAt`).
+        finalAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: |
+            v0.5.0. When the commission became final: `disputeWindowEndsAt` if no dispute was
+            opened, otherwise the time the dispute was settled or resolved. Null while `held`
+            or before the window ends.
+        disputeRef:
+          type: string
+          format: uuid
+          nullable: true
+          description: v0.5.0. The open `BookingDispute` while `held`; otherwise null.
+        heldSince:
+          type: string
+          format: date-time
+          nullable: true
+          description: v0.5.0. When the receivable entered `held`; null when not held.
+        commissionRateBps:
+          type: integer
+          enum: [500]
+          description: |
+            Rate applied at recognition (v0.5.0). **Required and immutable**, so the
+            receivable keeps its rate if the commission rate ever changes.
         collectedAmount:
           allOf:
             - $ref: '#/components/schemas/NonNegativeMoneyAmount'
@@ -5005,11 +6424,16 @@ components:
             - $ref: '#/components/schemas/NonNegativeMoneyAmount'
           description: |
             Unpaid remainder on this receivable, visible after partial collections.
-            For `open`: remainingAmount + collectedAmount = amount.
-            For `collected`: remainingAmount is 0 and collectedAmount = amount.
+            For `open` and `held`: remainingAmount + collectedAmount + creditAppliedAmount
+            = effectiveAmount, unless paid amounts exceeded `effectiveAmount` after an
+            adjustment, in which case remainingAmount is 0 and the excess was credited
+            (`CommissionAdjustment.creditedAmount`). v0.5.0.
+            For `collected`: remainingAmount is 0 and collectedAmount + creditAppliedAmount
+            covers `effectiveAmount`.
             For `settled_on_release`: remainingAmount is 0; any previously collected
             amount stays in collectedAmount; the rest was settled by the release.
-            For `voided`: remainingAmount is 0; collectedAmount is left as already recorded.
+            For `voided` / `cancelled`: remainingAmount is 0; collectedAmount is left as
+            already recorded and any paid part became commission credit.
         status:
           $ref: '#/components/schemas/CommissionReceivableStatus'
         recognisedAt:
@@ -5028,7 +6452,13 @@ components:
 
     CommissionAccount:
       type: object
-      required: [companyId, outstandingByCurrency, receivables]
+      description: |
+        Transporter commission balances (records only). `outstandingByCurrency` is open
+        owing and is what the commission gate checks. `heldByCurrency` (dispute open) is
+        **excluded from `outstandingByCurrency` and from the commission gate**: held
+        commission does not block work (user decision 2026-11-11). `creditByCurrency` is
+        commission credit; credit is applied to future commission and, where server policy allows, to outstanding commission. Credit is never paid out in cash.
+      required: [companyId, outstandingByCurrency, heldByCurrency, creditByCurrency, receivables]
       properties:
         companyId:
           $ref: '#/components/schemas/Uuid'
@@ -5037,7 +6467,8 @@ components:
           description: |
             One entry per currency with unpaid owing. Each amount is the sum of
             `remainingAmount` on `open` receivables in that currency — not the
-            original recognised `amount`. Empty when nothing is outstanding, which
+            original recognised `amount`. Excludes `held` receivables (dispute open;
+            see `heldByCurrency`) and is computed after credit netting (v0.5.0). Empty when nothing is outstanding, which
             unblocks `createQuotation`, `acceptQuotation`, and `confirmBooking`.
             Owing and collections are per currency. The accept-block is not
             currency-scoped: those three operations are blocked whenever this
@@ -5053,19 +6484,361 @@ components:
             Convenience copy when `outstandingByCurrency` has exactly one entry;
             MUST equal that entry. Null or omitted when outstanding is empty or
             spans more than one currency.
+        heldByCurrency:
+          type: array
+          description: |
+            v0.5.0. Commission on `held` receivables (dispute open), one entry per currency,
+            sum of their `remainingAmount`. Not owing yet: excluded from
+            `outstandingByCurrency` and from the owing gate. Empty when none.
+          items:
+            $ref: '#/components/schemas/PositiveMoneyAmount'
+        creditByCurrency:
+          type: array
+          description: |
+            v0.5.0. Unused commission credit on the transporter's Truber balance, one entry
+            per currency with a positive balance. Created when an adjustment or a before-lock
+            void reduces commission that was already paid, or when a recorded commission
+            collection exceeds what was owed. Same currency only, oldest credit first:
+            credit is applied to future commission and, where server policy allows, to outstanding commission. Never applied to `held` receivables. Credit stays on
+            the company's balance if the transporter stops using Truber and later returns.
+            It is **never refunded in cash**, never paid out, and is not money held by
+            Truber. Empty when there is none.
+          items:
+            $ref: '#/components/schemas/PositiveMoneyAmount'
         receivables:
           type: array
           items:
             $ref: '#/components/schemas/CommissionReceivable'
 
+    CommissionAdjustmentSource:
+      type: string
+      enum: [party_settlement, admin_decision]
+      description: |
+        `party_settlement`: the shipper and transporter agreed a lower amount
+        (`acceptDisputeSettlement`). `admin_decision`: an admin decided
+        (`resolveBookingDispute` with `adjust_amount`, or `recordBookingAdjustment`).
+
+    CommissionAdjustment:
+      type: object
+      additionalProperties: false
+      description: |
+        v0.5.0 (user decision 2026-11-11). Append-only record of a trip reversal or reduction;
+        never an undo. Same entry type for party settlements and admin decisions. Invariant:
+        `previousCommission − newCommission = reducedOpenAmount + creditedAmount`, all in the
+        booking currency, all ≥ 0; `newTripAmount ≤ previousTripAmount`. Credit is never
+        refunded in cash. Visible to admins and the booking's transporter company only;
+        shippers see just `Booking.adjustedAgreedAmount`.
+      required:
+        - id
+        - bookingId
+        - receivableId
+        - transporterCompanyId
+        - source
+        - decidedAt
+        - previousTripAmount
+        - newTripAmount
+        - previousCommission
+        - newCommission
+        - reducedOpenAmount
+        - creditedAmount
+        - reason
+        - recordedByUserId
+        - recordedAt
+        - fundsMovementClaimedByTruber
+      properties:
+        id:
+          $ref: '#/components/schemas/Uuid'
+        bookingId:
+          $ref: '#/components/schemas/Uuid'
+        receivableId:
+          $ref: '#/components/schemas/Uuid'
+        transporterCompanyId:
+          $ref: '#/components/schemas/Uuid'
+        disputeRef:
+          type: string
+          format: uuid
+          nullable: true
+          description: The `BookingDispute` this settles; null for an admin adjustment without one.
+        source:
+          $ref: '#/components/schemas/CommissionAdjustmentSource'
+        shipperAgreedByUserId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Required (non-null) when `source=party_settlement`.
+        transporterAgreedByUserId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Required (non-null) when `source=party_settlement`.
+        decidedAt:
+          $ref: '#/components/schemas/DateTime'
+        previousTripAmount:
+          $ref: '#/components/schemas/NonNegativeMoneyAmount'
+        newTripAmount:
+          $ref: '#/components/schemas/NonNegativeMoneyAmount'
+        previousCommission:
+          $ref: '#/components/schemas/NonNegativeMoneyAmount'
+        newCommission:
+          $ref: '#/components/schemas/NonNegativeMoneyAmount'
+        reducedOpenAmount:
+          allOf:
+            - $ref: '#/components/schemas/NonNegativeMoneyAmount'
+          description: Unpaid owing on this trip that was cancelled or reduced.
+        creditedAmount:
+          allOf:
+            - $ref: '#/components/schemas/NonNegativeMoneyAmount'
+          description: Already-paid commission moved to commission credit (never refunded in cash).
+        reason:
+          type: string
+          maxLength: 2000
+          description: Outcome reason; shown to both parties on the dispute.
+        recordedByUserId:
+          $ref: '#/components/schemas/Uuid'
+        recordedAt:
+          $ref: '#/components/schemas/DateTime'
+        fundsMovementClaimedByTruber:
+          type: boolean
+          enum: [false]
+
+    CommissionAdjustmentListResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/CommissionAdjustment'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    DisputeEvidence:
+      type: object
+      additionalProperties: false
+      required: [kind, uri]
+      properties:
+        kind:
+          type: string
+          enum: [photo, signed_pod, message, other]
+        uri:
+          type: string
+          format: uri
+        note:
+          type: string
+          maxLength: 500
+
+    RaiseDisputeRequest:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 10
+          maxLength: 4000
+        evidence:
+          type: array
+          maxItems: 20
+          items:
+            $ref: '#/components/schemas/DisputeEvidence'
+        proposedAmount:
+          allOf:
+            - $ref: '#/components/schemas/NonNegativeMoneyAmount'
+          description: |
+            Optional shipper settlement offer: the agreed amount the shipper would accept.
+            Booking currency; not above the current effective agreed amount.
+
+    RespondToDisputeRequest:
+      type: object
+      additionalProperties: false
+      required: [statement]
+      properties:
+        statement:
+          type: string
+          minLength: 10
+          maxLength: 4000
+        evidence:
+          type: array
+          maxItems: 20
+          items:
+            $ref: '#/components/schemas/DisputeEvidence'
+        counterOfferAmount:
+          allOf:
+            - $ref: '#/components/schemas/NonNegativeMoneyAmount'
+          description: |
+            Optional transporter counter-offer. Booking currency; not above the current
+            effective agreed amount.
+
+    AcceptDisputeSettlementRequest:
+      type: object
+      additionalProperties: false
+      required: [amount]
+      properties:
+        amount:
+          allOf:
+            - $ref: '#/components/schemas/NonNegativeMoneyAmount'
+          description: Must equal the other side's offer (`proposedAmount` or `counterOfferAmount`).
+
+    DisputeStatus:
+      type: string
+      enum: [awaiting_transporter_response, transporter_responded, settled, resolved]
+      description: |
+        v0.5.0 (user decision 2026-11-11). `awaiting_transporter_response` and
+        `transporter_responded` are open: the trip is `disputed`, not locked, and commission
+        is not final. `settled`: the parties agreed (`settlement`). `resolved`: an admin
+        decided (`resolution`). Both closed states lock the trip, except a `cancel_trip`
+        resolution, which cancels it.
+
+    BookingDispute:
+      type: object
+      additionalProperties: false
+      description: |
+        v0.5.0. A dispute opened by the shipper (at delivery confirmation or inside the
+        24-hour window). Visible in full to both booking parties and admins; never carries
+        commission or payout figures.
+      required: [id, bookingId, stage, raisedByUserId, reason, evidence, status, openedAt, responseDueAt]
+      properties:
+        id:
+          $ref: '#/components/schemas/Uuid'
+        bookingId:
+          $ref: '#/components/schemas/Uuid'
+        stage:
+          type: string
+          enum: [at_delivery_confirmation, dispute_window]
+        raisedByUserId:
+          $ref: '#/components/schemas/Uuid'
+        reason:
+          type: string
+        evidence:
+          type: array
+          items:
+            $ref: '#/components/schemas/DisputeEvidence'
+        proposedAmount:
+          type: object
+          nullable: true
+          required: [amountMinor, currency]
+          properties:
+            amountMinor:
+              type: integer
+              minimum: 0
+            currency:
+              $ref: '#/components/schemas/CurrencyCode'
+        status:
+          $ref: '#/components/schemas/DisputeStatus'
+        openedAt:
+          $ref: '#/components/schemas/DateTime'
+        responseDueAt:
+          allOf:
+            - $ref: '#/components/schemas/DateTime'
+          description: Exactly `openedAt` + 48 hours, server-set.
+        response:
+          type: object
+          nullable: true
+          additionalProperties: false
+          required: [respondedByUserId, respondedAt, statement, evidence]
+          properties:
+            respondedByUserId:
+              $ref: '#/components/schemas/Uuid'
+            respondedAt:
+              $ref: '#/components/schemas/DateTime'
+            statement:
+              type: string
+            evidence:
+              type: array
+              items:
+                $ref: '#/components/schemas/DisputeEvidence'
+            counterOfferAmount:
+              type: object
+              nullable: true
+              required: [amountMinor, currency]
+              properties:
+                amountMinor:
+                  type: integer
+                  minimum: 0
+                currency:
+                  $ref: '#/components/schemas/CurrencyCode'
+        settlement:
+          type: object
+          nullable: true
+          additionalProperties: false
+          description: Present when `status=settled`.
+          required: [amount, acceptedByUserId, acceptedAt]
+          properties:
+            amount:
+              $ref: '#/components/schemas/NonNegativeMoneyAmount'
+            acceptedByUserId:
+              $ref: '#/components/schemas/Uuid'
+            acceptedAt:
+              $ref: '#/components/schemas/DateTime'
+            adjustmentId:
+              type: string
+              format: uuid
+              nullable: true
+        resolution:
+          type: object
+          nullable: true
+          additionalProperties: false
+          description: Present when `status=resolved`. Outcome and reason are shown to both sides.
+          required: [outcome, reason, resolvedAt]
+          properties:
+            outcome:
+              type: string
+              enum: [complete_trip, adjust_amount, cancel_trip]
+            reason:
+              type: string
+            adjustedAgreedAmount:
+              type: object
+              nullable: true
+              required: [amountMinor, currency]
+              properties:
+                amountMinor:
+                  type: integer
+                  minimum: 0
+                currency:
+                  $ref: '#/components/schemas/CurrencyCode'
+            resolvedAt:
+              $ref: '#/components/schemas/DateTime'
+        closedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    BookingDisputeListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/BookingDispute'
+
+    RecordBookingAdjustmentRequest:
+      type: object
+      additionalProperties: false
+      required: [adjustedAgreedAmount, reason]
+      properties:
+        adjustedAgreedAmount:
+          allOf:
+            - $ref: '#/components/schemas/NonNegativeMoneyAmount'
+          description: New effective agreed amount; lower than the current one. `0` reverses the trip.
+        reason:
+          type: string
+          minLength: 8
+          maxLength: 2000
+        disputeId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Optional link to a `BookingDispute` this settles (stored as `disputeRef`).
+
     RecordCommissionCollectionRequest:
       type: object
       description: |
         Records a collection against open commission owing in the given currency.
-        Not a live charge. Amount must be positive and must not exceed the
-        outstanding remaining in that same currency (QA-007). Applied only to open
-        receivables in that currency, oldest-first. Mixed-currency collections
-        are rejected.
+        Not a live charge. Amount must be positive (QA-007). Applied only to open
+        receivables in that currency, oldest-first. Any amount above what is owed becomes
+        commission credit (`CommissionCollectionRecord.creditedAmount`), never paid out in
+        cash. Mixed-currency collections are rejected.
       required: [amount]
       properties:
         amount:
@@ -5085,6 +6858,7 @@ components:
         - amount
         - outstandingAmountAfter
         - outstandingByCurrencyAfter
+        - creditedAmount
         - fundsMovementClaimedByTruber
         - recordedAt
         - recordedByUserId
@@ -5112,6 +6886,13 @@ components:
             `outstandingAmountAfter` is `0`.
           items:
             $ref: '#/components/schemas/PositiveMoneyAmount'
+        creditedAmount:
+          allOf:
+            - $ref: '#/components/schemas/NonNegativeMoneyAmount'
+          description: |
+            v0.5.0. Part of `amount` above what was owed in that currency (minor units, same
+            currency; `0` when none). Held as commission credit against future commission;
+            never paid out in cash.
         externalReference:
           type: string
           nullable: true

@@ -1,8 +1,8 @@
 # Truber backend (auth and loads)
 
-NestJS service for the published API v0.4.0 slice: registration and login, refresh sessions, password reset, OTP account verification, companies, and shipper loads. PostgreSQL with PostGIS stores the data. Nothing in this service moves money or sends email or SMS.
+NestJS service for the published API v0.5.0 (implemented slice): registration and login, refresh sessions, password reset, OTP account verification, companies, shipper loads, trucks, verification-document links, and user/account administration. PostgreSQL with PostGIS stores the data. Nothing in this service moves money or sends email or SMS.
 
-The OpenAPI file at `../api/openapi.yaml` is the published contract (SHA-256 `7f44d228ba8129398a9d2790e3e08770efbfed381fab7be391bef592f38221f4`). This slice does not change that file.
+The OpenAPI file at `../api/openapi.yaml` is the published contract (SHA-256 `8839f1d4afebb3ceda9683d4c83604866ed80c31d094be31afb415fc08460b4a`). This slice does not change that file.
 
 ## Implemented operations
 
@@ -22,6 +22,11 @@ The OpenAPI file at `../api/openapi.yaml` is the published contract (SHA-256 `7f
 | GET, PATCH | `/loads/{loadId}` | Owner edit while `draft` or `posted`. |
 | POST | `/loads/{loadId}/post` | Requires `accountStatus=active` and company `verificationStatus=verified`. |
 | POST | `/loads/{loadId}/cancel` | Owner cancel while no confirmed booking state exists. |
+| GET, POST | `/trucks` | Transporters see their own fleet. Shippers get 403 `TRUCK_BROWSING_DISABLED` (no truck browsing at launch). Admins see all. Create is always `unverified`; registration numbers are normalised. |
+| GET, PATCH | `/trucks/{truckId}` | Owning transporter member or admin. `verificationStatus` is admin-only. A truck the caller cannot see returns 404. |
+| GET, POST | `/verification-documents` | Callers see their own or their companies' documents. Upload stores `submitted` and moves an unverified or rejected company/truck to `pending`. |
+| POST | `/admin/verification-documents/{documentId}/review` | Admin only. Approve or reject once; an `Idempotency-Key` replay returns the same body. |
+| GET, PATCH | `/users/{userId}` | Self, same-company, or admin read. `accountStatus` changes are admin-only. |
 
 Responses used by the tests are validated against the operation schemas in `api/openapi.yaml`.
 
@@ -30,9 +35,7 @@ Responses used by the tests are validated against the operation schemas in `api/
 These routes are absent. They respond with 404 and the shared error body. They are not successful stubs.
 
 - `POST /admin/users` — no HTTP path creates an admin. The only bootstrap is the non-production seed below.
-- `GET` and `PATCH /users/{userId}` — not required for this slice. Account activation is OTP. Company verification is the admin company patch.
-- Verification document list, upload, and admin review. The contract leaves multi-document completion rules open. Documents are not pretended to be approved.
-- Trucks, quotations, bookings, payment arrangements, transactions, releases, refunds, deposit receipts, credit accounts, POD, delivery confirmation, ratings, dispute resolution.
+- Quotations, bookings, payment arrangements, transactions, releases, refunds, deposit receipts, credit accounts, POD, delivery confirmation, ratings, dispute resolution.
 
 Booking and payment rules are not implemented and are not functional: no confirmed arrangement, no confirmed booking, cash is not payment-protected, commission is not calculated, release is not recorded, and there is no Truber float. Fee payer and BuySafe behaviour are unchanged because those flows do not exist here.
 
@@ -46,6 +49,24 @@ Booking and payment rules are not implemented and are not functional: no confirm
 4. That admin calls `PATCH /companies/{companyId}` with `verificationStatus=verified`. A shipper who sends the same field receives 403 and the company stays unverified.
 
 There is no public shortcut to a verified company.
+
+## Trucks, verification documents and account status (launch item 5)
+
+Truck list and read visibility depends on the caller. A transporter sees only trucks in companies it belongs to, and an admin sees all. There is no truck browsing at launch: a shipper gets 403 `TRUCK_BROWSING_DISABLED` from `listTrucks` and `getTruck` (for any id, so existence is never revealed) and 403 `FORBIDDEN` from `updateTruck`. Once quotations land, shippers will see only trucks named on quotations for their own loads (TODO for mark/quotations-api). `getTruck` returns 404 to a transporter outside the owning company.
+
+`registrationNumber` is normalised with Unicode NFKC, then all whitespace, zero-width/format characters and punctuation are removed; the result must be 1–64 ASCII letters or digits (otherwise 400 `VALIDATION_ERROR` with `details.fields.registrationNumber`) and is uppercased and stored under a global unique index. Migration `004a_truck_registration_format.sql` enforces `^[A-Z0-9]{1,64}$` with a CHECK constraint. A duplicate variant returns 409 `TRUCK_REGISTRATION_EXISTS`. `availableOn` is accepted on `listTrucks` and ignored until API v0.5.1.
+
+Verification documents are links only. `documentUri` must be an absolute `https` URL on a host listed in `VERIFICATION_DOC_URI_HOSTS`. The API stores the link and never fetches or logs it. An empty host list rejects every link. The contract has no `mimeType` or size fields, so those fields are refused as validation errors. Uploading a document moves an `unverified` or `rejected` truck or company to `pending`; editing a verified truck's identity fields (`truckType` or `capacityKg`) also returns it to `pending`.
+
+Reviews are admin-only and apply once. An approved review may set `setTruckVerified` or `setCompanyVerified`; a rejected review cannot set either flag (`REVIEW_FLAGS_REQUIRE_APPROVAL`), and a flag without the matching truck or company link returns `DOCUMENT_HAS_NO_TRUCK` or `DOCUMENT_HAS_NO_COMPANY`. Reviewing a document that is not `submitted` returns 409 `DOCUMENT_ALREADY_REVIEWED`. With `Idempotency-Key`, replaying the same body returns the stored 200 response; reusing the key for a different body returns 409 `IDEMPOTENCY_KEY_REUSED`.
+
+Account status changes are admin-only. Admins may move between `active`, `suspended`, and `disabled` in either direction, including `disabled` back to `active`; `pending_verification` is never a target. Admins cannot change their own status or another admin's status. Suspending or disabling revokes all refresh sessions. Each change writes `account_status_changes` with the from/to status, actor, and timestamp; the contract has no reason field, so no reason is stored.
+
+`Truck.counterpartyRestrictedUntil` is computed per caller. It is null for members of the owning company and for admins. For anyone else it is the latest active off-platform ban end on the owning company, or null when no ban is active.
+
+`assertTruckUsableForQuote` is exported from `src/trucks/truck-usability.ts` for the quotations slice. It is not wired to an HTTP route yet.
+
+The local evidence script is `scripts/trucks-verification-curl-evidence.sh`. It requires `DATABASE_URL` (loopback only), `OUT_DIR`, and the seeded admin password in `ADMIN_PASSWORD`. Optional values are `BASE_URL` (default `http://127.0.0.1:3010`), `ADMIN_EMAIL`, and `DOC_HOST` (default `files.truber.local`, which must be in the API's `VERIFICATION_DOC_URI_HOSTS`). It writes numbered request/response files and `summary.txt`, and exits 1 if any step fails.
 
 ## Local setup
 
@@ -129,8 +150,9 @@ Names only. Values go into Vercel's environment settings and nowhere else: not c
 | `JWT_ACCESS_SECRET` | A new random value of at least 32 characters, unique to this deployment. Secret. |
 | `DELIVERY_ADAPTER` | `disabled`. `dev` is refused when `NODE_ENV=production`. |
 | `CLIENT_IP_SOURCE` | `vercel`. Rate limits then key on the client address Vercel puts in `X-Forwarded-For` (Vercel overwrites that header, so it cannot be spoofed). Without it, every caller shares Vercel's proxy address. The value is refused unless `VERCEL=1`, which Vercel sets itself. |
+| `VERIFICATION_DOC_URI_HOSTS` | Optional comma-separated bare hostnames allowed in verification document links (for example `files.truber.local`). Empty or unset by default, which rejects every document link. No scheme, port, path, or wildcard. Links are stored, never fetched or logged. |
 
-Optional: `CORS_ALLOWED_ORIGINS`, a comma-separated list of exact `https://` origins allowed to call the API from a browser (for example `https://truber-mobile-preview.vercel.app`). Unset means CORS is off and browsers on other origins are refused. Wildcards, paths, and `http://` are rejected at boot, and credentials are never allowed because auth uses the `Authorization` bearer header. Optional: `DB_POOL_MAX` (defaults to `2` when `VERCEL=1`, otherwise `10`), `DB_STATEMENT_TIMEOUT_MS` (default 15000), `REFRESH_TTL_SECONDS`, `OTP_TTL_SECONDS`, and the `*_SOURCE_MAX` / `*_WINDOW_SECONDS` rate-limit values. `JWT_ACCESS_TTL_SECONDS` and `RESET_TOKEN_TTL_SECONDS` may be omitted; if set they must be `1800`.
+Optional: `CORS_ALLOWED_ORIGINS`, a comma-separated list of exact `https://` origins allowed to call the API from a browser (for example `https://truber-mobile-preview.vercel.app`). Unset means CORS is off and browsers on other origins are refused. Wildcards, paths, and `http://` are rejected at boot, and credentials are never allowed because auth uses the `Authorization` bearer header. Optional: `VERIFICATION_DOC_URI_HOSTS` (empty by default; every verification document link is rejected until a host is listed), `DB_POOL_MAX` (defaults to `2` when `VERCEL=1`, otherwise `10`), `DB_STATEMENT_TIMEOUT_MS` (default 15000), `REFRESH_TTL_SECONDS`, `OTP_TTL_SECONDS`, and the `*_SOURCE_MAX` / `*_WINDOW_SECONDS` rate-limit values. `JWT_ACCESS_TTL_SECONDS` and `RESET_TOKEN_TTL_SECONDS` may be omitted; if set they must be `1800`.
 
 Do **not** set `DATABASE_MIGRATION_URL` on Vercel. The API never migrates, so with `DB_TARGET=supabase` it boots without the owner credential. Migrations stay a separate `npm run migrate` run from an operator machine over a direct or session connection; the migration connection refuses port 6543 and `transaction` mode because it needs a session advisory lock.
 
@@ -150,7 +172,7 @@ All application SQL is schema-qualified, so nothing depends on the pooler's defa
 - **No background work.** The API has no timers, intervals, or queues today. Expiry is checked at request time. Future scheduled work needs Vercel Cron (limited on Hobby) or another runner.
 - **Request length.** `maxDuration` is 30 s; the database statement timeout is 15 s.
 - **Delivery.** With `DELIVERY_ADAPTER=disabled`, password-reset and OTP codes are not sent or stored, so those flows cannot complete on the hosted API until a real email/SMS provider is added.
-- **File uploads.** No upload route exists yet. POD and verification documents must go to object storage (for example Supabase Storage with signed upload URLs), not the function filesystem, and Vercel caps request bodies at 4.5 MB.
+- **File uploads.** No binary upload route exists. Verification documents are stored as links only. POD files must go to object storage (for example Supabase Storage with signed upload URLs), not the function filesystem, and Vercel caps request bodies at 4.5 MB.
 - **CORS.** None is configured, same as the normal server. Native mobile apps do not need it; a browser client on another origin will.
 - **Deployment Protection.** If the Vercel team protects deployments by default, the `*.vercel.app` URL answers with a Vercel login page. The public API needs protection relaxed for production or a custom domain.
 
@@ -172,7 +194,7 @@ Do not copy `payload` into tickets or logs.
 
 ## Configuration that the contract fixes
 
-- Access JWT lifetime is 1800 seconds (30 minutes). `expiresIn` is 1800, per API v0.4.0. Any other `JWT_ACCESS_TTL_SECONDS` prevents startup.
+- Access JWT lifetime is 1800 seconds (30 minutes). `expiresIn` is 1800, per API v0.5.0. Any other `JWT_ACCESS_TTL_SECONDS` prevents startup.
 - Reset tokens live 1800 seconds. Any other `RESET_TOKEN_TTL_SECONDS` prevents startup.
 - Passwords are hashed with scrypt (`N=16384`, `r=8`, `p=1`).
 - Refresh sessions last 14 days unless `REFRESH_TTL_SECONDS` is set (minimum 1 hour, maximum 90 days). The contract does not set this.

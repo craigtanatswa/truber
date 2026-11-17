@@ -22,12 +22,23 @@ import {
 } from './offplatform/offplatform.controller';
 import { OffPlatformBanService } from './offplatform/offplatform-ban.service';
 import { OffPlatformReportService } from './offplatform/offplatform-report.service';
+import { TrucksController } from './trucks/trucks.controller';
+import { TrucksService } from './trucks/trucks.service';
+import { UsersController } from './users/users.controller';
+import { UsersService } from './users/users.service';
+import { VerificationAdminController } from './verification/verification-admin.controller';
+import { VerificationDocumentsController } from './verification/verification-documents.controller';
+import { VerificationService } from './verification/verification.service';
 
 @Module({
   controllers: [
     AuthController,
     CompaniesController,
     LoadsController,
+    TrucksController,
+    UsersController,
+    VerificationDocumentsController,
+    VerificationAdminController,
     BookingOffPlatformReportsController,
     OffPlatformAdminController,
   ],
@@ -39,6 +50,9 @@ import { OffPlatformReportService } from './offplatform/offplatform-report.servi
     AuthService,
     CompaniesService,
     LoadsService,
+    TrucksService,
+    UsersService,
+    VerificationService,
     OffPlatformBanService,
     OffPlatformReportService,
     {
