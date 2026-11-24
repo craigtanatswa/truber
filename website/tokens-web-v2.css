@@ -1,0 +1,44 @@
+/* Truber website v2 additions (Design, 2026-11-10 CAT). Load AFTER tokens-2026-11-10.css.
+   Colours and logos unchanged. */
+:root {
+  /* Type: no new display face. Self-host Inter 4 variable (OFL), latin subset, woff2, font-display: swap.
+     Use the opsz axis (Inter Display cut) at display sizes. No CDN. */
+  --truber-font-display: "Inter Variable", Inter, system-ui, sans-serif;
+  --truber-size-web-h1: clamp(40px, 6vw, 72px);  /* 700 / 1.05 / -0.03em */
+  --truber-size-web-h2: clamp(28px, 3.6vw, 44px);/* 600 / 1.15 / -0.02em */
+  --truber-size-web-statement: clamp(28px, 4vw, 56px); /* pinned scene, 600 / 1.10 */
+  --truber-size-web-numeral: clamp(64px, 9vw, 120px);  /* hollow step numerals */
+  --truber-numeral-stroke: 1.5px;                 /* -webkit-text-stroke, colour: currentColor */
+
+  /* Layout */
+  --truber-container: 1200px;
+  --truber-gutter: clamp(20px, 4vw, 32px);
+  --truber-header-h: 64px;
+  --truber-section-y: clamp(72px, 10vw, 128px);
+  --truber-hairline: 1px solid rgba(254,254,254,0.12); /* dark; light uses var(--truber-border) */
+
+  /* Space scale additions (4px base continues) */
+  --truber-space-4xl: 48px;
+  --truber-space-5xl: 64px;
+  --truber-space-6xl: 96px;
+  --truber-space-7xl: 128px;
+
+  /* Radii */
+  --truber-radius-pill: 999px;   /* buttons, nav, chips */
+  --truber-radius-card: 16px;    /* cards, quick-quote strip */
+  --truber-radius-media: 24px;   /* photo bands */
+  --truber-radius-tile: 12px;    /* hero tile start state */
+
+  /* Motion */
+  --truber-dur-fast: 150ms;      /* hover, press */
+  --truber-dur-base: 240ms;      /* UI state */
+  --truber-dur-reveal: 600ms;    /* section reveal, icon stroke-draw */
+  --truber-dur-hero: 900ms;      /* hero tile to full-bleed, once */
+  --truber-ease-out: cubic-bezier(0.22, 1, 0.36, 1);     /* reveals, hero */
+  --truber-ease-standard: cubic-bezier(0.4, 0, 0.2, 1);  /* UI */
+  --truber-reveal-shift: 16px;   /* translateY on reveal; opacity 0 to 1 */
+  --truber-stagger: 60ms;        /* max 6 items */
+}
+@media (prefers-reduced-motion: reduce) {
+  :root { --truber-dur-reveal: 0ms; --truber-dur-hero: 0ms; --truber-reveal-shift: 0px; --truber-stagger: 0ms; }
+}

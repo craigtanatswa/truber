@@ -1,0 +1,5 @@
+analyzer:
+  exclude:
+    - prototypes/**
+    - tokens/archive/**
+    - tokens/proposals/**
