@@ -15,18 +15,24 @@ class AdminPlaceholder extends StatelessWidget {
             padding: EdgeInsets.all(TruberSpacing.sm),
             child: TruberBrandLogo(style: TruberBrandStyle.appBarMark),
           ),
-          title: const Text(TruberCopy.roleAdmin)),
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(TruberSpacing.xl),
-          child: Text(
-            TruberCopy.adminPlaceholder,
-            textAlign: TextAlign.center,
+          title: const Text(TruberCopy.adminHomeTitle)),
+      body: ListView(
+        padding: const EdgeInsets.all(TruberSpacing.xl),
+        children: [
+          Text(
+            TruberCopy.adminHomeTitle,
+            key: const Key('admin_home_title'),
+            style: Theme.of(context).textTheme.headlineSmall,
+          ),
+          const SizedBox(height: TruberSpacing.sm),
+          Text(
+            TruberCopy.adminHomeBody,
+            key: const Key('admin_home_body'),
             style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
           ),
-        ),
+        ],
       ),
     );
   }

@@ -10,14 +10,13 @@ import '../../../models/money.dart';
 import '../../../models/payment.dart';
 import '../../../state/session.dart';
 import '../../errors/error_messages.dart';
-import '../../widgets/payment_badges.dart';
 
 class PaymentChoiceScreen extends StatefulWidget {
   const PaymentChoiceScreen({
     super.key,
     required this.booking,
     required this.load,
-    this.initialMethod = PaymentMethod.depositBalance,
+    this.initialMethod = PaymentMethod.cash,
   });
 
   final Booking booking;
@@ -29,36 +28,19 @@ class PaymentChoiceScreen extends StatefulWidget {
 }
 
 class _PaymentChoiceScreenState extends State<PaymentChoiceScreen> {
-  /// The split is offered only when both parts are >= 1 minor unit.
-  late final _split = depositBalanceSplit(widget.booking.agreedAmount);
-  late PaymentMethod _method =
-      widget.initialMethod == PaymentMethod.depositBalance && _split == null
-          ? PaymentMethod.prepay
-          : widget.initialMethod;
-  int _creditDays = 14;
-  bool _cashAck = false;
+  late PaymentMethod _method = isLaunchPaymentMethod(widget.initialMethod)
+      ? widget.initialMethod
+      : PaymentMethod.cash;
   bool _busy = false;
 
   MoneyAmount get _total => widget.booking.agreedAmount;
 
   Future<void> _submit() async {
-    if (_method == PaymentMethod.cash && !_cashAck) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text(TruberCopy.payCashAck)),
-      );
-      return;
-    }
-    final split = _method == PaymentMethod.depositBalance ? _split : null;
-    if (_method == PaymentMethod.depositBalance && split == null) return;
     setState(() => _busy = true);
     final session = context.read<SessionController>();
     final request = CreatePaymentArrangementRequest(
       method: _method,
       totalAmount: _total,
-      depositAmount: split?.deposit,
-      balanceAmount: split?.balance,
-      corporateCreditTermsDays:
-          _method == PaymentMethod.corporateCredit ? _creditDays : null,
     );
     try {
       final arrangement =
@@ -72,17 +54,24 @@ class _PaymentChoiceScreenState extends State<PaymentChoiceScreen> {
     }
   }
 
-  Widget _option({
-    required PaymentMethod method,
-    required String title,
-    required String help,
-    required Widget badge,
-    required Key key,
-    bool cashStyle = false,
-  }) {
+  String _title(PaymentMethod method) => switch (method) {
+        PaymentMethod.cash => TruberCopy.payCash,
+        PaymentMethod.directTransfer => TruberCopy.payBankTransfer,
+        _ => TruberCopy.payCash,
+      };
+
+  String _help(PaymentMethod method) => switch (method) {
+        PaymentMethod.cash => TruberCopy.payCashHelp,
+        PaymentMethod.directTransfer => TruberCopy.payBankTransferHelp,
+        _ => TruberCopy.payCashHelp,
+      };
+
+  Widget _option(PaymentMethod method) {
     final selected = _method == method;
     return Card(
-      key: key,
+      key: Key(method == PaymentMethod.cash
+          ? 'pay_option_cash'
+          : 'pay_option_bank_transfer'),
       color: selected
           ? (Theme.of(context).brightness == Brightness.dark
               ? TruberColors.primarySoftDark
@@ -109,29 +98,14 @@ class _PaymentChoiceScreenState extends State<PaymentChoiceScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            title,
-                            style: Theme.of(context).textTheme.titleMedium,
-                          ),
-                        ),
-                        badge,
-                      ],
+                    Text(
+                      _title(method),
+                      style: Theme.of(context).textTheme.titleMedium,
                     ),
                     const SizedBox(height: TruberSpacing.xs),
                     Text(
-                      help,
-                      style: cashStyle
-                          ? Theme.of(context).textTheme.labelLarge?.copyWith(
-                                fontWeight: FontWeight.w600,
-                                color: Theme.of(context).brightness ==
-                                        Brightness.dark
-                                    ? TruberColors.paymentCashBorderDark
-                                    : TruberColors.paymentCashBorder,
-                              )
-                          : Theme.of(context).textTheme.bodySmall,
+                      _help(method),
+                      style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ],
                 ),
@@ -162,107 +136,10 @@ class _PaymentChoiceScreenState extends State<PaymentChoiceScreen> {
                 ),
           ),
           const SizedBox(height: TruberSpacing.xl),
-          if (_split != null)
-            _option(
-              key: const Key('pay_option_deposit_balance'),
-              method: PaymentMethod.depositBalance,
-              title: TruberCopy.payDepositBalance,
-              help: TruberCopy.payDepositBalanceHelp,
-              badge: const ProtectedPaymentBadge(),
-            ),
-          if (_split != null) ...[
-            const SizedBox(height: TruberSpacing.xs),
-            Text(
-              TruberCopy.paySplitHint,
-              key: const Key('pay_split_hint'),
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-            ),
+          for (final method in kLaunchPaymentMethods) ...[
+            _option(method),
+            const SizedBox(height: TruberSpacing.md),
           ],
-          if (_method == PaymentMethod.depositBalance && _split != null) ...[
-            const SizedBox(height: TruberSpacing.sm),
-            Card(
-              key: const Key('deposit_split_card'),
-              child: Padding(
-                padding: const EdgeInsets.all(TruberSpacing.cardPadding),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      TruberCopy.payDepositLabelFor(_split.deposit.display),
-                      key: const Key('deposit_amount_preview'),
-                    ),
-                    Text(
-                      TruberCopy.payBalanceLabelFor(_split.balance.display),
-                      key: const Key('balance_amount_preview'),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-          if (_split != null) const SizedBox(height: TruberSpacing.md),
-          _option(
-            key: const Key('pay_option_prepay'),
-            method: PaymentMethod.prepay,
-            title: TruberCopy.payPrepay,
-            help: TruberCopy.payPrepayHelp,
-            badge: const ProtectedPaymentBadge(),
-          ),
-          const SizedBox(height: TruberSpacing.md),
-          _option(
-            key: const Key('pay_option_escrow'),
-            method: PaymentMethod.escrow,
-            title: TruberCopy.payProtected,
-            help: TruberCopy.payProtectedHelp,
-            badge: const ProtectedPaymentBadge(),
-          ),
-          const SizedBox(height: TruberSpacing.md),
-          _option(
-            key: const Key('pay_option_corporate_credit'),
-            method: PaymentMethod.corporateCredit,
-            title: TruberCopy.payCorporateCredit,
-            help: TruberCopy.payCorporateCreditHelp,
-            badge: const ProtectedPaymentBadge(),
-          ),
-          if (_method == PaymentMethod.corporateCredit) ...[
-            const SizedBox(height: TruberSpacing.sm),
-            const Text(TruberCopy.payCreditTermsLabel),
-            const SizedBox(height: TruberSpacing.sm),
-            Wrap(
-              spacing: TruberSpacing.sm,
-              children: [7, 14, 30].map((d) {
-                final selected = _creditDays == d;
-                return ChoiceChip(
-                  label: Text('$d'),
-                  selected: selected,
-                  onSelected: (_) => setState(() => _creditDays = d),
-                );
-              }).toList(),
-            ),
-          ],
-          const SizedBox(height: TruberSpacing.md),
-          _option(
-            key: const Key('pay_option_cash'),
-            method: PaymentMethod.cash,
-            title: TruberCopy.payCash,
-            help: TruberCopy.payCashHelp,
-            badge: const CashWarningBadge(),
-            cashStyle: true,
-          ),
-          if (_method == PaymentMethod.cash) ...[
-            const SizedBox(height: TruberSpacing.sm),
-            CheckboxListTile(
-              key: const Key('cash_ack_checkbox'),
-              contentPadding: EdgeInsets.zero,
-              value: _cashAck,
-              onChanged: (v) => setState(() => _cashAck = v ?? false),
-              title: const Text(TruberCopy.payCashAck),
-              controlAffinity: ListTileControlAffinity.leading,
-            ),
-          ],
-          const SizedBox(height: TruberSpacing.lg),
           ElevatedButton(
             style: TruberAppTheme.fullWidthCta,
             key: const Key('propose_payment_cta'),

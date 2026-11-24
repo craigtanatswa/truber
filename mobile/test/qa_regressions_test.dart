@@ -228,7 +228,7 @@ void main() {
     );
     expect(
       TruberCopy.payStatusCashRecorded,
-      'Cash arrangement recorded (not protected)',
+      'Cash arrangement recorded',
     );
     expect(TruberCopy.payCashAck.contains('payment-protected'), isFalse);
     expect(TruberCopy.payStatusCashRecorded.contains('payment-protected'),
@@ -332,7 +332,16 @@ void main() {
         ),
       ),
     );
-    await tester.binding.setSurfaceSize(const Size(390, 1200));
+    await tester.binding.setSurfaceSize(const Size(390, 1400));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('register_role_shipper')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('register_full_name')), 'A B');
+    await tester.enterText(
+        find.byKey(const Key('register_email')), 'city@example.com');
+    await tester.enterText(
+        find.byKey(const Key('register_password')), 'demopass1');
+    await tester.tap(find.byKey(const Key('register_submit')));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('register_city')), findsOneWidget);
     await tester.ensureVisible(find.byKey(const Key('register_city')));
@@ -394,15 +403,20 @@ void main() {
     expect(ok.user.email, 'shipper@truber.zw');
   });
 
-  test('v0.2.0 OTP request+verify with demo code', () async {
+  test('launch session does not call OTP; repository still implements it',
+      () async {
+    expect(kPhoneOtp, isFalse);
     final session = _fresh();
     await session.login('shipper@truber.zw', 'demopass');
-    final req = await session.requestOtp();
-    expect(req, isNotNull);
-    expect(req!.status, 'stubbed');
-    expect(await session.verifyOtp('000000'), isFalse);
-    expect(session.error, TruberCopy.otpWrong);
-    expect(await session.verifyOtp('123456'), isTrue);
+    expect(await session.requestOtp(), isNull);
+    expect(await session.verifyOtp('123456'), isFalse);
+    final auth = session.auth as MockAuthRepository;
+    final req = await auth.requestOtp();
+    expect(req.status, 'stubbed');
+    await expectLater(
+      auth.verifyOtp(code: '000000'),
+      throwsA(isA<AuthException>()),
+    );
   });
 
   testWidgets('forgot password link on login opens reset request',
@@ -648,7 +662,8 @@ void main() {
     final text = tester.widget<Text>(totalFinder.first);
     expect(text.style?.color, TruberColors.textPrimary);
     expect(text.style?.color, isNot(TruberColors.primary));
-    expect(find.byType(ProtectedPaymentBadge), findsWidgets);
+    expect(find.byType(ProtectedPaymentBadge), findsNothing);
+    expect(find.byType(CashWarningBadge), findsNothing);
   });
 
   testWidgets('payment screen renders in dark mode with dark tokens',
@@ -675,8 +690,8 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.textContaining('Total:'), findsWidgets);
-    expect(find.byType(ProtectedPaymentBadge), findsWidgets);
-    expect(find.byType(CashWarningBadge), findsOneWidget);
+    expect(find.byType(ProtectedPaymentBadge), findsNothing);
+    expect(find.byType(CashWarningBadge), findsNothing);
     final total = tester.widget<Text>(find.textContaining('Total:').first);
     expect(total.style?.color, TruberColors.textPrimaryDark);
     expect(total.style?.color, isNot(TruberColors.primary));

@@ -97,7 +97,7 @@ void main() {
   testWidgets('bold net line, toggle reveals breakdown with deductions',
       (tester) async {
     await tester.pumpWidget(_wrap(PayoutSummary(payout: _payout())));
-    expect(find.text('You receive'), findsOneWidget);
+    expect(find.text('After commission'), findsOneWidget);
     expect(find.text('US\$890.00'), findsOneWidget);
     final net = tester.widget<Text>(find.text('US\$890.00'));
     expect(net.style?.fontWeight, FontWeight.w700);
@@ -109,17 +109,19 @@ void main() {
     expect(find.text('US\$950.00'), findsOneWidget);
     expect(find.text('Truber commission (5%)'), findsOneWidget);
     expect(find.text('\u2013 US\$47.50'), findsOneWidget);
-    expect(find.text('Payment fees'), findsOneWidget);
-    expect(find.text('\u2013 US\$12.50'), findsOneWidget);
-    expect(find.text('You receive'), findsNWidgets(2));
-    expect(find.text(TruberCopy.payoutHelperProtected), findsOneWidget);
+    expect(find.text('Payment fees'), findsNothing);
+    expect(find.text('\u2013 US\$12.50'), findsNothing);
+    expect(find.text('After commission'), findsNWidgets(2));
+    expect(find.text(TruberCopy.payCommissionNote), findsOneWidget);
+    expect(find.text(TruberCopy.payoutHelperProtected), findsNothing);
   });
 
   testWidgets('fees row hidden when zero', (tester) async {
     await tester.pumpWidget(_wrap(
         PayoutSummary(payout: _payout(fees: 0), initiallyExpanded: true)));
     expect(find.byKey(const Key('payout_fees_row')), findsNothing);
-    expect(find.text('Payment fees'), findsNothing);
+    expect(find.text(TruberCopy.payoutFees), findsNothing);
+    expect(find.text(TruberCopy.payoutFeesNone), findsNothing);
     expect(find.text('US\$902.50'), findsNWidgets(2));
   });
 
@@ -188,7 +190,8 @@ void main() {
         value: s, child: MaterialApp(home: SubmitQuoteScreen(load: load))));
     await tester.enterText(find.byKey(const Key('quote_rate')), '950');
     await tester.pumpAndSettle();
-    expect(find.text('You’ll receive US\$902.50 after commission and fees.'),
+    expect(
+        find.text('You’ll earn US\$902.50 after Truber’s commission.'),
         findsOneWidget);
 
     await tester.pumpWidget(const SizedBox());

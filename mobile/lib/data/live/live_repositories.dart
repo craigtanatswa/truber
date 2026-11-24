@@ -1,5 +1,6 @@
 import 'dart:math';
 
+import '../../config/flags.dart';
 import '../../models/company.dart';
 import '../../models/load.dart';
 import '../../models/user.dart';
@@ -74,7 +75,8 @@ class LiveAuthRepository implements AuthRepository {
       'password': password,
       'fullName': fullName.trim(),
       'role': role.name,
-      if (phoneTrim != null && phoneTrim.isNotEmpty) 'phone': phoneTrim,
+      if (kPhoneOtp && phoneTrim != null && phoneTrim.isNotEmpty)
+        'phone': phoneTrim,
       if (cityTrim != null && cityTrim.isNotEmpty) 'city': cityTrim,
     });
     return _session(body);
@@ -106,6 +108,9 @@ class LiveAuthRepository implements AuthRepository {
 
   @override
   Future<TruberUser> verifyOtp({required String code}) async {
+    if (!kPhoneOtp) {
+      throw const OtpRequestDisabledException();
+    }
     final j = await api.post('/auth/otp/verify', body: {'code': code})
         as Map<String, dynamic>;
     return userFromJson(j);
@@ -215,5 +220,23 @@ class LiveLoadRepository implements LoadRepository {
       headers: {'Idempotency-Key': newIdempotencyKey()},
     ) as Map<String, dynamic>;
     return loadFromJson(j);
+  }
+}
+
+/// POST /verification-documents. Used after sign-up, never for OTP.
+class LiveVerificationRepository {
+  LiveVerificationRepository(this.api);
+  final ApiClient api;
+
+  Future<void> submit({
+    required String documentType,
+    required String documentUri,
+    String? companyId,
+  }) async {
+    await api.post('/verification-documents', body: {
+      'documentType': documentType,
+      'documentUri': documentUri,
+      if (companyId != null) 'companyId': companyId,
+    });
   }
 }

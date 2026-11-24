@@ -290,6 +290,17 @@ String paymentMethodLabel(PaymentMethod method) => switch (method) {
       PaymentMethod.depositBalance => TruberCopy.payDepositBalance,
       PaymentMethod.cash => TruberCopy.payCash,
       PaymentMethod.corporateCredit => TruberCopy.payCorporateCredit,
+      PaymentMethod.directTransfer => TruberCopy.payBankTransfer,
+    };
+
+/// Launch builds do not render these protection labels.
+bool launchHidesProtection(ProtectionStatus status) => switch (status) {
+      ProtectionStatus.none ||
+      ProtectionStatus.protected ||
+      ProtectionStatus.protectionFailed ||
+      ProtectionStatus.releasedFromProtection =>
+        true,
+      ProtectionStatus.pendingEvidence => false,
     };
 
 StatusChipTone quotationStatusTone(QuotationStatus status) => switch (status) {

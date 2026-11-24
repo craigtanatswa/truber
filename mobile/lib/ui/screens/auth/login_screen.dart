@@ -12,8 +12,10 @@ import 'forgot_password_screen.dart';
 import 'register_screen.dart';
 import 'package:truber_app/ui/navigation/truber_page_route.dart';
 
-/// Mock seed prefill only; live builds never prefill credentials.
-final bool _prefill = kTruberDemo && kDataMode == DataMode.mock;
+/// Mock seed prefill only; compiled out unless TRUBER_DEMO and not live.
+const String _seedEmail = kDemoAids ? 'shipper@truber.zw' : '';
+const String _seedPassword = kDemoAids ? 'demopass' : '';
+final bool _prefill = kDemoAids && kDataMode == DataMode.mock;
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -31,10 +33,8 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   void initState() {
     super.initState();
-    _email = TextEditingController(
-      text: _prefill ? 'shipper@truber.zw' : '',
-    );
-    _password = TextEditingController(text: _prefill ? 'demopass' : '');
+    _email = TextEditingController(text: _prefill ? _seedEmail : '');
+    _password = TextEditingController(text: _prefill ? _seedPassword : '');
   }
 
   @override

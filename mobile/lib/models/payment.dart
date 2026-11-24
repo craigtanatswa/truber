@@ -25,7 +25,21 @@ enum PaymentMethod {
   depositBalance,
   cash,
   corporateCredit,
+  directTransfer,
 }
+
+/// Launch payment methods. One list: cash and bank or mobile money transfer.
+const List<PaymentMethod> kLaunchPaymentMethods = [
+  PaymentMethod.cash,
+  PaymentMethod.directTransfer,
+];
+
+bool isLaunchPaymentMethod(PaymentMethod method) =>
+    kLaunchPaymentMethods.contains(method);
+
+/// Cash and direct transfer are recorded between the parties. Truber holds nothing.
+bool isRecordedSettlement(PaymentMethod method) =>
+    method == PaymentMethod.cash || method == PaymentMethod.directTransfer;
 
 enum ArrangementStatus { proposed, confirmed, rejected, cancelled }
 
@@ -49,6 +63,7 @@ extension PaymentMethodApi on PaymentMethod {
   String get apiValue => switch (this) {
         PaymentMethod.depositBalance => 'deposit_balance',
         PaymentMethod.corporateCredit => 'corporate_credit',
+        PaymentMethod.directTransfer => 'direct_transfer',
         _ => name,
       };
 }
@@ -90,11 +105,15 @@ class PaymentArrangement {
 
   bool get isConfirmed => arrangementStatus == ArrangementStatus.confirmed;
   bool get isCash => method == PaymentMethod.cash;
+  bool get isDirectTransfer => method == PaymentMethod.directTransfer;
+  bool get isRecordedSettlement =>
+      isCash || isDirectTransfer;
   bool get isProtected =>
-      protectionStatus == ProtectionStatus.protected ||
-      (method != PaymentMethod.cash &&
-          arrangementStatus == ArrangementStatus.confirmed &&
-          protectionStatus != ProtectionStatus.none);
+      !isRecordedSettlement &&
+      (protectionStatus == ProtectionStatus.protected ||
+          (arrangementStatus == ArrangementStatus.confirmed &&
+              protectionStatus != ProtectionStatus.none &&
+              protectionStatus != ProtectionStatus.protectionFailed));
 
   PaymentArrangement copyWith({
     ArrangementStatus? arrangementStatus,

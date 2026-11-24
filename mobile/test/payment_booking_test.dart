@@ -80,10 +80,13 @@ void main() {
 
   test('QA-014 cash help has no markdown asterisks', () {
     expect(TruberCopy.payCashHelp.contains('**'), isFalse);
-    expect(TruberCopy.payCashHelp.toLowerCase(), contains('not protected'));
+    expect(
+      TruberCopy.payCashHelp,
+      'Pay the transporter directly. Agree the amount and timing with them.',
+    );
   });
 
-  testWidgets('payment choice shows deposit/balance split and cash warning',
+  testWidgets('payment choice shows only cash and bank transfer',
       (tester) async {
     await _setPhoneSurface(tester);
     final session = _session(autoConfirm: true);
@@ -105,23 +108,24 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text(TruberCopy.payDepositBalance), findsOneWidget);
-    expect(find.byKey(const Key('deposit_split_card')), findsOneWidget);
-    expect(find.textContaining('Deposit now: US\$'), findsOneWidget);
-    expect(find.text(TruberCopy.paySplitHint), findsOneWidget);
-    expect(find.textContaining('50%'), findsNothing);
-    expect(find.textContaining('Balance on delivery: US\$'), findsOneWidget);
-    expect(find.byKey(const Key('cash_warning_badge')), findsWidgets);
-    expect(find.text(TruberCopy.payCashHelp), findsOneWidget);
+    expect(find.text(TruberCopy.payCash), findsOneWidget);
+    expect(find.text(TruberCopy.payBankTransfer), findsOneWidget);
+    expect(find.byKey(const Key('pay_option_cash')), findsOneWidget);
+    expect(find.byKey(const Key('pay_option_bank_transfer')), findsOneWidget);
+    expect(find.text(TruberCopy.payPrepay), findsNothing);
+    expect(find.text(TruberCopy.payDepositBalance), findsNothing);
+    expect(find.text(TruberCopy.payProtected), findsNothing);
+    expect(find.text(TruberCopy.payCorporateCredit), findsNothing);
+    expect(find.text(TruberCopy.payCashAck), findsNothing);
+    expect(find.text(TruberCopy.payBankTransferAck), findsNothing);
+    expect(find.text(TruberCopy.payCommissionNote), findsNothing);
+    expect(find.textContaining('protected'), findsNothing);
+    expect(find.textContaining('Protected'), findsNothing);
     expect(find.text(TruberCopy.payProposeCta), findsOneWidget);
-
-    // Cash warning uses paymentCashBorder + labelLarge w600 (QA-014 styling).
-    final help = tester.widget<Text>(find.text(TruberCopy.payCashHelp));
-    expect(help.style?.fontWeight, FontWeight.w600);
-    expect(help.style?.color, TruberColors.paymentCashBorder);
   });
 
-  testWidgets('cash initialMethod shows acknowledgement', (tester) async {
+  testWidgets('booking proceeds without a payment acknowledgement',
+      (tester) async {
     await _setPhoneSurface(tester);
     final session = _session(autoConfirm: true);
     await session.login('shipper@truber.zw', 'demopass');
@@ -142,7 +146,12 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.byKey(const Key('cash_ack_checkbox')), findsOneWidget);
+    expect(find.byType(Checkbox), findsNothing);
+    await tester.tap(find.byKey(const Key('propose_payment_cta')));
+    await tester.pumpAndSettle();
+    final arranged = await session.payments.latestForBooking(accepted.booking.id);
+    expect(arranged?.method, PaymentMethod.cash);
+    expect(arranged?.isConfirmed, isTrue);
   });
 
   test('booking confirm gated without confirmed arrangement', () async {
@@ -178,21 +187,11 @@ void main() {
     final accepted = await session.quotations.accept(MockIds.quote1);
     final booking = accepted.booking;
     final total = booking.agreedAmount;
-    final deposit = MoneyAmount(
-      amountMinor: total.amountMinor ~/ 2,
-      currency: total.currency,
-    );
-    final balance = MoneyAmount(
-      amountMinor: total.amountMinor - deposit.amountMinor,
-      currency: total.currency,
-    );
     await session.payments.propose(
       booking.id,
       CreatePaymentArrangementRequest(
-        method: PaymentMethod.depositBalance,
+        method: PaymentMethod.cash,
         totalAmount: total,
-        depositAmount: deposit,
-        balanceAmount: balance,
       ),
     );
 
@@ -211,11 +210,14 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text(TruberCopy.payStatusSecured), findsOneWidget);
+    expect(find.text(TruberCopy.payStatusCashRecorded), findsOneWidget);
     expect(find.text(TruberCopy.bookingNoPaymentRule), findsOneWidget);
     expect(find.byKey(const Key('confirm_booking_cta')), findsOneWidget);
     expect(find.byKey(const Key('arrangement_status_chip')), findsOneWidget);
-    expect(find.byKey(const Key('protection_status_chip')), findsOneWidget);
+    expect(find.byKey(const Key('protection_status_chip')), findsNothing);
+    expect(find.textContaining('protected'), findsNothing);
+    expect(find.textContaining('Protected'), findsNothing);
+    expect(find.text(TruberCopy.payCommissionNote), findsNothing);
     expect(find.text('Arrangement: confirmed'), findsNothing);
     expect(find.textContaining('Protection: none'), findsNothing);
 

@@ -49,10 +49,10 @@ class MockPaymentRepository implements PaymentRepository {
       bookingId: bookingId,
       method: request.method,
       arrangementStatus: ArrangementStatus.proposed,
-      protectionStatus: request.method == PaymentMethod.cash
+      protectionStatus: isRecordedSettlement(request.method)
           ? ProtectionStatus.none
           : ProtectionStatus.pendingEvidence,
-      releaseStatus: request.method == PaymentMethod.cash
+      releaseStatus: isRecordedSettlement(request.method)
           ? ReleaseStatus.notApplicable
           : ReleaseStatus.held,
       totalAmount: request.totalAmount,
@@ -76,7 +76,7 @@ class MockPaymentRepository implements PaymentRepository {
 
   PaymentArrangement _simulateOpsConfirm(PaymentArrangement a) {
     final now = DateTime.now().toUtc();
-    final protection = a.method == PaymentMethod.cash
+    final protection = isRecordedSettlement(a.method)
         ? ProtectionStatus.none
         : ProtectionStatus.protected;
     return a.copyWith(

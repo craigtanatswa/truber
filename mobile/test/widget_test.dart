@@ -67,6 +67,8 @@ void main() {
     await tester.pumpAndSettle();
     await _login(tester, 'admin@truber.zw');
     expect(find.byKey(const Key('nav_admin_home')), findsOneWidget);
-    expect(find.text(TruberCopy.adminPlaceholder), findsOneWidget);
+    expect(find.text(TruberCopy.adminHomeTitle), findsWidgets);
+    expect(find.text(TruberCopy.adminHomeBody), findsOneWidget);
+    expect(find.textContaining('coming soon'), findsNothing);
   });
 }

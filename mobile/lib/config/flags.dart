@@ -1,16 +1,32 @@
 // Build-time switches. Set with `--dart-define=NAME=value`; nothing here is a
-// secret and no credentials are ever compiled in.
+// secret and no credentials are ever compiled in. Domains and inboxes are
+// never hard-coded — pass them in, or leave them empty.
 
 /// Demo-only UI aids (seeded login prefill, verify.demo_hint). Off by default.
 const bool kTruberDemo = bool.fromEnvironment('TRUBER_DEMO');
 
-/// Base URL of the Truber API (test environment only — never production).
-/// Empty by default, which forces mock data.
+/// Phone OTP screens and `/auth/otp/*`. Off at launch (email + password only).
+const bool kPhoneOtp = bool.fromEnvironment('TRUBER_PHONE_OTP');
+
+/// Base URL of the Truber API. Empty unless set with `--dart-define`.
+/// Live mode also needs TRUBER_DATA=live and an http(s) URL that has a host.
 const String kApiBaseUrl = String.fromEnvironment('API_BASE_URL');
 
 /// `mock` (default) or `live`.
 const String kTruberDataFlag =
     String.fromEnvironment('TRUBER_DATA', defaultValue: 'mock');
+
+/// Public app domain. Empty until a build supplies it.
+const String kAppDomain = String.fromEnvironment('APP_DOMAIN');
+
+/// Support inbox for mailto. Empty hides Email support.
+const String kSupportEmail = String.fromEnvironment('SUPPORT_EMAIL');
+
+/// Demo aids are compiled only for an explicit demo build that is not live.
+const bool kDemoAids = kTruberDemo && kTruberDataFlag != 'live';
+
+/// Mock repositories are left out of TRUBER_DATA=live builds.
+const bool kIncludeMockData = kTruberDataFlag != 'live';
 
 enum DataMode { mock, live }
 

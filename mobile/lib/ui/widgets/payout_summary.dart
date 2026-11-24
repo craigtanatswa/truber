@@ -18,6 +18,15 @@ String payoutStatusLabel(PayoutStatus s) => switch (s) {
       PayoutStatus.releaseFailed => TruberCopy.payoutStatusReleaseFailed,
     };
 
+/// Hidden at launch. The strings stay in the catalog and are not rendered.
+bool launchHidesPayoutStatus(PayoutStatus status) => switch (status) {
+      PayoutStatus.awaitingRelease ||
+      PayoutStatus.released ||
+      PayoutStatus.releaseFailed =>
+        true,
+      _ => false,
+    };
+
 /// Transporter net payout (Design `payout.*`). Every figure is read from the
 /// API's PaymentReleaseRecord; nothing is computed here. When the record or
 /// rate is missing, the payout line is hidden and only the helper remains.
@@ -41,46 +50,15 @@ class _PayoutSummaryState extends State<PayoutSummary> {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final release = p.release;
-    final helper = p.isCash
-        ? TruberCopy.payoutHelperCash
-        : p.isProtected
-            ? TruberCopy.payoutHelperProtected
-            : null;
+    // Launch methods never describe a held-funds release.
+    final helper = p.isCash ? TruberCopy.payoutHelperCash : null;
 
     final children = <Widget>[];
-    final status = p.status;
-    if (status == PayoutStatus.releaseFailed) {
-      // Design: release_failed uses the error tokens.
-      final dark = theme.brightness == Brightness.dark;
-      final fg = dark ? TruberColors.errorDark : TruberColors.error;
-      children.add(Container(
-        key: const Key('payout_status_failed'),
-        padding: const EdgeInsets.all(TruberSpacing.sm),
-        decoration: BoxDecoration(
-          color: dark ? TruberColors.errorSoftDark : TruberColors.errorSoft,
-          borderRadius: TruberRadii.borderMd,
-          border: Border.all(color: fg),
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(Icons.error_outline, size: 20, color: fg),
-            const SizedBox(width: TruberSpacing.sm),
-            Expanded(
-              child: Text(
-                payoutStatusLabel(status!),
-                key: const Key('payout_status'),
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: fg,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ));
-      children.add(const SizedBox(height: TruberSpacing.sm));
-    } else if (status != null) {
+    final rawStatus = p.status;
+    final status = rawStatus != null && !launchHidesPayoutStatus(rawStatus)
+        ? rawStatus
+        : null;
+    if (status != null) {
       children.add(Text(
         payoutStatusLabel(status),
         key: const Key('payout_status'),
@@ -114,7 +92,6 @@ class _PayoutSummaryState extends State<PayoutSummary> {
         ),
       ));
       if (_expanded) {
-        final fees = release.processingFeesTotal;
         children.add(Column(
           key: const Key('payout_breakdown'),
           children: [
@@ -124,13 +101,17 @@ class _PayoutSummaryState extends State<PayoutSummary> {
                   formatBpsAsPercent(p.commissionRateBps!)),
               _deduction(release.commissionAmount),
             ),
-            if (fees != null && fees.amountMinor != 0)
-              _Row(TruberCopy.payoutFees, _deduction(fees),
-                  key: const Key('payout_fees_row')),
             const Divider(),
             _Row(
                 TruberCopy.payoutNetTotal, _value(release.transporterNetAmount),
                 bold: true),
+            const SizedBox(height: TruberSpacing.sm),
+            Text(
+              TruberCopy.payCommissionNote,
+              key: const Key('payout_commission_note'),
+              style: theme.textTheme.bodyMedium
+                  ?.copyWith(color: scheme.onSurfaceVariant),
+            ),
           ],
         ));
       }
@@ -155,7 +136,7 @@ class _PayoutSummaryState extends State<PayoutSummary> {
 }
 
 class _Row extends StatelessWidget {
-  const _Row(this.label, this.value, {super.key, this.bold = false});
+  const _Row(this.label, this.value, {this.bold = false});
   final String label;
   final String value;
   final bool bold;
