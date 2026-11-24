@@ -376,12 +376,10 @@ describe('loads and companies API', () => {
     ]);
   });
 
-  it('does not expose booking or payment operations as working endpoints', async () => {
+  it('does not expose unimplemented payment operations as working endpoints', async () => {
     const shipper = await register(app, 'shipper');
-    for (const path of ['/bookings', '/quotations/11111111-1111-4111-8111-111111111111', '/payment-arrangements']) {
-      const response = path === '/bookings'
-        ? await http(app, 'get', path, { token: shipper.token })
-        : await http(app, 'get', path, { token: shipper.token });
+    for (const path of ['/quotations/11111111-1111-4111-8111-111111111111', '/payment-arrangements']) {
+      const response = await http(app, 'get', path, { token: shipper.token });
       expect(response.status).toBe(404);
       expect(response.body.code).toBe('NOT_FOUND');
     }

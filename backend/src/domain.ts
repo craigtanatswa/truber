@@ -143,6 +143,70 @@ export interface AcceptQuotationResponse {
   booking: BookingResponse;
 }
 
+export type DeliveryConfirmationDecision = 'accepted' | 'disputed';
+
+export interface DeliveryConfirmationResponse {
+  bookingId: string;
+  decision: DeliveryConfirmationDecision;
+  notes: string | null;
+  confirmedByUserId: string;
+  confirmedAt: string;
+}
+
+export type DisputeStage = 'at_delivery_confirmation' | 'dispute_window';
+export type DisputeStatus = 'awaiting_transporter_response' | 'transporter_responded' | 'settled' | 'resolved';
+export type DisputeEvidenceKind = 'photo' | 'signed_pod' | 'message' | 'other';
+
+export interface DisputeEvidenceResponse {
+  kind: DisputeEvidenceKind;
+  uri: string;
+  note?: string;
+}
+
+export interface BookingDisputeResponse {
+  id: string;
+  bookingId: string;
+  stage: DisputeStage;
+  raisedByUserId: string;
+  reason: string;
+  evidence: DisputeEvidenceResponse[];
+  proposedAmount: MoneyResponse | null;
+  status: DisputeStatus;
+  openedAt: string;
+  responseDueAt: string;
+  response: {
+    respondedByUserId: string;
+    respondedAt: string;
+    statement: string;
+    evidence: DisputeEvidenceResponse[];
+    counterOfferAmount: MoneyResponse | null;
+  } | null;
+  settlement: {
+    amount: MoneyResponse;
+    acceptedByUserId: string;
+    acceptedAt: string;
+    adjustmentId: string | null;
+  } | null;
+  resolution: {
+    outcome: 'complete_trip' | 'adjust_amount' | 'cancel_trip';
+    reason: string;
+    adjustedAgreedAmount: MoneyResponse | null;
+    resolvedAt: string;
+  } | null;
+  closedAt: string | null;
+}
+
+export interface DisputeResolutionResponse {
+  bookingId: string;
+  resolution: 'complete_trip' | 'adjust_amount' | 'cancel_trip';
+  reason: string;
+  adjustmentId: string | null;
+  disputeId: string | null;
+  resolvedByUserId: string;
+  resolvedAt: string;
+  resultingCompletionStatus: CompletionStatus;
+}
+
 export interface PageMeta {
   page: number;
   pageSize: number;

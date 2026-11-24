@@ -11,6 +11,13 @@ import { DeliveryService } from './delivery/delivery.service';
 import { RateLimitService } from './delivery/rate-limit.service';
 import { LoadsController } from './loads/loads.controller';
 import { LoadsService } from './loads/loads.service';
+import { AdminBookingsController, BookingsController, DisputesController } from './bookings/bookings.controller';
+import { BookingBillingHooks, NoBillingHooks } from './bookings/booking-billing-hooks';
+import { BookingNotifications, OutboxBookingNotifications } from './bookings/booking-notifications';
+import { BookingsService } from './bookings/bookings.service';
+import { DisputesService } from './bookings/disputes.service';
+import { NoPaymentArrangementsGate, PaymentArrangementGate } from './bookings/payment-arrangement-gate';
+import { NoProofOfDeliveryCheck, ProofOfDeliveryCheck } from './bookings/proof-of-delivery-check';
 import { PostgresBookingDirectory } from './bookings/postgres-booking-directory';
 import {
   BookingDirectory,
@@ -34,6 +41,9 @@ import { TruckQuoteCheck, UnavailableTruckQuoteCheck } from './quotations/truck-
     LoadsController,
     LoadQuotationsController,
     QuotationsController,
+    BookingsController,
+    AdminBookingsController,
+    DisputesController,
     BookingOffPlatformReportsController,
     OffPlatformAdminController,
   ],
@@ -46,6 +56,8 @@ import { TruckQuoteCheck, UnavailableTruckQuoteCheck } from './quotations/truck-
     CompaniesService,
     LoadsService,
     QuotationsService,
+    BookingsService,
+    DisputesService,
     OffPlatformBanService,
     OffPlatformReportService,
     {
@@ -57,6 +69,10 @@ import { TruckQuoteCheck, UnavailableTruckQuoteCheck } from './quotations/truck-
       inject: [ENV],
     },
     { provide: NewWorkCommissionGate, useClass: NoCommissionRecordsGate },
+    { provide: PaymentArrangementGate, useClass: NoPaymentArrangementsGate },
+    { provide: ProofOfDeliveryCheck, useClass: NoProofOfDeliveryCheck },
+    { provide: BookingBillingHooks, useClass: NoBillingHooks },
+    { provide: BookingNotifications, useClass: OutboxBookingNotifications },
     { provide: TruckQuoteCheck, useClass: UnavailableTruckQuoteCheck },
     JwtAuthGuard,
     AdminOnlyGuard,

@@ -1,6 +1,6 @@
 # Truber backend (auth and loads)
 
-NestJS service for the published API v0.5.0 (implemented slice): registration and login, refresh sessions, password reset, OTP account verification, companies, shipper loads, and quotations. PostgreSQL with PostGIS stores the data. Nothing in this service moves money or sends email or SMS.
+NestJS service for the published API v0.5.0 (implemented slice): registration and login, refresh sessions, password reset, OTP account verification, companies, shipper loads, quotations, bookings, delivery confirmation, and disputes. PostgreSQL with PostGIS stores the data. Nothing in this service moves money or sends email or SMS.
 
 The OpenAPI file at `../api/openapi.yaml` is the published contract (SHA-256 `8839f1d4afebb3ceda9683d4c83604866ed80c31d094be31afb415fc08460b4a`). This slice does not change that file.
 
@@ -26,8 +26,36 @@ The OpenAPI file at `../api/openapi.yaml` is the published contract (SHA-256 `88
 | GET | `/quotations/{quotationId}` | Visibility follows the load and owning transporter company. Expired submissions are presented as `expired`. |
 | POST | `/quotations/{quotationId}/withdraw` | Transporter withdraws its own submitted quotation. An accepted quotation cannot be withdrawn (409 `SELF_CANCEL_NOT_ALLOWED`). Revision is withdraw plus resubmit. |
 | POST | `/quotations/{quotationId}/accept` | Shipper owner accepts a submitted quotation, siblings become `not_selected`, and the load moves to `booking_pending`. The booking is created only as `pending_payment_arrangement`; it is never confirmed here. |
+| GET | `/bookings` | Admin sees all bookings; a party sees only bookings for its shipper or transporter company. Optional `status` and `companyId` filters. Paginated, newest first. |
+| GET | `/bookings/{bookingId}` | Party or admin. Non-parties get 404. Presents the effective completion status: a `completed` booking whose dispute window has elapsed reads as `locked`. |
+| POST | `/bookings/{bookingId}/trip-status` | Transporter-side member only. Exactly the next trip step: `not_started` -> `truck_dispatched` -> `goods_collected` -> `in_transit` -> `delivered`. Writes an audit row. |
+| POST | `/bookings/{bookingId}/confirm` | Shipper-side member, or admin with `auditOverrideReason`. Order: ban guard, commission gate, `PaymentArrangementGate`. Sets the booking `confirmed` and the load `booked`. |
+| POST | `/bookings/{bookingId}/cancel` | Admin only, with a reason. A party gets the pinned 409 `SELF_CANCEL_NOT_ALLOWED`. Sets the booking and load `cancelled`; open-dispute and locked-commission cases are refused. |
+| GET, POST | `/bookings/{bookingId}/delivery-confirmation` | Shipper-side member only for POST. GET returns 404 before any confirmation. POST requires a `ProofOfDeliveryCheck` artifact; accepted starts the 24-hour dispute window, disputed opens an at-delivery dispute. |
+| GET, POST | `/bookings/{bookingId}/disputes` | Parties and admin see every dispute on the booking. Raise is shipper-side only and limited to the dispute window; one open dispute per booking. |
+| POST | `/disputes/{disputeId}/response` | Transporter-side member only, once, inside the 48-hour response window. May include a counter-offer at or below the effective agreed amount. |
+| POST | `/disputes/{disputeId}/settlement` | A party accepts the other side's exact offer. Below the effective amount this records a commission adjustment; an equal amount finalises after the dispute. Admin cannot accept. |
+| POST | `/bookings/{bookingId}/disputes/resolve` | Admin only. `complete_trip`, `adjust_amount`, or `cancel_trip`; waits for the response window unless the transporter has already responded. Outcome and reason are visible to both parties. |
+| POST | `/admin/bookings/{bookingId}/adjustments` | Admin only, locked bookings only. Requires a bound `BookingBillingHooks`; otherwise 409 `BILLING_NOT_AVAILABLE` and no change. Never rewrites the original agreed amount. |
 
 Quotations and the pending booking follow API v0.5.0. Every `Quotation` response, including the one inside `AcceptQuotationResponse`, carries the read-only `counterpartyRestrictedUntil` computed per caller: the latest active ban end for the caller's counterparty, or null. Admins always see null, and no ban reason, finding, report, evidence, or reporter is disclosed. The booking created by accept includes `deliveryConfirmedAt`, `disputeWindowEndsAt`, `lockedAt`, and `adjustedAgreedAmount`, all null at creation; `completionStatus` gains `locked`, and a completed booking whose dispute window has elapsed is presented as `locked` with `lockedAt` from the window end.
+
+## Bookings, delivery, and disputes
+
+The booking state machine, the 24-hour delivery dispute window, the dispute lifecycle, and the audit trail (`booking_events`) are implemented against the real schema (migration `006_bookings.sql`). Stored and compared times come from the database clock (`clock_timestamp()`).
+
+Money movement and external proof remain seams, bound in `src/app.module.ts`:
+
+| Seam | Default binding | Behaviour in this slice | Planned binding |
+| --- | --- | --- | --- |
+| `PaymentArrangementGate` | `NoPaymentArrangementsGate` | Always throws 409 `BOOKING_CONFIRM_REQUIRES_ARRANGEMENT`. Accepting a quotation still creates only a `pending_payment_arrangement` booking. | Jensen's `PaymentArrangementService` (v0.6.0) via a thin adapter. |
+| `ProofOfDeliveryCheck` | `NoProofOfDeliveryCheck` | Returns false, so an accepted delivery gets 409 `POD_REQUIRED`. POD upload/list is not implemented. | Brian's POD module. |
+| `BookingBillingHooks` | `NoBillingHooks` | Creates no receivable and returns null. `confirmDelivery` and some dispute resolutions still stamp `commission_recognised_at`, but there is no commission record. `POST /admin/bookings/{bookingId}/adjustments` returns 409 `BILLING_NOT_AVAILABLE`. | Jensen's `ReceivablesService` (billing core) via an adapter. |
+| `BookingNotifications` | `OutboxBookingNotifications` | Inserts one `notification_events` row per recipient company inside the caller's transaction. Nothing sends email, SMS, or push. | A delivery worker that drains the outbox. |
+
+`NewWorkCommissionGate` remains the commission-owing gate. With no commission records bound it always permits new work.
+
+The contracts for `previewQuotationPayout`, `getBookingPayoutBreakdown`, POD upload/list, payment-arrangement creation and settlement, ratings, and `restoreNotSelectedQuotations` are still out of scope. `BookingBillingHooks` mirrors Jensen's method names and argument shapes so the future binding can stay thin; the `voidForBooking` TODO notes that Jensen's current implementation refuses a `held` receivable, while the contract's `cancel_trip` resolution expects a held one to be voided.
 
 Responses used by the tests are validated against the operation schemas in `api/openapi.yaml`.
 
@@ -39,10 +67,10 @@ These routes are absent. They respond with 404 and the shared error body. They a
 - `GET` and `PATCH /users/{userId}` — not required for this slice. Account activation is OTP. Company verification is the admin company patch.
 - Verification document list, upload, and admin review. The contract leaves multi-document completion rules open. Documents are not pretended to be approved.
 - `POST /loads/{loadId}/quotations/restore-not-selected` — eligibility is still open in the contract, so this stays an absent route.
-- Trucks, bookings endpoints, billing endpoints and commission records, payment arrangements, transactions, releases, refunds, deposit receipts, credit accounts, POD, delivery confirmation, ratings, dispute resolution.
+- Trucks, billing endpoints and commission records, payment arrangements, transactions, releases, refunds, deposit receipts, credit accounts, POD upload/list, ratings, and payout preview/breakdown.
 - The commission owing gate and truck quote check are seams. This slice binds no commission records and no trucks module, so there is no commission calculation and any supplied `truckId` currently returns 404 `NOT_FOUND`.
 
-Booking and payment rules are not implemented and are not functional: `acceptQuotation` creates a `pending_payment_arrangement` booking only. No confirmed arrangement or confirmed booking is created, cash is not payment-protected, commission is not calculated, release is not recorded, and there is no Truber float. Fee payer and BuySafe behaviour are unchanged because those flows do not exist here.
+Payment and money movement are not implemented and are not functional: `acceptQuotation` creates a `pending_payment_arrangement` booking only, and the default arrangement gate blocks confirmation. No payment arrangement, receivable, commission record, release, refund, deposit receipt, or Truber float exists. `commission_recognised_at` is a scheduling marker for the future billing binding, not a receivable. Fee payer and BuySafe behaviour are unchanged because those flows do not exist here.
 
 ## Verification path used by posting
 
@@ -193,6 +221,8 @@ Do not copy `payload` into tickets or logs.
 
 - `RegisterRequest.city` is stored on the user row. The `User` schema has no `city`, so register, login, and `/auth/me` do not return it. Company `city` is returned.
 - `listLoads` declares 200 and 401 only. Invalid list filters still return HTTP 400 with the shared `Error` schema.
+- `listBookings` declares 200 and 401 only. Invalid list filters still return HTTP 400 with the shared `Error` schema.
+- `resolveBookingDispute` declares no 400 response. A missing `adjustedAgreedAmount` for `adjust_amount`, or an amount equal to the current effective amount, returns HTTP 400 `VALIDATION_ERROR`.
 - `createLoad` does not declare 422. Deadline order and currency mismatches use HTTP 400 and a specific `code`, which is a declared status for that operation.
 - `UpdateLoadRequest` has no currency field, so currency is immutable after create.
 - The post verification gate is applied only to `POST /loads/{loadId}/post`, which is the operation that states it. Patch of a draft or posted load does not add a second gate.
@@ -201,4 +231,4 @@ Do not copy `payload` into tickets or logs.
 
 ## Product rules left for later slices
 
-Accepting a quotation creates a `pending_payment_arrangement` booking only; there is no flow to confirm it. No confirmed payment arrangement is created, so no confirmed booking is created. Cash is not marked payment-protected. The 5% completion commission is not calculated. Processing fees are not charged. Release is not recorded and is not automatic. The service holds no float.
+The booking state machine, trip status, delivery confirmation, disputes, settlements, resolutions, cancellation, and audit trail are implemented, but only against the seams above. With the default bindings, confirmation is blocked and delivery acceptance returns `POD_REQUIRED` until a POD check is bound. No payment arrangement is created, so cash is not marked payment-protected. The 5% completion commission is not calculated: `commission_recognised_at` is recorded but no receivable exists. Processing fees are not charged. Release is not recorded and is not automatic. The service holds no float.
