@@ -836,6 +836,9 @@ describe('trucks API', () => {
     const otherTruck = await createTruck(app, other.token, otherCompany.id, {
       registrationNumber: 'QUOTE3',
     });
+    const otherUnverifiedTruck = await createTruck(app, other.token, otherCompany.id, {
+      registrationNumber: 'QUOTE4',
+    });
 
     const shipper = await register(app, 'shipper');
     const shipperCompany = await createCompany(app, shipper.token, 'shipper', 'Quote Shipper');
@@ -859,19 +862,34 @@ describe('trucks API', () => {
       throw new Error('expected assertTruckUsableForQuote to reject');
     }
 
-    const cases: Array<[string, string | null, string]> = [
-      [unverifiedCompany.id, null, 'TRANSPORTER_COMPANY_NOT_VERIFIED'],
-      [shipperCompany.id, null, 'TRANSPORTER_COMPANY_NOT_VERIFIED'],
-      [company.id, otherTruck.id, 'TRUCK_NOT_IN_COMPANY'],
-      [company.id, randomUUID(), 'TRUCK_NOT_IN_COMPANY'],
-      [company.id, unverifiedTruck.id, 'TRUCK_NOT_VERIFIED'],
+    const cases: Array<[string, string | null, number, string]> = [
+      [unverifiedCompany.id, null, 409, 'TRANSPORTER_COMPANY_NOT_VERIFIED'],
+      [shipperCompany.id, null, 409, 'TRANSPORTER_COMPANY_NOT_VERIFIED'],
+      [company.id, otherTruck.id, 400, 'TRUCK_NOT_IN_COMPANY'],
+      [company.id, otherUnverifiedTruck.id, 400, 'TRUCK_NOT_IN_COMPANY'],
+      [company.id, randomUUID(), 400, 'TRUCK_NOT_IN_COMPANY'],
+      [company.id, unverifiedTruck.id, 409, 'TRUCK_NOT_VERIFIED'],
     ];
-    for (const [companyId, truckId, code] of cases) {
+    for (const [companyId, truckId, status, code] of cases) {
       const error = await usabilityFailure(companyId, truckId);
       expect(error).toBeInstanceOf(ApiException);
-      expect(error.getStatus()).toBe(409);
+      expect(error.getStatus()).toBe(status);
       expect(error.code).toBe(code);
     }
+
+    const foreignVerified = await usabilityFailure(company.id, otherTruck.id);
+    const foreignUnverified = await usabilityFailure(company.id, otherUnverifiedTruck.id);
+    const unknownTruck = await usabilityFailure(company.id, randomUUID());
+    for (const error of [foreignVerified, foreignUnverified, unknownTruck]) {
+      expect(error.getStatus()).toBe(foreignVerified.getStatus());
+      expect(error.code).toBe(foreignVerified.code);
+      expect(error.message).toBe(foreignVerified.message);
+      expect(error.getResponse()).toEqual(foreignVerified.getResponse());
+      expect(error.details).toBeUndefined();
+    }
+    expect(foreignVerified.getStatus()).toBe(400);
+    expect(foreignVerified.code).toBe('TRUCK_NOT_IN_COMPANY');
+    expect(foreignVerified.message).toBe('The truck does not belong to this company.');
   });
 
   it('does not require an activated account to register a truck', async () => {

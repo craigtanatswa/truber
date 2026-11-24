@@ -156,6 +156,26 @@ json_string() {
   fi
 }
 
+body_without_request_id() {
+  local file="$1"
+  if [[ "$JSON_TOOL" == "jq" ]]; then
+    jq -S 'del(.requestId)' "$file" 2>/dev/null || true
+  else
+    python3 - "$file" <<'PY'
+import json
+import sys
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as handle:
+        data = json.load(handle)
+except Exception:
+    raise SystemExit(0)
+data.pop("requestId", None)
+print(json.dumps(data, sort_keys=True))
+PY
+  fi
+}
+
 new_uuid() {
   if command -v uuidgen >/dev/null 2>&1; then
     uuidgen | tr '[:upper:]' '[:lower:]'
@@ -503,6 +523,27 @@ api_call upload-document-evil-host 400 POST /verification-documents "$transporte
 mime_doc_body="$(printf '{"documentType":"other","documentUri":%s,"companyId":"%s","mimeType":"application/pdf"}' \
   "$(json_string "$mime_doc_uri")" "$transporter_company_a_id")"
 api_call upload-document-mime-type 400 POST /verification-documents "$transporter_a_token" "$mime_doc_body" "" VALIDATION_ERROR
+
+foreign_truck_doc_uri="https://${DOC_HOST}/docs/$(new_uuid).pdf"
+transporter_b_foreign_truck_body="$(printf '{"documentType":"other","documentUri":%s,"truckId":"%s"}' \
+  "$(json_string "$foreign_truck_doc_uri")" "$truck_a_id")"
+api_call transporter-b-upload-truck-a-document 400 POST /verification-documents "$transporter_b_token" "$transporter_b_foreign_truck_body" "" TRUCK_NOT_IN_COMPANY
+foreign_truck_body_file="$tmp_dir/transporter-b-upload-truck-a-document.body.json"
+cp "$tmp_body" "$foreign_truck_body_file"
+
+unknown_truck_id="$(new_uuid)"
+unknown_truck_doc_uri="https://${DOC_HOST}/docs/$(new_uuid).pdf"
+transporter_b_unknown_truck_body="$(printf '{"documentType":"other","documentUri":%s,"truckId":"%s"}' \
+  "$(json_string "$unknown_truck_doc_uri")" "$unknown_truck_id")"
+api_call transporter-b-upload-unknown-truck-document 400 POST /verification-documents "$transporter_b_token" "$transporter_b_unknown_truck_body" "" TRUCK_NOT_IN_COMPANY
+unknown_truck_body_file="$tmp_dir/transporter-b-upload-unknown-truck-document.body.json"
+cp "$tmp_body" "$unknown_truck_body_file"
+
+foreign_truck_body_normalized="$(body_without_request_id "$foreign_truck_body_file")"
+unknown_truck_body_normalized="$(body_without_request_id "$unknown_truck_body_file")"
+if [[ -z "$foreign_truck_body_normalized" || "$foreign_truck_body_normalized" != "$unknown_truck_body_normalized" ]]; then
+  mark_fail "foreign truck and unknown truck upload responses differ"
+fi
 
 # 6. Another transporter cannot list the owning company's documents.
 api_call transporter-b-list-company-a-documents 403 GET "/verification-documents?companyId=$transporter_company_a_id" "$transporter_b_token" "" "" FORBIDDEN

@@ -1,5 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import { randomUUID } from 'crypto';
+import request from 'supertest';
 import { createApp } from '../src/create-app';
 import { DbService } from '../src/db/db.service';
 import { http, seedAdmin, truncate } from './helpers';
@@ -221,8 +222,8 @@ describe('verification documents API', () => {
     await uploadRejected(
       ownerB.token,
       { documentType: 'other', documentUri: docUri(), truckId: truckA2.id },
-      403,
-      'FORBIDDEN',
+      400,
+      'TRUCK_NOT_IN_COMPANY',
     );
     await uploadRejected(
       ownerB.token,
@@ -233,8 +234,8 @@ describe('verification documents API', () => {
     await uploadRejected(
       ownerB.token,
       { documentType: 'other', documentUri: docUri(), truckId: randomUUID() },
-      403,
-      'FORBIDDEN',
+      400,
+      'TRUCK_NOT_IN_COMPANY',
     );
     await uploadRejected(
       ownerA.token,
@@ -242,6 +243,96 @@ describe('verification documents API', () => {
       400,
       'TRUCK_NOT_IN_COMPANY',
     );
+  });
+
+  it('returns an identical response for a foreign truck and an unknown truck id on upload', async () => {
+    const ownerA = await register(app, 'transporter');
+    const companyA1 = await createCompany(app, ownerA.token, 'transporter', 'Oracle A1');
+    const companyA2 = await createCompany(app, ownerA.token, 'transporter', 'Oracle A2');
+    const truckA2 = await createTruck(app, ownerA.token, companyA2.id, {
+      registrationNumber: 'ORACLEA2',
+    });
+
+    const ownerB = await register(app, 'transporter');
+    const companyB = await createCompany(app, ownerB.token, 'transporter', 'Oracle B');
+    await createTruck(app, ownerB.token, companyB.id, { registrationNumber: 'ORACLEB1' });
+    const admin = await loginAdmin(app);
+
+    const db = app.get(DbService);
+    const documentCount = async () => {
+      const result = await db.query<{ count: number }>(
+        'SELECT count(*)::int AS count FROM verification_documents',
+      );
+      return result.rows[0].count;
+    };
+    const before = await documentCount();
+
+    const post = async (token: string, body: Record<string, unknown>) =>
+      request(app.getHttpServer())
+        .post('/verification-documents')
+        .set('Authorization', `Bearer ${token}`)
+        .send(body);
+
+    const base = { documentType: 'other' };
+    const responses = [
+      await post(ownerB.token, { ...base, documentUri: docUri(), truckId: truckA2.id }),
+      await post(ownerB.token, { ...base, documentUri: docUri(), truckId: randomUUID() }),
+      await post(ownerB.token, {
+        ...base,
+        documentUri: docUri(),
+        truckId: truckA2.id,
+        companyId: companyB.id,
+      }),
+      await post(ownerB.token, {
+        ...base,
+        documentUri: docUri(),
+        truckId: randomUUID(),
+        companyId: companyB.id,
+      }),
+      await post(ownerA.token, {
+        ...base,
+        documentUri: docUri(),
+        truckId: truckA2.id,
+        companyId: companyA1.id,
+      }),
+      await post(ownerA.token, {
+        ...base,
+        documentUri: docUri(),
+        truckId: randomUUID(),
+        companyId: companyA1.id,
+      }),
+      await post(admin.token, {
+        ...base,
+        documentUri: docUri(),
+        truckId: truckA2.id,
+        companyId: companyB.id,
+      }),
+      await post(admin.token, {
+        ...base,
+        documentUri: docUri(),
+        truckId: randomUUID(),
+        companyId: companyB.id,
+      }),
+    ];
+
+    const expectedBody = {
+      code: 'TRUCK_NOT_IN_COMPANY',
+      message: 'The truck does not belong to this company.',
+    };
+    const contentType = responses[0].headers['content-type'];
+    expect(contentType).toContain('application/json');
+    const bodies = responses.map((response) => {
+      expect(response.status).toBe(400);
+      expect(response.headers['content-type']).toBe(contentType);
+      const { requestId: _requestId, ...body } = response.body as Record<string, unknown>;
+      expect(typeof _requestId).toBe('string');
+      expect(body).toEqual(expectedBody);
+      return body;
+    });
+    for (const body of bodies) {
+      expect(body).toEqual(bodies[0]);
+    }
+    expect(await documentCount()).toBe(before);
   });
 
   it('applies the document link rules over HTTP', async () => {

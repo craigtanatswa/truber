@@ -12,6 +12,7 @@ import { ENV, Env } from '../config/env';
 import { DbService } from '../db/db.service';
 import { DbUser, VerificationDocumentResponse } from '../domain';
 import { presentVerificationDocument } from '../present';
+import { truckNotInCompanyError } from '../trucks/truck-usability';
 import { assertAllowedDocumentUri } from './document-uri';
 import {
   CreateVerificationDocumentDto,
@@ -114,8 +115,9 @@ export class VerificationService {
           [truckId],
         );
         const truckRow = truck.rows[0];
+        // A foreign truck and an unknown truck id must be indistinguishable.
         if (!truckRow) {
-          throw new ApiException(403, 'FORBIDDEN', 'Not permitted for this truck.');
+          throw truckNotInCompanyError();
         }
         if (actor.role !== 'admin') {
           const member = await client.query(
@@ -123,15 +125,11 @@ export class VerificationService {
             [truckRow.company_id, actor.id],
           );
           if (!member.rowCount) {
-            throw new ApiException(403, 'FORBIDDEN', 'Not permitted for this truck.');
+            throw truckNotInCompanyError();
           }
         }
         if (dto.companyId !== undefined && dto.companyId !== truckRow.company_id) {
-          throw new ApiException(
-            400,
-            'TRUCK_NOT_IN_COMPANY',
-            'The truck does not belong to this company.',
-          );
+          throw truckNotInCompanyError();
         }
         companyId = truckRow.company_id;
       } else if (companyId) {
