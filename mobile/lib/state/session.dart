@@ -395,7 +395,8 @@ class SessionController extends ChangeNotifier {
 
   Future<OtpRequestResponse?> requestOtp({String channel = 'sms'}) async {
     error = null;
-    if (!kPhoneOtp || !otpRequestsAllowed) {
+    if (!kPhoneOtp) return null;
+    if (!otpRequestsAllowed) {
       // Live builds never trigger OTP delivery; no fake code either.
       error = TruberCopy.errorGeneric;
       notifyListeners();

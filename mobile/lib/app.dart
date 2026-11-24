@@ -54,7 +54,12 @@ _DemoRoute? _parseDemo() {
 }
 
 SessionController createDefaultSession() {
-  if (kDataMode == DataMode.live) return createLiveSession(kApiBaseUrl);
+  // Const so a TRUBER_DATA=live build drops the mock graph, including demopass.
+  if (kIncludeMockData) return _createMockSession();
+  return createLiveSession(kApiBaseUrl);
+}
+
+SessionController _createMockSession() {
   final loads = MockLoadRepository();
   return SessionController(
     auth: MockAuthRepository(),
