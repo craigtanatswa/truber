@@ -86,7 +86,7 @@ class _VerifyPhoneScreenState extends State<VerifyPhoneScreen> {
               color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
           ),
-          if (kTruberDemo) ...[
+          if (kPhoneOtp && kDemoAids) ...[
             const SizedBox(height: TruberSpacing.md),
             Text(
               key: const Key('verify_demo_hint'),

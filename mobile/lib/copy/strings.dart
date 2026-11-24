@@ -10,9 +10,18 @@ abstract final class TruberCopy {
   static const roleTransporterHelp = 'Find loads, quote, and get paid';
   static const roleAdmin = 'Admin';
 
+  /// Catalog only. Hidden at launch: no driver records.
+  static const driverSignin = 'Drivers: log in with email';
+  static const driverSigninHelp =
+      'Already driving for a transporter? Log in with the email your company registered. They add you to trips.';
+  static const driverLoginHint =
+      'Drivers log in with the email your transporter registered.';
+
   static const accountTitle = 'Your account';
   static const accountHelp =
-      'Create your login. You’ll verify your phone next.';
+      'Create your login with your email and a password.';
+  static const termsNotice =
+      'By creating an account, you agree to Truber’s Terms and Conditions and Privacy Policy.';
   static const fullName = 'Full name';
   static const fullNameHint = 'e.g. Tendai Moyo';
   static const email = 'Email';
@@ -39,6 +48,8 @@ abstract final class TruberCopy {
       'We’ll send a one-time code to verify this number. Zimbabwe numbers start with +263.';
   static const phoneLeadingZero =
       'Enter without the leading 0 if you prefer — both work.';
+  static const phoneContactHelp =
+      'So the other company on a booking can call you. Zimbabwe numbers start with +263.';
 
   static const loginCta = 'Log in';
   static const loginTitle = 'Log in';
@@ -94,9 +105,37 @@ abstract final class TruberCopy {
   static const cityOptional = 'Primary city (optional)';
   static const cityHint = 'e.g. Harare';
 
+  static const profileTitle = 'Organisation';
+  static const profileHelpShipper =
+      'Tell us who you are so transporters can trust your loads.';
+  static const profileHelpTransporter =
+      'Tell us about your trucking business so shippers can trust your quotes.';
+
+  static const verifyTitle = 'Verify your account';
+  static const verifyTrust =
+      'Only verified companies can post loads or send quotations. Our team checks each document.';
+  static const verifyHelpShipper =
+      'Add a link to your national ID or passport, and to your company registration if you ship as a business.';
+  static const verifyHelpTransporter =
+      'Add links to your company registration, operator licence and insurance. Our team reviews each one.';
+  static const docLinkLabel = 'Add a link to the document';
+  static const docLinkHint = 'Paste a link to a file we can open. Our team reviews it.';
+  static const docLinkError = 'Enter a full link, starting with https://';
+  static const verifyDocId = 'National ID or passport';
+  static const verifyDocCompanyReg = 'Company registration';
+  static const verifyDocOperator = 'Operator licence';
+  static const verifyDocInsurance = 'Insurance certificate';
+  static const verifyAdd = 'Add a document';
+  static const verifyAddHelp = 'JPG, PNG or PDF · keep under 5 MB';
+  static const verifySubmit = 'Submit for review';
   static const verifyPending = 'Thanks — we’ll review your documents shortly.';
+  static const verifyPendingTitle = 'Documents under review';
+  static const verifyPendingBody =
+      'Thanks — we’ll review your documents shortly. You can browse the app; posting loads or accepting bookings needs a verified account.';
   static const verifyNeeded =
       'Verify your account to post loads and receive bookings.';
+  static const verifyNeededTransporter =
+      'Verify your account to receive bookings and appear in search.';
   static const verifySkip = 'Skip for now';
 
   /// Future OTP verification demo hint (not shown on login).
@@ -126,7 +165,8 @@ abstract final class TruberCopy {
 
   static const shipperHomeTitle = 'Your loads';
   static const transporterHomeTitle = 'Find loads';
-  static const adminPlaceholder = 'Admin tools coming soon';
+  static const adminHomeTitle = 'Admin';
+  static const adminHomeBody = 'You’re signed in with an admin account.';
 
   static const loadPostTitle = 'Post a load';
   static const loadListTitle = 'Your loads';
@@ -156,6 +196,12 @@ abstract final class TruberCopy {
   static const quoteSubmitTitle = 'Submit quotation';
   static const quoteSubmitCta = 'Send quotation';
   static const quoteSent = 'Quotation sent to the shipper.';
+  static const quoteWithdrawCta = 'Withdraw quotation';
+  static const quoteWithdrawConfirmTitle = 'Withdraw this quotation?';
+  static const quoteWithdrawConfirmBody = 'The shipper won’t be able to accept it.';
+  static const quoteWithdrawn = 'Quotation withdrawn';
+  static const quoteRestoreCta = 'Reopen other quotations';
+  static const quoteRestored = 'Other quotations reopened';
 
   static const bookingConfirmTitle = 'Confirm booking';
   static const bookingSummary =
@@ -219,19 +265,25 @@ abstract final class TruberCopy {
       'Approved terms (7 / 14 / 30 days). Payment protected under your credit agreement.';
   static const payCash = 'Cash';
   static const payCashHelp =
-      'Cash is not protected. Agree terms directly with the transporter.';
+      'Pay the transporter directly. Agree the amount and timing with them.';
   static const payCashAck = 'I understand cash is not protected on Truber.';
   static const payProtectedBadge = 'Payment protected';
   static const payCashBadge = 'Not protected';
+  static const payBankTransfer = 'Bank or mobile money transfer';
+  static const payBankTransferHelp =
+      'Pay the transporter directly. Agree the amount and account or mobile money details with them.';
+  static const payBankTransferAck =
+      'I understand bank transfer is not protected on Truber.';
+  static const payBankTransferBadge = 'Not protected';
   static const payChooseCta = 'Use this payment method';
   static const payProposeCta = 'Propose payment terms';
   static const payCommissionNote =
-      'Truber commission (5%) is deducted from the transporter’s payout on completed trips. Processing charges are shown separately where they apply.';
+      'Truber charges transporters 5% commission on completed trips. We invoice it separately.';
   static const payStatusSecured = 'Payment secured';
   static const payStatusPending = 'Awaiting payment confirmation';
   static const payStatusReleased = 'Payment released';
-  static const payStatusCashRecorded =
-      'Cash arrangement recorded (not protected)';
+  static const payStatusCashRecorded = 'Cash arrangement recorded';
+  static const payStatusBankTransferRecorded = 'Transfer arrangement recorded';
 
   /// [amountFormatted] is the numeric part only (e.g. 1,000.00) — template already has US\$.
   static String payDepositLabelFor(String amountFormatted) =>
@@ -265,7 +317,7 @@ abstract final class TruberCopy {
   static const errorAmountInvalid =
       'Enter an amount of at least US\$0.01, with no more than 2 decimal places.';
   static const transporterHomeHint =
-      'Quote on loads that match your trucks. Only Protected payment is covered. Cash is not protected.';
+      'Quote on loads that match your trucks. You agree payment directly with the shipper.';
   static const errorValidation =
       'Some details need fixing. Check the highlighted fields.';
   static const errorServer =
@@ -346,7 +398,7 @@ abstract final class TruberCopy {
   // Transporter net payout (Design microcopy.md, updated 2026-11-10 CAT).
   // Values come from the backend. Never hard-code rates. Money is US$1,000.00
   // everywhere; deductions "– US$50.00". Never say paid/sent for a release.
-  static const payoutNetLabel = 'You receive';
+  static const payoutNetLabel = 'After commission';
 
   /// Template — replace {amount} (US$1,000.00 format, same as the rest of the app).
   static const payoutNetValue = '{amount}';
@@ -356,7 +408,7 @@ abstract final class TruberCopy {
   /// Template — replace {commission_pct}.
   static const payoutCommission = 'Truber commission ({commission_pct}%)';
   static const payoutFees = 'Payment fees';
-  static const payoutNetTotal = 'You receive';
+  static const payoutNetTotal = 'After commission';
   static const payoutHelperProtected =
       'Released once delivery is confirmed and Truber approves the payout.';
   static const payoutStatusAwaitingDelivery =
@@ -365,15 +417,15 @@ abstract final class TruberCopy {
       'Delivery confirmed. Waiting for Truber to approve your payout.';
   static const payoutStatusOnHoldDispute = 'On hold while a dispute is open';
   static const payoutStatusAwaitingShipperPayment =
-      'Waiting for the shipper’s payment';
+      'Waiting for the shipper to pay you';
   static const payoutStatusReleased = 'Payout approved';
   static const payoutStatusReleaseFailed =
       'Payout couldn’t be released. We’re looking into it and will update you here.';
-  static const payoutHelperCash = 'Cash payment. Not protected by Truber.';
+  static const payoutHelperCash = 'Cash payment, made directly by the shipper.';
 
   /// Template — replace {amount}.
   static const payoutQuoteHint =
-      'You’ll receive {amount} after commission and fees.';
+      'You’ll earn {amount} after Truber’s commission.';
   static const payoutFeesNone = 'No fees';
 
   static String payoutNetValueFor(String amountFormatted) =>
@@ -398,7 +450,10 @@ abstract final class TruberCopy {
   /// Template — replace {date}.
   static const banBannerCompanyBody =
       'Your company can’t take on new work until {date} because a deal was arranged outside Truber. Your existing bookings and records are still available.';
-  static const banCtaHelp = 'Contact support';
+  static const banCtaHelp = 'Email support';
+
+  /// Template — replace {company}.
+  static const supportEmailSubject = 'Truber support: {company}';
 
   /// Template — replace {date}.
   static const banBlockedActionToast = 'Not available until {date}';
@@ -411,12 +466,28 @@ abstract final class TruberCopy {
       banBannerCompanyBody.replaceAll('{date}', date);
   static String banBlockedActionToastFor(String date) =>
       banBlockedActionToast.replaceAll('{date}', date);
+  static String supportEmailSubjectFor(String company) =>
+      supportEmailSubject.replaceAll('{company}', company);
+
+  static const trackTitle = 'Delivery status';
+  static const trackConfirmed = 'Booking confirmed';
+  static const trackDispatched = 'Truck dispatched';
+  static const trackCollected = 'Goods collected';
+  static const trackInTransit = 'In transit';
+  static const trackDelivered = 'Delivered';
+  static const trackUploadPod = 'Add proof of delivery';
+  static const trackPodHelp =
+      'Add a link to the signed delivery note or photos.';
+  static const trackShipperConfirm = 'Confirm delivery';
+  static const trackShipperConfirmHelp =
+      'Confirm when the load has arrived. This marks the booking as complete.';
+  static const trackDriverUpdate = 'Update status';
 
   // Report off-platform dealing (Design microcopy.md, added 2026-11-10 CAT).
   static const offplatformEntry = 'Report dealing outside Truber';
   static const offplatformTitle = 'Report dealing outside Truber';
   static const offplatformIntro =
-      'Tell us if someone asked to pay, or be paid, outside Truber for this booking. Payments made outside Truber are not protected.';
+      'Tell us if someone asked to arrange this job outside Truber instead of booking it here.';
   static const offplatformPartyLabel = 'Who was involved?';
   static const offplatformPartyShipper = 'The shipper';
   static const offplatformPartyTransporter = 'The transporter';
@@ -435,7 +506,7 @@ abstract final class TruberCopy {
   static const offplatformStatusConfirmed = 'Confirmed';
   static const offplatformStatusNotConfirmed = 'Not confirmed';
   static const offplatformNudge =
-      'Keep payments on Truber. Payments made outside Truber are not protected.';
+      'Keep your bookings on Truber so you both have a record of the job.';
 
   // Off-platform admin labels (Design prose list; no admin UI yet).
   static const offplatformAdminFinding = 'Finding';

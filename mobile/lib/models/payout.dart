@@ -74,9 +74,13 @@ class TransporterPayout {
 
   bool get isCash => method == PaymentMethod.cash;
 
-  /// Protected helper only for server-accepted protection (never cash).
+  bool get isRecordedSettlement =>
+      method == PaymentMethod.cash ||
+      method == PaymentMethod.directTransfer;
+
+  /// Protected helper only for server-accepted protection (never a launch method).
   bool get isProtected =>
-      !isCash &&
+      !isRecordedSettlement &&
       (protectionStatus == ProtectionStatus.protected ||
           protectionStatus == ProtectionStatus.releasedFromProtection);
 }
@@ -102,7 +106,7 @@ enum PayoutStatus {
 /// Null when no line applies: cash (no fare payout due), cancelled trips,
 /// `release_failed` shows Design's `payout.status_release_failed`.
 PayoutStatus? payoutStatusFor(TransporterPayout p) {
-  if (p.isCash) return null;
+  if (p.isRecordedSettlement) return null;
   if (p.completionStatus == CompletionStatus.cancelled) return null;
   if (p.releaseStatus == ReleaseStatus.releaseFailed) {
     return PayoutStatus.releaseFailed;

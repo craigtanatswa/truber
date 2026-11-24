@@ -47,14 +47,19 @@ _DemoRoute? _parseDemo() {
   if (!kIsWeb) return null;
   final hash = Uri.base.fragment;
   final m = RegExp(
-    r'demo/(login|register|reset-confirm|reset|otp|banned-shipper|banned-transporter-user|banned-transporter|shipper|transporter|admin)(?:/(post|search|quotes|payment-odd|payment|booking|account))?',
+    r'demo/(login|register|reset-confirm|reset|otp|banned-shipper|banned-transporter-user|banned-transporter|shipper|transporter|admin)(?:/(post|search|quotes|payment-odd|payment|booking|booking-transfer|account))?',
   ).firstMatch(hash);
   if (m == null) return null;
   return _DemoRoute(m.group(1)!, tab: m.group(2));
 }
 
 SessionController createDefaultSession() {
-  if (kDataMode == DataMode.live) return createLiveSession(kApiBaseUrl);
+  // Const so a TRUBER_DATA=live build drops the mock graph, including demopass.
+  if (kIncludeMockData) return _createMockSession();
+  return createLiveSession(kApiBaseUrl);
+}
+
+SessionController _createMockSession() {
   final loads = MockLoadRepository();
   return SessionController(
     auth: MockAuthRepository(),
@@ -82,12 +87,34 @@ SessionController createLiveSession(String baseUrl) {
     bookings: UnavailableBookingRepository(),
     payments: UnavailablePaymentRepository(),
     payouts: LivePayoutRepository(),
+    verifications: LiveVerificationRepository(api),
     reports: LiveOffPlatformReportRepository(api),
     companyDirectory: LiveCompanyRepository(api),
     otpRequestsAllowed: false,
   );
   api.onSessionExpired = session.handleSessionExpired;
   return session;
+}
+
+/// Seeded demo login. Only referenced from [kDemoAids], so live builds
+/// drop the password literal.
+void _signInDemo(SessionController s, _DemoRoute? demo) {
+  if (demo == null || kDataMode != DataMode.mock) return;
+  if (!kPhoneOtp && demo.role == 'otp') return;
+  if (demo.role == 'login' ||
+      demo.role == 'register' ||
+      demo.role == 'reset' ||
+      demo.role == 'reset-confirm') {
+    return;
+  }
+  final email = switch (demo.role) {
+    'otp' => 'shipper@truber.zw',
+    'banned-shipper' => 'banned.shipper@truber.zw',
+    'banned-transporter' => 'kariba@truber.zw',
+    'banned-transporter-user' => 'banned.transporter@truber.zw',
+    _ => '${demo.role}@truber.zw',
+  };
+  s.login(email, 'demopass');
 }
 
 class TruberApp extends StatelessWidget {
@@ -107,21 +134,8 @@ class TruberApp extends StatelessWidget {
             s.bootstrap();
             // Demo deep links sign in with mock seed users only — never
             // against a live API.
-            if (demo != null &&
-                kDataMode == DataMode.mock &&
-                demo.role != 'login' &&
-                demo.role != 'register' &&
-                demo.role != 'reset' &&
-                demo.role != 'reset-confirm') {
-              // otp demo needs a session; use shipper seed user.
-              final email = switch (demo.role) {
-                'otp' => 'shipper@truber.zw',
-                'banned-shipper' => 'banned.shipper@truber.zw',
-                'banned-transporter' => 'kariba@truber.zw',
-                'banned-transporter-user' => 'banned.transporter@truber.zw',
-                _ => '${demo.role}@truber.zw',
-              };
-              s.login(email, 'demopass');
+            if (kDemoAids) {
+              _signInDemo(s, demo);
             }
             return s;
           },
@@ -167,14 +181,14 @@ class _DemoHome extends StatelessWidget {
     }
     if (demo?.role == 'reset-confirm') {
       // Deep-link demo: token held in state only (QA-033) — never shown in UI.
-      if (kTruberDemo) {
+      if (kDemoAids) {
         return const ResetPasswordConfirmScreen(
           token: 'demo-deep-link-reset-token-do-not-render-xxxxxxxxxxxx',
         );
       }
       return const ResetPasswordConfirmScreen();
     }
-    if (demo?.role == 'otp') {
+    if (kPhoneOtp && demo?.role == 'otp') {
       final session = context.watch<SessionController>();
       if (session.user == null) {
         return const Scaffold(
@@ -227,7 +241,8 @@ class _ShipperDemoState extends State<_ShipperDemo> {
         (tab == 'quotes' ||
             tab == 'payment' ||
             tab == 'payment-odd' ||
-            tab == 'booking')) {
+            tab == 'booking' ||
+            tab == 'booking-transfer')) {
       _flow = _openFlow(tab!);
     }
   }
@@ -272,25 +287,16 @@ class _ShipperDemoState extends State<_ShipperDemo> {
       );
     }
 
-    // Seed a confirmed deposit/balance arrangement so booking demo shows status chips.
+    // Seed a confirmed launch arrangement. No acknowledgement gates booking.
     final existingArr = await session.payments.latestForBooking(booking.id);
     if (existingArr == null) {
-      final total = booking.agreedAmount;
-      final deposit = MoneyAmount(
-        amountMinor: total.amountMinor ~/ 2,
-        currency: total.currency,
-      );
-      final balance = MoneyAmount(
-        amountMinor: total.amountMinor - deposit.amountMinor,
-        currency: total.currency,
-      );
       await session.payments.propose(
         booking.id,
         CreatePaymentArrangementRequest(
-          method: PaymentMethod.depositBalance,
-          totalAmount: total,
-          depositAmount: deposit,
-          balanceAmount: balance,
+          method: tab == 'booking-transfer'
+              ? PaymentMethod.directTransfer
+              : PaymentMethod.cash,
+          totalAmount: booking.agreedAmount,
         ),
       );
     }
@@ -313,7 +319,8 @@ class _ShipperDemoState extends State<_ShipperDemo> {
     if (widget.tab == 'quotes' ||
         widget.tab == 'payment' ||
         widget.tab == 'payment-odd' ||
-        widget.tab == 'booking') {
+        widget.tab == 'booking' ||
+        widget.tab == 'booking-transfer') {
       return FutureBuilder<Widget>(
         future: _flow,
         builder: (context, snap) {

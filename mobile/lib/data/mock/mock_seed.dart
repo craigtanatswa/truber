@@ -29,8 +29,12 @@ abstract final class MockIds {
 
 DateTime get _now => DateTime.utc(2026, 11, 6, 12);
 
-/// Spec-shaped OffPlatformBan.endsAt example (startsAt + 14 days).
-final DateTime seedBanEndsAt = DateTime.utc(2026, 11, 24, 8);
+/// Mock ban window relative to the real clock: opened yesterday, ends in 30 days.
+/// User and Company only store the end (`bannedUntil`).
+final DateTime seedBanStartsAt =
+    DateTime.now().toUtc().subtract(const Duration(days: 1));
+final DateTime seedBanEndsAt =
+    DateTime.now().toUtc().add(const Duration(days: 30));
 
 List<TruberUser> seedUsers() => [
       TruberUser(

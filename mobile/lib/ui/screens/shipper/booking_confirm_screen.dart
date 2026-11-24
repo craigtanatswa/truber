@@ -14,7 +14,6 @@ import '../../widgets/ban_banner.dart';
 import '../../widgets/load_card.dart';
 import '../offplatform/offplatform_entry.dart';
 import '../../errors/error_messages.dart';
-import '../../widgets/payment_badges.dart';
 import '../../widgets/status_chip.dart';
 import 'payment_choice_screen.dart';
 import 'package:truber_app/ui/navigation/truber_page_route.dart';
@@ -255,11 +254,15 @@ class _PaymentStatusCard extends StatelessWidget {
       );
     }
     final a = arrangement!;
-    final statusText = a.isCash && a.isConfirmed
-        ? TruberCopy.payStatusCashRecorded
-        : a.isConfirmed
-            ? TruberCopy.payStatusSecured
-            : TruberCopy.payStatusPending;
+    final statusText = !a.isConfirmed
+        ? TruberCopy.payStatusPending
+        : a.isCash
+            ? TruberCopy.payStatusCashRecorded
+            : a.isDirectTransfer
+                ? TruberCopy.payStatusBankTransferRecorded
+                : TruberCopy.payStatusPending;
+    final showMethod = isLaunchPaymentMethod(a.method);
+    final showProtection = !launchHidesProtection(a.protectionStatus);
     return Card(
       key: const Key('payment_status_card'),
       child: Padding(
@@ -267,35 +270,13 @@ class _PaymentStatusCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    statusText,
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                ),
-                if (a.isCash)
-                  const CashWarningBadge()
-                else if (a.isConfirmed)
-                  const ProtectedPaymentBadge(),
-              ],
+            Text(
+              statusText,
+              style: Theme.of(context).textTheme.titleMedium,
             ),
             const SizedBox(height: TruberSpacing.sm),
-            Text(paymentMethodLabel(a.method)),
+            if (showMethod) Text(paymentMethodLabel(a.method)),
             Text(TruberCopy.payTotalFor(a.totalAmount.display)),
-            if (a.method == PaymentMethod.depositBalance &&
-                a.depositAmount != null &&
-                a.balanceAmount != null) ...[
-              Text(
-                TruberCopy.payDepositLabelFor(a.depositAmount!.display),
-                key: const Key('deposit_amount'),
-              ),
-              Text(
-                TruberCopy.payBalanceLabelFor(a.balanceAmount!.display),
-                key: const Key('balance_amount'),
-              ),
-            ],
             const SizedBox(height: TruberSpacing.sm),
             Wrap(
               key: const Key('payment_arrangement_status_row'),
@@ -307,21 +288,12 @@ class _PaymentStatusCard extends StatelessWidget {
                   label: arrangementStatusLabel(a.arrangementStatus),
                   tone: arrangementStatusTone(a.arrangementStatus),
                 ),
-                StatusChip(
-                  key: const Key('protection_status_chip'),
-                  label: protectionStatusLabel(a.protectionStatus),
-                  tone: protectionStatusTone(a.protectionStatus),
-                  borderColor: protectionUsesCashBorder(a.protectionStatus)
-                      ? (Theme.of(context).brightness == Brightness.dark
-                          ? TruberColors.paymentCashBorderDark
-                          : TruberColors.paymentCashBorder)
-                      : null,
-                  foregroundColor: protectionUsesCashBorder(a.protectionStatus)
-                      ? (Theme.of(context).brightness == Brightness.dark
-                          ? TruberColors.warningDark
-                          : TruberColors.warning)
-                      : null,
-                ),
+                if (showProtection)
+                  StatusChip(
+                    key: const Key('protection_status_chip'),
+                    label: protectionStatusLabel(a.protectionStatus),
+                    tone: protectionStatusTone(a.protectionStatus),
+                  ),
               ],
             ),
           ],

@@ -86,7 +86,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
             ),
             // QA-031: never surface the reset token in UI. Demo builds may open
             // the confirm form empty (paste from email / console log only).
-            if (kTruberDemo) ...[
+            if (kDemoAids) ...[
               const SizedBox(height: TruberSpacing.lg),
               TextButton(
                 key: const Key('reset_open_confirm_demo'),

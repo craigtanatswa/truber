@@ -162,61 +162,22 @@ void main() {
       return rec;
     }
 
-    testWidgets('US\$0.01 total: split not offered; prepay sent, no parts',
+    testWidgets('launch choice is cash and transfer; cash is sent with no parts',
         (tester) async {
       final rec = await pump(tester, 1);
+      expect(find.byKey(const Key('pay_option_cash')), findsOneWidget);
+      expect(find.byKey(const Key('pay_option_bank_transfer')), findsOneWidget);
+      expect(find.byKey(const Key('pay_option_prepay')), findsNothing);
       expect(find.byKey(const Key('pay_option_deposit_balance')), findsNothing);
-      expect(find.byKey(const Key('deposit_split_card')), findsNothing);
-      expect(find.byKey(const Key('pay_split_hint')), findsNothing);
-      for (final k in [
-        'pay_option_prepay',
-        'pay_option_escrow',
-        'pay_option_corporate_credit',
-        'pay_option_cash',
-      ]) {
-        expect(find.byKey(Key(k)), findsOneWidget, reason: k);
-      }
+      expect(find.text(TruberCopy.payDepositBalance), findsNothing);
       final cta = find.byKey(const Key('propose_payment_cta'));
       await tester.scrollUntilVisible(cta, 200,
           scrollable: find.byType(Scrollable).first);
       await tester.tap(cta);
       await tester.pumpAndSettle();
-      expect(rec.sent.single.method, PaymentMethod.prepay);
+      expect(rec.sent.single.method, PaymentMethod.cash);
       expect(rec.sent.single.depositAmount, isNull);
       expect(rec.sent.single.balanceAmount, isNull);
-    });
-
-    testWidgets('US\$0.03 odd total: labels US\$0.01 / US\$0.02, hint shown',
-        (tester) async {
-      final rec = await pump(tester, 3);
-      expect(
-          find.text(TruberCopy.payDepositLabelFor('US\$0.01')), findsOneWidget);
-      expect(
-          find.text(TruberCopy.payBalanceLabelFor('US\$0.02')), findsOneWidget);
-      expect(find.text(TruberCopy.paySplitHint), findsOneWidget);
-      final cta = find.byKey(const Key('propose_payment_cta'));
-      await tester.scrollUntilVisible(cta, 200,
-          scrollable: find.byType(Scrollable).first);
-      await tester.tap(cta);
-      await tester.pumpAndSettle();
-      final r = rec.sent.single;
-      expect(
-          [r.depositAmount!.amountMinor, r.balanceAmount!.amountMinor], [1, 2]);
-    });
-
-    testWidgets('US\$0.02 total: split offered and sent as 0.01 / 0.01',
-        (tester) async {
-      final rec = await pump(tester, 2);
-      expect(find.byKey(const Key('deposit_split_card')), findsOneWidget);
-      final cta = find.byKey(const Key('propose_payment_cta'));
-      await tester.scrollUntilVisible(cta, 200,
-          scrollable: find.byType(Scrollable).first);
-      await tester.tap(cta);
-      await tester.pumpAndSettle();
-      final r = rec.sent.single;
-      expect(r.method, PaymentMethod.depositBalance);
-      expect(
-          [r.depositAmount!.amountMinor, r.balanceAmount!.amountMinor], [1, 1]);
     });
   });
 }

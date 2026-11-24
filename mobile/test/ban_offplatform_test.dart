@@ -71,7 +71,8 @@ void main() {
       expect(m.ban!.userBanned, isFalse);
       expect(m.ban!.companyBanned, isTrue);
 
-      final later = _session(clock: () => DateTime.utc(2026, 12, 1));
+      final later = _session(
+          clock: () => seedBanEndsAt.add(const Duration(days: 1)));
       await later.login('banned.shipper@truber.zw', 'demopass');
       expect(later.ban, isNull, reason: 'expired bans do not block');
 
@@ -141,12 +142,14 @@ void main() {
   });
 
   test('AccountBannedError maps by bannedParty; reason never shown', () {
+    const raw = '2026-11-24T08:00:00Z';
+    final fixedText = formatDisplayDate(DateTime.parse(raw).toLocal());
     final caller = ApiException(409, 'ACCOUNT_BANNED', 'x', {
-      'bannedUntil': '2026-11-24T08:00:00Z',
+      'bannedUntil': raw,
       'bannedParty': 'caller',
     });
     expect(mapErrorMessage(caller),
-        TruberCopy.banBlockedActionToastFor(_dateText));
+        TruberCopy.banBlockedActionToastFor(fixedText));
     final cp = ApiException(409, 'ACCOUNT_BANNED', 'x', {
       'bannedUntil': '2026-11-24T08:00:00Z',
       'bannedParty': 'counterparty_company',
@@ -197,7 +200,8 @@ void main() {
     await s.login('transporter@truber.zw', 'demopass');
     await tester.pumpWidget(_host(s, const TransporterHome()));
     await tester.pumpAndSettle();
-    expect(find.text(TruberCopy.payoutStatusReleased), findsOneWidget);
+    expect(find.text(TruberCopy.payoutStatusReleased), findsNothing);
+    expect(find.text(TruberCopy.payoutStatusAwaitingDelivery), findsWidgets);
     expect(find.byKey(const Key('ban_banner')), findsNothing);
   });
 
@@ -317,8 +321,7 @@ void main() {
       expect(t.style?.color, TruberColors.error);
     });
 
-    testWidgets('release_failed line uses error tokens (light + dark)',
-        (tester) async {
+    testWidgets('release_failed line is hidden at launch', (tester) async {
       const p = TransporterPayout(
         bookingId: 'b',
         routeLabel: 'r',
@@ -327,29 +330,42 @@ void main() {
         completionStatus: CompletionStatus.completed,
         releaseStatus: ReleaseStatus.releaseFailed,
       );
-      for (final (theme, fg, bg) in [
-        (TruberTheme.light(), TruberColors.error, TruberColors.errorSoft),
-        (
-          TruberTheme.dark(),
-          TruberColors.errorDark,
-          TruberColors.errorSoftDark
-        ),
-      ]) {
-        await tester.pumpWidget(const SizedBox());
-        await tester.pumpWidget(MaterialApp(
-            theme: theme,
-            home: const Scaffold(body: PayoutSummary(payout: p))));
-        expect(find.text(TruberCopy.payoutStatusReleaseFailed), findsOneWidget);
-        final box = tester
-            .widget<Container>(find.byKey(const Key('payout_status_failed')));
-        expect((box.decoration as BoxDecoration).color, bg);
-        expect(
-            tester
-                .widget<Text>(find.byKey(const Key('payout_status')))
-                .style
-                ?.color,
-            fg);
-      }
+      await tester.pumpWidget(MaterialApp(
+          theme: TruberTheme.light(),
+          home: const Scaffold(body: PayoutSummary(payout: p))));
+      expect(find.text(TruberCopy.payoutStatusReleaseFailed), findsNothing);
+      expect(find.text(TruberCopy.payoutHelperProtected), findsNothing);
+      expect(find.byKey(const Key('payout_status_failed')), findsNothing);
     });
+  });
+
+  testWidgets(
+      'QA-048 relative ban window still banners and gates on the real clock',
+      (tester) async {
+    expect(seedBanStartsAt.isBefore(DateTime.now().toUtc()), isTrue);
+    expect(seedBanEndsAt.isAfter(DateTime.now().toUtc().add(const Duration(days: 29))),
+        isTrue);
+    expect(seedBanEndsAt, isNot(DateTime.utc(2026, 11, 24, 8)));
+
+    final real = _session(clock: DateTime.now);
+    await real.login('banned.shipper@truber.zw', 'demopass');
+    expect(real.ban, isNotNull);
+    expect(real.ban!.userBanned, isTrue);
+    await tester.pumpWidget(_host(real, const Scaffold(body: BanBanner())));
+    expect(find.byKey(const Key('ban_banner')), findsOneWidget);
+    expect(find.textContaining('until'), findsOneWidget);
+
+    // Past the old 24 Nov 2026 expiry, still inside now+30 days.
+    final ahead = _session(
+        clock: () => DateTime.now().toUtc().add(const Duration(days: 20)));
+    await ahead.login('kariba@truber.zw', 'demopass');
+    expect(ahead.ban, isNotNull, reason: 'company ban follows the real clock');
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpWidget(_host(
+        ahead, SubmitQuoteScreen(load: seedLoads().first)));
+    await tester.enterText(find.byKey(const Key('quote_rate')), '900');
+    await tester.tap(find.byKey(const Key('quote_submit')));
+    await tester.pump();
+    expect(find.byKey(const Key('ban_toast')), findsOneWidget);
   });
 }

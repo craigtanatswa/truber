@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../config/flags.dart';
 import '../copy/strings.dart';
 
 import '../ui/errors/error_messages.dart';
@@ -13,6 +14,7 @@ import '../data/repositories/load_repository.dart';
 import '../data/repositories/payment_repository.dart';
 import '../data/repositories/payout_repository.dart';
 import '../data/repositories/quotation_repository.dart';
+import '../data/live/live_repositories.dart';
 import '../data/repositories/offplatform_repository.dart';
 import '../models/company.dart';
 import 'ban.dart';
@@ -29,6 +31,7 @@ class SessionController extends ChangeNotifier {
     this.payouts,
     this.reports,
     this.companyDirectory,
+    this.verifications,
     this.otpRequestsAllowed = true,
     this.enforceSessionExpiry = true,
     DateTime Function()? clock,
@@ -53,6 +56,11 @@ class SessionController extends ChangeNotifier {
   /// Company lookup by id (GET /companies/{id}) for ban state of the user's
   /// own company (mock) and counterparties.
   final CompanyRepository? companyDirectory;
+
+  /// Live document links. Null in mock: links are kept on [submittedDocuments].
+  final LiveVerificationRepository? verifications;
+
+  final List<({String type, String uri})> submittedDocuments = [];
 
   Company? currentCompany;
   DateTime? _serverBanUntil;
@@ -221,15 +229,20 @@ class SessionController extends ChangeNotifier {
   }) async {
     error = null;
     try {
-      final tokens = await auth.register(
+      final registered = await auth.register(
         email: email,
         password: password,
         fullName: fullName,
         role: role,
-        phone: phone,
+        phone: kPhoneOtp ? phone : null,
         city: city,
       );
-      _startSession(tokens, refreshable: companies != null);
+      if (!kPhoneOtp) {
+        final tokens = await auth.login(email: email.trim(), password: password);
+        _startSession(tokens, refreshable: companies != null);
+      } else {
+        _startSession(registered, refreshable: companies != null);
+      }
       // Mirror mock normalize: trim; empty omitted; oversize rejected by auth.
       final cityTrim = city?.trim();
       if (cityTrim != null && cityTrim.isNotEmpty && cityTrim.length <= 120) {
@@ -253,6 +266,89 @@ class SessionController extends ChangeNotifier {
             '30000000-0000-4000-8000-${DateTime.now().millisecondsSinceEpoch.toString().padLeft(12, '0').substring(0, 12)}';
         _userCompanies[user!.id] = cid;
       }
+      notifyListeners();
+      return true;
+    } catch (e) {
+      error = mapErrorMessage(e);
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Organisation step after the account has been created and the user logged in.
+  Future<bool> saveOrganisation({
+    required String legalName,
+    String? city,
+  }) async {
+    error = null;
+    final name = legalName.trim();
+    if (user == null || name.isEmpty) {
+      error = TruberCopy.errorValidation;
+      notifyListeners();
+      return false;
+    }
+    try {
+      final cityTrim = city?.trim();
+      if (cityTrim != null && cityTrim.isNotEmpty) {
+        if (cityTrim.length > 120) {
+          error = TruberCopy.errorValidation;
+          notifyListeners();
+          return false;
+        }
+        _userCities[user!.id] = cityTrim;
+      }
+      final repo = companies;
+      if (repo != null && user!.role != UserRole.admin) {
+        final company = await repo.create(
+          type: user!.role == UserRole.shipper
+              ? CompanyType.shipper
+              : CompanyType.transporter,
+          legalName: name,
+          city: _userCities[user!.id],
+        );
+        _userCompanies[user!.id] = company.id;
+        currentCompany = company;
+      } else {
+        final cid =
+            '30000000-0000-4000-8000-${DateTime.now().millisecondsSinceEpoch.toString().padLeft(12, '0').substring(0, 12)}';
+        _userCompanies[user!.id] = cid;
+      }
+      notifyListeners();
+      return true;
+    } catch (e) {
+      error = mapErrorMessage(e);
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Verification-link step. Rejects any non-empty link that is not https.
+  Future<bool> submitVerificationLinks(
+      List<({String type, String uri})> links) async {
+    error = null;
+    final clean = <({String type, String uri})>[];
+    for (final link in links) {
+      final uri = link.uri.trim();
+      if (uri.isEmpty) continue;
+      if (!uri.startsWith('https://')) {
+        error = TruberCopy.docLinkError;
+        notifyListeners();
+        return false;
+      }
+      clean.add((type: link.type, uri: uri));
+    }
+    try {
+      final repo = verifications;
+      if (repo != null) {
+        for (final link in clean) {
+          await repo.submit(
+            documentType: link.type,
+            documentUri: link.uri,
+            companyId: currentCompanyId,
+          );
+        }
+      }
+      submittedDocuments.addAll(clean);
       notifyListeners();
       return true;
     } catch (e) {
@@ -299,6 +395,7 @@ class SessionController extends ChangeNotifier {
 
   Future<OtpRequestResponse?> requestOtp({String channel = 'sms'}) async {
     error = null;
+    if (!kPhoneOtp) return null;
     if (!otpRequestsAllowed) {
       // Live builds never trigger OTP delivery; no fake code either.
       error = TruberCopy.errorGeneric;
@@ -318,6 +415,7 @@ class SessionController extends ChangeNotifier {
 
   Future<bool> verifyOtp(String code) async {
     error = null;
+    if (!kPhoneOtp) return false;
     try {
       user = await auth.verifyOtp(code: code);
       notifyListeners();
