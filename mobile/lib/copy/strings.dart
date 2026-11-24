@@ -157,11 +157,13 @@ abstract final class TruberCopy {
   static const quoteSubmitCta = 'Send quotation';
   static const quoteSent = 'Quotation sent to the shipper.';
 
-  /// TODO(design): quote.withdraw_cta — needs Design wording.
-  static const quoteWithdrawCta = 'TODO';
-
-  /// TODO(design): quote.restore_cta — needs Design wording.
-  static const quoteRestoreCta = 'TODO';
+  static const quoteWithdrawCta = 'Withdraw quotation';
+  static const quoteWithdrawConfirmTitle = 'Withdraw this quotation?';
+  static const quoteWithdrawConfirmBody =
+      'The shipper won’t be able to accept it.';
+  static const quoteWithdrawn = 'Quotation withdrawn';
+  static const quoteRestoreCta = 'Reopen other quotations';
+  static const quoteRestored = 'Other quotations reopened';
 
   static const bookingConfirmTitle = 'Confirm booking';
   static const bookingSummary =
