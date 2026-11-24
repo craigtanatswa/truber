@@ -99,7 +99,8 @@ abstract final class TruberTheme {
       ),
       cardTheme: CardTheme(
         color: TruberColors.surface,
-        elevation: TruberElevation.card,
+        elevation: TruberElevation.flat,
+        shadowColor: Colors.transparent,
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(
           borderRadius: TruberRadii.borderMd,
@@ -323,7 +324,8 @@ abstract final class TruberTheme {
       ),
       cardTheme: CardTheme(
         color: TruberColors.surfaceDark,
-        elevation: TruberElevation.card,
+        elevation: TruberElevation.flat,
+        shadowColor: Colors.transparent,
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(
           borderRadius: TruberRadii.borderMd,

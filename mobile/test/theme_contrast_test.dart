@@ -266,6 +266,17 @@ void main() {
     }
   });
 
+  test('card edge is the hairline border token, not a shadow', () {
+    for (final theme in [TruberTheme.light(), TruberTheme.dark()]) {
+      final shape = theme.cardTheme.shape! as RoundedRectangleBorder;
+      final expected = theme.brightness == Brightness.dark
+          ? TruberColors.borderDark
+          : TruberColors.border;
+      expect(theme.cardTheme.elevation, TruberElevation.flat);
+      expect(shape.side.color, expected);
+    }
+  });
+
   test('known-failure list has no stale entries', () {
     final ids = {for (final p in all) p.id};
     for (final k in _knownFailures.keys) {
