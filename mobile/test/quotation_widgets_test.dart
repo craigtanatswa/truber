@@ -1,4 +1,7 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:truber_app/copy/strings.dart';
@@ -229,6 +232,74 @@ void main() {
     await tester.enterText(find.byKey(const Key('quote_rate')), '1000');
     await tester.pumpAndSettle();
     _expectNoPayoutCopy(tester);
+  });
+
+  testWidgets('dark theme card border and withdraw label use dark tokens',
+      (tester) async {
+    tester.view.physicalSize = const Size(420, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final s = _session();
+    await s.login('transporter@truber.zw', 'demopass');
+    await tester.pumpWidget(ChangeNotifierProvider.value(
+      value: s,
+      child: MaterialApp(
+        theme: TruberAppTheme.dark(),
+        home: TransporterQuotesScreen(load: seedLoads().first),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    final cardMaterial = tester.widget<Material>(find
+        .descendant(
+          of: find.byType(Card).first,
+          matching: find.byType(Material),
+        )
+        .first);
+    expect(
+      (cardMaterial.shape! as RoundedRectangleBorder).side.color,
+      TruberColors.borderDark,
+    );
+
+    final button = find.byKey(const Key('withdraw_quote_${MockIds.quote1}'));
+    final states = <WidgetState>{};
+    final theme = Theme.of(tester.element(button));
+    final foreground = button.evaluate().single.widget is OutlinedButton
+        ? (tester.widget<OutlinedButton>(button).style?.foregroundColor ??
+                theme.outlinedButtonTheme.style?.foregroundColor)
+            ?.resolve(states)
+        : null;
+    expect(foreground, TruberColors.primaryTextDark);
+    final side = (tester.widget<OutlinedButton>(button).style?.side ??
+            theme.outlinedButtonTheme.style?.side)
+        ?.resolve(states);
+    expect(side?.color, TruberColors.borderStrongDark);
+
+    final label = tester.widget<RichText>(find.descendant(
+      of: button,
+      matching: find.byType(RichText),
+    ));
+    expect(label.text.style?.color, TruberColors.primaryTextDark);
+
+    final edge = tester.getTopLeft(find.byType(Card).first) + const Offset(0, 24);
+    final boundary = tester.renderObject<RenderRepaintBoundary>(
+      find.byType(RepaintBoundary).first,
+    );
+    final image = (await tester.runAsync(() => boundary.toImage()))!;
+    final bytes = (await tester.runAsync(
+      () => image.toByteData(format: ui.ImageByteFormat.rawRgba),
+    ))!;
+    final x = edge.dx.round();
+    final y = edge.dy.round();
+    final i = (y * image.width + x) * 4;
+    final painted = Color.fromARGB(
+      bytes.getUint8(i + 3),
+      bytes.getUint8(i),
+      bytes.getUint8(i + 1),
+      bytes.getUint8(i + 2),
+    );
+    expect(painted, TruberColors.borderDark, reason: 'pixel $x,$y');
   });
 
   testWidgets('transporter lists own quotes and withdraws one', (tester) async {

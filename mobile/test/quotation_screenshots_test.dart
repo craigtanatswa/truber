@@ -17,6 +17,7 @@ import 'package:truber_app/ui/screens/shipper/quotations_screen.dart';
 import 'package:truber_app/ui/screens/transporter/my_quotes_screen.dart';
 import 'package:truber_app/ui/screens/transporter/submit_quote_screen.dart';
 import 'package:truber_app/ui/theme/truber_app_theme.dart';
+import 'package:truber_design/truber_design.dart';
 
 /// Local-only capture. Not part of CI: golden pixels depend on the host fonts.
 /// Run: flutter test test/quotation_screenshots_test.dart --update-goldens
@@ -60,61 +61,35 @@ Future<void> _loadFonts() async {
   await icons.load();
 }
 
-TextStyle? _face(TextStyle? style, FontWeight weight) =>
-    style?.copyWith(fontFamily: 'Roboto', fontWeight: weight);
+/// Font only. Colours, including outlined-button foreground and side, stay
+/// on the theme so dark captures keep primaryTextDark and borderStrongDark.
+ButtonStyle? _robotoButtons(ButtonStyle? style) {
+  if (style == null) return null;
+  return style.copyWith(
+    textStyle: WidgetStateProperty.resolveWith((states) {
+      final current = style.textStyle?.resolve(states);
+      return (current ?? const TextStyle()).copyWith(fontFamily: 'Roboto');
+    }),
+  );
+}
 
-/// Only Regular (400) and Bold (700) are loaded. Other weights fall back to
-/// the test font, which draws black boxes.
-TextTheme _faces(TextTheme theme) => theme.copyWith(
-      displaySmall: _face(theme.displaySmall, FontWeight.w700),
-      headlineSmall: _face(theme.headlineSmall, FontWeight.w700),
-      headlineMedium: _face(theme.headlineMedium, FontWeight.w700),
-      titleLarge: _face(theme.titleLarge, FontWeight.w700),
-      titleMedium: _face(theme.titleMedium, FontWeight.w700),
-      titleSmall: _face(theme.titleSmall, FontWeight.w700),
-      bodyLarge: _face(theme.bodyLarge, FontWeight.w400),
-      bodyMedium: _face(theme.bodyMedium, FontWeight.w400),
-      bodySmall: _face(theme.bodySmall, FontWeight.w400),
-      labelLarge: _face(theme.labelLarge, FontWeight.w700),
-      labelMedium: _face(theme.labelMedium, FontWeight.w700),
-      labelSmall: _face(theme.labelSmall, FontWeight.w700),
-    );
+TextTheme _robotoText(TextTheme theme) => theme.apply(fontFamily: 'Roboto');
 
 ThemeData _theme([Brightness brightness = Brightness.light]) {
-  final dark = brightness == Brightness.dark;
-  final base = dark ? TruberAppTheme.dark() : TruberAppTheme.light();
-  final face = TextStyle(
-    fontFamily: 'Roboto',
-    color: dark ? Colors.white : Colors.black,
-  );
+  final base = brightness == Brightness.dark
+      ? TruberAppTheme.dark()
+      : TruberAppTheme.light();
   return base.copyWith(
-    textTheme: _faces(base.textTheme),
-    primaryTextTheme: _faces(base.primaryTextTheme),
-    appBarTheme: base.appBarTheme.copyWith(
-      titleTextStyle: face.copyWith(fontSize: 22, fontWeight: FontWeight.w700),
-    ),
-    dialogTheme: DialogTheme(
-      titleTextStyle: face.copyWith(fontSize: 20, fontWeight: FontWeight.w700),
-      contentTextStyle:
-          face.copyWith(fontSize: 16, fontWeight: FontWeight.w400),
-    ),
+    textTheme: _robotoText(base.textTheme),
+    primaryTextTheme: _robotoText(base.primaryTextTheme),
     outlinedButtonTheme: OutlinedButtonThemeData(
-      style: (base.outlinedButtonTheme.style ?? const ButtonStyle()).copyWith(
-        textStyle: const WidgetStatePropertyAll(
-          TextStyle(
-            fontFamily: 'Roboto',
-            fontSize: 14,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      ),
+      style: _robotoButtons(base.outlinedButtonTheme.style),
     ),
     textButtonTheme: TextButtonThemeData(
-      style: TextButton.styleFrom(
-        foregroundColor:
-            dark ? const Color(0xFF99AEFF) : const Color(0xFF0035FE),
-        textStyle: face.copyWith(fontSize: 14, fontWeight: FontWeight.w700),
-      ),
+      style: _robotoButtons(base.textButtonTheme.style),
+    ),
+    elevatedButtonTheme: ElevatedButtonThemeData(
+      style: _robotoButtons(base.elevatedButtonTheme.style),
     ),
   );
 }
@@ -131,7 +106,11 @@ Future<void> _pump(
       value: session,
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
-        theme: _theme(brightness),
+        theme: _theme(Brightness.light),
+        darkTheme: _theme(Brightness.dark),
+        themeMode: brightness == Brightness.dark
+            ? ThemeMode.dark
+            : ThemeMode.light,
         home: home,
       ),
     ),
@@ -202,6 +181,20 @@ void main() {
     );
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.text('Withdraw quotation'), findsWidgets);
+    final darkButton = find.byKey(const Key('withdraw_quote_${MockIds.quote1}'));
+    final darkStates = <WidgetState>{};
+    final darkTheme = Theme.of(tester.element(darkButton));
+    final darkFg = (tester.widget<OutlinedButton>(darkButton).style?.foregroundColor ??
+            darkTheme.outlinedButtonTheme.style?.foregroundColor)
+        ?.resolve(darkStates);
+    expect(darkFg, TruberColors.primaryTextDark);
+    final darkCard = tester.widget<Material>(find
+        .descendant(of: find.byType(Card).first, matching: find.byType(Material))
+        .first);
+    expect(
+      (darkCard.shape! as RoundedRectangleBorder).side.color,
+      TruberColors.borderDark,
+    );
     await expectLater(find.byKey(const Key('shot')),
         matchesGoldenFile('goldens/transporter_quotes_withdraw_dark.png'));
 
