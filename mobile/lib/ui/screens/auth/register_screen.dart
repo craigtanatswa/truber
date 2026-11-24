@@ -5,6 +5,7 @@ import '../../widgets/truber_brand_logo.dart';
 import 'package:provider/provider.dart';
 import 'package:truber_design/truber_design.dart';
 
+import '../../../auth/register_fields.dart';
 import '../../../config/flags.dart';
 import '../../../copy/strings.dart';
 import '../../../models/user.dart';
@@ -38,6 +39,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
   bool _busy = false;
   bool _obscure = true;
   String? _linkError;
+  String? _nameError;
+  String? _emailError;
+  String? _passwordError;
 
   @override
   void dispose() {
@@ -59,7 +63,27 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 
   Future<void> _createAccount() async {
-    setState(() => _busy = true);
+    final nameError =
+        RegisterFields.fullNameOk(_name.text) ? null : TruberCopy.errorValidation;
+    final emailError =
+        RegisterFields.emailOk(_email.text) ? null : TruberCopy.errorValidation;
+    final passwordError = RegisterFields.passwordOk(_password.text)
+        ? null
+        : TruberCopy.errorValidation;
+    if (nameError != null || emailError != null || passwordError != null) {
+      setState(() {
+        _nameError = nameError;
+        _emailError = emailError;
+        _passwordError = passwordError;
+      });
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _nameError = null;
+      _emailError = null;
+      _passwordError = null;
+    });
     final session = context.read<SessionController>();
     final ok = await session.register(
       fullName: _name.text.trim(),
@@ -236,9 +260,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
         key: const Key('register_full_name'),
         controller: _name,
         textCapitalization: TextCapitalization.words,
-        decoration: const InputDecoration(
+        decoration: InputDecoration(
           labelText: TruberCopy.fullName,
           hintText: TruberCopy.fullNameHint,
+          errorText: _nameError,
+          errorMaxLines: 3,
         ),
       ),
       const SizedBox(height: TruberSpacing.lg),
@@ -246,9 +272,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
         key: const Key('register_email'),
         controller: _email,
         keyboardType: TextInputType.emailAddress,
-        decoration: const InputDecoration(
+        decoration: InputDecoration(
           labelText: TruberCopy.email,
           hintText: TruberCopy.emailHint,
+          errorText: _emailError,
+          errorMaxLines: 3,
         ),
       ),
       const SizedBox(height: TruberSpacing.lg),
@@ -259,7 +287,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
         decoration: InputDecoration(
           labelText: TruberCopy.password,
           hintText: TruberCopy.passwordCreateHint,
-          helperText: TruberCopy.passwordHint,
+          helperText: _passwordError == null ? TruberCopy.passwordHint : null,
+          errorText: _passwordError,
+          errorMaxLines: 3,
           suffixIcon: TextButton(
             onPressed: () => setState(() => _obscure = !_obscure),
             child: Text(

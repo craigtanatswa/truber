@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 
 import '../../config/flags.dart';
+import '../../auth/register_fields.dart';
 import '../../models/user.dart';
 import '../repositories/auth_repository.dart';
 import 'mock_seed.dart';
@@ -90,9 +91,12 @@ class MockAuthRepository implements AuthRepository {
     if (role == UserRole.admin) {
       throw AuthException('Public signup never grants admin.');
     }
-    if (password.length < 8) {
-      throw AuthException('Password must be at least 8 characters.');
+    if (!RegisterFields.fullNameOk(fullName) ||
+        !RegisterFields.emailOk(email) ||
+        !RegisterFields.passwordOk(password)) {
+      throw AuthException('REGISTER_FIELD_INVALID');
     }
+    final name = fullName.trim();
     final key = email.trim().toLowerCase();
     if (_users.containsKey(key)) {
       throw AuthException('Email already registered.');
@@ -102,7 +106,7 @@ class MockAuthRepository implements AuthRepository {
     final user = TruberUser(
       id: '00000000-0000-4000-8000-${now.millisecondsSinceEpoch.toString().padLeft(12, '0').substring(0, 12)}',
       email: key,
-      fullName: fullName,
+      fullName: name,
       phone: phone?.trim().isEmpty == true ? null : phone?.trim(),
       role: role,
       accountStatus: AccountStatus.pendingVerification,
