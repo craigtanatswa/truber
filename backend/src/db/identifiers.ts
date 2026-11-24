@@ -1,4 +1,5 @@
 export const APP_TABLES = [
+  'account_status_changes',
   'company_members',
   'companies',
   'delivery_outbox',
@@ -12,7 +13,9 @@ export const APP_TABLES = [
   'rate_limit_buckets',
   'refresh_sessions',
   'schema_migrations',
+  'trucks',
   'users',
+  'verification_documents',
 ] as const;
 
 const POSTGIS_FUNCTIONS = new Set([

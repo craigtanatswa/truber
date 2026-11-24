@@ -1,5 +1,13 @@
 import { QueryResultRow } from 'pg';
-import { CompanyResponse, DbUser, GeoPointResponse, LoadResponse, UserResponse } from './domain';
+import {
+  CompanyResponse,
+  DbUser,
+  GeoPointResponse,
+  LoadResponse,
+  TruckResponse,
+  UserResponse,
+  VerificationDocumentResponse,
+} from './domain';
 import { iso } from './common/crypto';
 
 export function presentUser(user: DbUser): UserResponse {
@@ -28,6 +36,41 @@ export function presentCompany(row: QueryResultRow): CompanyResponse {
     verificationStatus: row.verification_status as CompanyResponse['verificationStatus'],
     createdAt: iso(asTimestamp(row.created_at)),
     updatedAt: iso(asTimestamp(row.updated_at)),
+  };
+}
+
+export function presentTruck(row: QueryResultRow): TruckResponse {
+  return {
+    id: String(row.id),
+    companyId: String(row.company_id),
+    registrationNumber: String(row.registration_number),
+    truckType: row.truck_type as TruckResponse['truckType'],
+    capacityKg: Number(row.capacity_kg),
+    trailerSpecs: nullableString(row.trailer_specs),
+    insuranceReference: nullableString(row.insurance_reference),
+    currentLocationText: nullableString(row.current_location_text),
+    verificationStatus: row.verification_status as TruckResponse['verificationStatus'],
+    createdAt: iso(asTimestamp(row.created_at)),
+    updatedAt: iso(asTimestamp(row.updated_at)),
+    counterpartyRestrictedUntil:
+      row.counterparty_restricted_until == null
+        ? null
+        : iso(asTimestamp(row.counterparty_restricted_until)),
+  };
+}
+
+export function presentVerificationDocument(row: QueryResultRow): VerificationDocumentResponse {
+  return {
+    id: String(row.id),
+    ownerUserId: String(row.owner_user_id),
+    companyId: nullableString(row.company_id),
+    truckId: nullableString(row.truck_id),
+    documentType: row.document_type as VerificationDocumentResponse['documentType'],
+    documentUri: String(row.document_uri),
+    status: row.status as VerificationDocumentResponse['status'],
+    reviewNotes: nullableString(row.review_notes),
+    createdAt: iso(asTimestamp(row.created_at)),
+    reviewedAt: row.reviewed_at == null ? null : iso(asTimestamp(row.reviewed_at)),
   };
 }
 
