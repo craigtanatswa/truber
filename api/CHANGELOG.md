@@ -1,5 +1,31 @@
 # Truber API changelog
 
+## 0.6.0-draft — 2026-11-24 (Africa/Harare)
+
+**Draft only. Not published. Not authoritative.** SHA-256
+`44c9e1c0a1ad35f1f48a9b1d4926afa8670191bb80326a7a5d2abfd69a63eee0`.
+Full change list and open questions: `reports/plans/billing-contract-v0.6.0.md`.
+Publishing needs the user's explicit yes. Mark pushes; no merge from this draft.
+
+- **Base:** published v0.5.0 (`8839f1d4…0b4a`) at `33a11fe`.
+- **Counts:** 68 path items, 84 operations (v0.5.0: 60 / 75). Nothing removed.
+- **Arrangements:** `direct_transfer` (EFT + mobile money, U5); two-party confirm for
+  cash and transfer with no `acknowledgeNotProtected` (U6); `paymentProtected`
+  read-only and always false for those methods; `withdrawPaymentArrangement` and
+  `rejectPaymentArrangement`; 409 `BOOKING_CONFIRM_REQUIRES_ARRANGEMENT`.
+- **Settlements:** five transporter commission-settlement ops. Paynow webhook is
+  `x-planned` only (U4: commission settlement only; not mounted).
+- **Collections:** `externalReference` required for non-cash; `DUPLICATE_COLLECTION`
+  and `IDEMPOTENCY_KEY_REUSED`; overpayment kept as credit only with admin
+  `acceptOverpayment` (else 409 `OVERPAYMENT_REQUIRES_CONFIRMATION`, user 24 Nov);
+  admin `reverseCommissionCollection`. Credit also pays down released dispute
+  commission. Proposed 409 `CREDIT_ALREADY_CONSUMED` if that credit was already
+  used (open question for Mark).
+- **Payout preview:** G3 `VERIFICATION_REQUIRED` blocker; G5 `additionalProperties:
+  false`; nullable booleans when `paymentMethod` is omitted. G4 (negative net once
+  known fees exist) is an open question; no fees invented.
+
+
 ## 0.5.0 — 2026-11-11 (Africa/Harare)
 
 **Published** as authoritative `api/openapi.yaml`, SHA-256 `8839f1d4afebb3ceda9683d4c83604866ed80c31d094be31afb415fc08460b4a`.

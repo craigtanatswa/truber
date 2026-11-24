@@ -1,8 +1,70 @@
 openapi: 3.0.3
 info:
   title: Truber API
-  version: 0.5.0
+  version: 0.6.0-draft
   description: |
+    Truber API **v0.6.0-draft** — **draft, not published, not authoritative.**
+    Publishing and merging need the user's explicit yes. Built from published v0.5.0
+    (SHA-256 `8839f1d4afebb3ceda9683d4c83604866ed80c31d094be31afb415fc08460b4a`).
+    User decisions applied here: launch cash/transfer posture and U1–U7 (2026-11-11 and
+    2026-11-17, via Charlie/Mark), plus the 2026-11-24 overpayment and collection-reversal
+    answers (via Charlie). Change log: `reports/plans/billing-contract-v0.6.0.md` and
+    `api/CHANGELOG.md`.
+
+    v0.6.0-draft changes (contract only in this revision; no implementation claimed):
+    - **`direct_transfer` payment method** (user decision U5: EFT plus mobile money, paid
+      party to party off-platform). Like `cash`, it is recorded, never payment-protected,
+      and Truber never holds the fare. `paymentProtected` is read-only and always `false`
+      for `cash` and `direct_transfer`. The not-protected wording lives in the Terms and
+      Conditions (Design holds them until counsel's text arrives). There is no
+      per-arrangement tick-box and no `acknowledgeNotProtected` field (user decision U6,
+      2026-11-17).
+    - **Two-party confirmation** of `cash` and `direct_transfer` arrangements: a shipper
+      member and a transporter member of the booking each confirm (`shipperConfirmation`,
+      `transporterConfirmation`). Proposing is not a confirmation. Admin cannot confirm
+      these methods on a party's behalf (403). Other methods stay admin-only and are
+      **disabled at launch** (409 `METHOD_NOT_AVAILABLE`). New ops `withdrawPaymentArrangement`
+      and `rejectPaymentArrangement` (409 once `confirmed`). Hard rule unchanged: no
+      confirmed payment arrangement means no confirmed booking. `confirmBooking` returns
+      409 `BOOKING_CONFIRM_REQUIRES_ARRANGEMENT` when none is confirmed.
+    - **Transporter commission settlements** (five ops): a transporter member submits a
+      reference (`submitCommissionSettlement`); outstanding does not change until an admin
+      confirms (`confirmCommissionSettlement`) or rejects (`rejectCommissionSettlement`).
+      The transporter may cancel while `submitted` (`cancelCommissionSettlement`).
+      `listCommissionSettlements` is for company members and admin; shippers get 404.
+    - **Overpayment (user decision 2026-11-24):** an amount greater than what is owed in
+      that currency is kept as commission credit only when an admin explicitly confirms
+      it (`acceptOverpayment: true` on `recordCommissionCollection` or
+      `confirmCommissionSettlement`). Otherwise 409 `OVERPAYMENT_REQUIRES_CONFIRMATION`.
+      Credit is never paid out in cash. Overpayment credit pays down future commission,
+      outstanding commission (user decision U1, flag defaults on), and commission that
+      has been released from a dispute (left `held` and is again `open`). It is never
+      applied to `held` receivables.
+    - **Collection reversal (user decision 2026-11-24):** admin-only
+      `reverseCommissionCollection` undoes a mistyped collection (reason required,
+      idempotent, audit trail). It reverses amounts applied to receivables and any credit
+      that collection created. If that credit has already been consumed, the proposed
+      response is 409 `CREDIT_ALREADY_CONSUMED` (open question for Mark; see the change
+      log). No funds are moved.
+    - **`externalReference`** is required on non-cash collections and settlements.
+      409 `DUPLICATE_COLLECTION` when the same reference is reused for that company
+      (non-reversed). 409 `IDEMPOTENCY_KEY_REUSED` when an Idempotency-Key is reused
+      with a non-equivalent body. Cash collections with no reference cannot be
+      deduplicated.
+    - **Payout preview (G3/G4/G5):** `submissionBlockers` gains a `VERIFICATION_REQUIRED`
+      branch; `PayoutPreview` has `additionalProperties: false`;
+      `farePayoutDueThroughTruber` and `paymentProtectedPossible` are nullable and are
+      `null` when `paymentMethod` is omitted. Negative-net preview behaviour once known
+      fees exist is an open question (G4); this draft still reports no known provider
+      fees (none are contracted; fees are not invented).
+    - **Paynow:** reserved for transporter commission settlement only (user decision U4).
+      The status webhook `POST /webhooks/paynow/status` is marked `x-planned` and is
+      **not in force, not mounted, and not implemented** in this version. Providers stay
+      behind an interface. No credentials, merchant details, or fees are part of this
+      draft. Ask the user for account details before any live or test-mode call.
+
+    --- Carried forward from published v0.5.0 (still in force unless changed above) ---
+
     Truber API **v0.5.0** — **authoritative** contract (published 2026-11-11 Africa/Harare).
     User approval: launch-scope decisions in Charlie's chat, 2026-11-11 16:15 Africa/Harare
     ("Publish v0.5.0: approved with these answers"), plus the commission-adjustment answer in
@@ -66,14 +128,18 @@ info:
       report/finding flow (`category: repeated_dispute_abuse`, admin-filed) and gets the same
       fixed 14-day ban as off-platform dealing.
 
-    Launch payment posture (user decision 2026-11-11): payments at launch are **recorded**
-    (cash, or a transfer recorded against `prepay` / `deposit_balance`) and are **not
-    payment-protected** unless independent-provider evidence exists (`escrow` only). A Paynow
-    integration will be built and tested in test mode without real money; no Paynow
-    operation, credential or merchant detail is part of this contract version, and
-    `providerHint` is still not proof of an integration. Support is by email; the support
-    address, email sender and domain come from deployment configuration and are never
-    hard-coded in clients or in this contract.
+    Launch payment posture (user decisions 2026-11-11, 2026-11-17, 2026-11-24): payments at
+    launch are **recorded** cash or `direct_transfer` (EFT plus mobile money) and are **not
+    payment-protected**. `paymentProtected` is always false for those methods. Protection
+    still requires independent-provider evidence (`escrow` only); escrow and other
+    non-launch methods are disabled until enabled in a later version (409
+    `METHOD_NOT_AVAILABLE`). A Paynow integration, when built, is for **transporter
+    commission settlement only** (user decision U4), tested in test mode without real
+    money, and stays behind a provider interface. The Paynow webhook is `x-planned` in
+    v0.6.0-draft and is not mounted. No Paynow operation is in force; no credential or
+    merchant detail is part of this contract; `providerHint` is still not proof of an
+    integration. Support is by email; the support address, email sender and domain come
+    from deployment configuration and are never hard-coded in clients or in this contract.
 
     --- Carried forward from v0.4.0 (still in force unless changed above) ---
 
@@ -232,7 +298,9 @@ tags:
   - name: Bookings
     description: Booking pending then confirm with payment arrangement
   - name: Payments
-    description: Payment arrangements, commission receivables, and records (MVP records only)
+    description: |
+      Payment arrangements, commission receivables, settlements, collections, and records
+      (MVP records only; Truber does not move funds or lend).
   - name: ProofOfDelivery
     description: Transporter POD uploads
   - name: DeliveryConfirmation
@@ -1110,15 +1178,27 @@ paths:
       tags: [Quotations, Payments]
       summary: Preview the transporter net payout for a proposed quote amount (no side effects)
       description: |
-        **v0.5.0.** Lets the transporter app show "you will receive" for a
+        **v0.6.0-draft.** Lets the transporter app show "you will receive" for a
         quote amount it is about to submit, so the app never computes commission or net itself.
 
         Server-computed, side-effect free: creates no quotation, no booking, no receivable,
-        no idempotency record. Allowed for a banned transporter or one owing commission (it
-        is a read-only calculation). The response lists `submissionBlockers` so the UI can
-        warn before submitting; they use the existing pinned codes `ACCOUNT_BANNED` and
-        `COMMISSION_OUTSTANDING`. Submission itself stays gated: `createQuotation` still
-        returns 409 `AccountBannedError` / `CommissionOutstandingError`.
+        no idempotency record. Allowed for a banned, unverified, or commission-owing
+        transporter (it is a read-only calculation). The response lists `submissionBlockers`
+        so the UI can warn before submitting. Blocker codes, in this order when more than
+        one applies: `ACCOUNT_BANNED`, `VERIFICATION_REQUIRED` (G3; the company is not
+        `verified` or the calling user's account is not `active` — the same verification
+        gate as `createQuotation`, which still returns 403), then `COMMISSION_OUTSTANDING`.
+        Submission itself stays gated: `createQuotation` still returns 409
+        `AccountBannedError` / `CommissionOutstandingError`, and 403 when verification
+        fails.
+
+        When `paymentMethod` is omitted, `farePayoutDueThroughTruber` and
+        `paymentProtectedPossible` are **null** (not false). For `cash` and
+        `direct_transfer` both are false and `feeStatus` is `not_applicable`.
+        **Negative net (G4) is an open question** once known fees exist; this draft still
+        has no contracted provider fees, does not invent fees, and `knownFees` stays
+        empty, so `netPayoutBeforeUnknownFees` is >= 0 by construction. This operation
+        lists no 409.
 
         Rules (user-approved 2026-11-09):
         - The shipper pays the full agreed amount; commission and fees come out of the
@@ -1134,8 +1214,9 @@ paths:
         `unknownFees` lists the fee that may still apply. Processing fees become known only
         when an actual transaction records them (`recordPaymentTransaction.processingFee`).
 
-        For `paymentMethod=cash`, Truber never holds the fare: `farePayoutDueThroughTruber`
-        is false and the commission is a receivable the transporter owes later.
+        For `paymentMethod=cash` or `direct_transfer`, Truber never holds the fare:
+        `farePayoutDueThroughTruber` is false, `paymentProtectedPossible` is false, and the
+        commission is a receivable the transporter owes later.
         `netPayoutBeforeUnknownFees` is still returned as what the transporter keeps after
         the commission they owe.
 
@@ -1229,6 +1310,41 @@ paths:
                           outstandingByCurrency:
                             - { amountMinor: 1500, currency: USD }
                             - { amountMinor: 40000, currency: ZWG }
+                methodOmitted:
+                  summary: No payment method; booleans are null, not false
+                  value:
+                    agreedAmount: { amountMinor: 100000, currency: USD }
+                    commissionRateBps: 500
+                    commissionAmount: { amountMinor: 5000, currency: USD }
+                    knownFees: []
+                    knownFeesTotal: { amountMinor: 0, currency: USD }
+                    netPayoutBeforeUnknownFees: { amountMinor: 95000, currency: USD }
+                    feeStatus: unknown
+                    unknownFees:
+                      - feeType: processing_fee
+                        reason: payment_rail_not_selected
+                    paymentMethod: null
+                    farePayoutDueThroughTruber: null
+                    paymentProtectedPossible: null
+                    submissionBlockers: []
+                verificationRequired:
+                  summary: Unverified company; preview still allowed
+                  value:
+                    agreedAmount: { amountMinor: 100000, currency: USD }
+                    commissionRateBps: 500
+                    commissionAmount: { amountMinor: 5000, currency: USD }
+                    knownFees: []
+                    knownFeesTotal: { amountMinor: 0, currency: USD }
+                    netPayoutBeforeUnknownFees: { amountMinor: 95000, currency: USD }
+                    feeStatus: not_applicable
+                    unknownFees: []
+                    paymentMethod: direct_transfer
+                    farePayoutDueThroughTruber: false
+                    paymentProtectedPossible: false
+                    submissionBlockers:
+                      - code: VERIFICATION_REQUIRED
+                        details:
+                          reasons: [company_not_verified]
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -1458,16 +1574,24 @@ paths:
           (provisional Charlie policy §3 — not user-approved). Override creates an audit record.
 
         Method rules:
-        - `cash`: arrangement confirmed; `protectionStatus` stays `none`.
-        - `prepay`: arrangement confirmed; deposit receipt N/A.
+        - `cash` and `direct_transfer`: arrangement confirmed by both parties;
+          `protectionStatus` stays `none`; `paymentProtected` is always false.
+        - `prepay`: arrangement confirmed; deposit receipt N/A. Disabled at launch
+          (409 `METHOD_NOT_AVAILABLE` on the arrangement, so this path cannot be reached).
         - `deposit_balance`: arrangement confirmed only after deposit **receipt** recorded
-          (provisional §4); split amounts configurable (no fixed 50/50).
+          (provisional §4); split amounts configurable (no fixed 50/50). Disabled at launch.
         - `corporate_credit`: arrangement confirmed only if credit account approved and
-          atomic capacity reservation succeeds (QA-011 / provisional §4).
+          atomic capacity reservation succeeds (QA-011 / provisional §4). Disabled at launch.
         - `escrow`: arrangement confirmed **and** `protectionStatus=protected` with
-          independent-provider evidence (admin/ops recorded — not client claim).
+          independent-provider evidence (admin/ops recorded — not client claim). Disabled
+          at launch.
 
         Clients cannot set payment/protection flags. Race-safe via Idempotency-Key.
+        **Arrangement gate:** if there is no arrangement for this booking with
+        `arrangementStatus=confirmed`, return **409** `BOOKING_CONFIRM_REQUIRES_ARRANGEMENT`
+        (`OtherConflictError`; `details.state` is `none`, `awaiting_both`,
+        `awaiting_shipper`, or `awaiting_transporter`). Admin `auditOverride` cannot
+        bypass this gate. No confirmed payment arrangement means no confirmed booking.
         **Commission owing gate (user-approved 2026-11-09):** if the booking's transporter
         company has unpaid commission outstanding in any currency, return **409**
         `CommissionOutstandingError` (pinned `code: COMMISSION_OUTSTANDING`; required
@@ -1512,13 +1636,16 @@ paths:
         '409':
           description: |
             Missing confirmed arrangement, escrow not protected, invalid state, an active
-            off-platform ban, or unpaid commission owing. A ban must use
-            `AccountBannedError` (`code: ACCOUNT_BANNED`, required `details.bannedUntil`;
-            user-approved 2026-11-10). Owing must use `CommissionOutstandingError`
-            (`code: COMMISSION_OUTSTANDING`, required `details.outstandingByCurrency`;
-            `details.outstandingAmount` also required when owing is in one currency).
-            Other conflicts use `OtherConflictError` (generic `Error` shape with any code
-            except the pinned ones).
+            off-platform ban, or unpaid commission owing. A missing or still-proposed
+            arrangement MUST use `OtherConflictError` with
+            `code: BOOKING_CONFIRM_REQUIRES_ARRANGEMENT` and required `details.state`
+            (`none` | `awaiting_both` | `awaiting_shipper` | `awaiting_transporter`).
+            A ban must use `AccountBannedError` (`code: ACCOUNT_BANNED`, required
+            `details.bannedUntil`; user-approved 2026-11-10). Owing must use
+            `CommissionOutstandingError` (`code: COMMISSION_OUTSTANDING`, required
+            `details.outstandingByCurrency`; `details.outstandingAmount` also required
+            when owing is in one currency). Other conflicts use `OtherConflictError`
+            (generic `Error` shape with any code except the pinned ones).
           content:
             application/json:
               schema:
@@ -1549,9 +1676,11 @@ paths:
           409: if the net would be negative, the response is 200 with `netPayout` null and
           `net_payout_negative` in `payoutBlockedReasons`. Write operations
           (`recordPaymentRelease`) keep their 409 `NET_PAYOUT_NEGATIVE`.
-        - `cash`: never payment-protected (`paymentProtected` false); no fare payout is due
-          through Truber (`farePayoutDueThroughTruber` false, `netPayout` null); the
-          commission stays an open receivable until `recordCommissionCollection`.
+        - `cash` and `direct_transfer`: never payment-protected (`paymentProtected` false,
+          read-only); no fare payout is due through Truber (`farePayoutDueThroughTruber`
+          false, `netPayout` null); the commission stays an open receivable until a
+          recorded collection or a confirmed settlement. Not-protected wording lives in
+          the Terms (U6).
         - `corporate_credit`: `payoutBlockedReasons` contains `shipper_payment_not_recorded`
           until the shipper payment is recorded.
         - `deposit_balance`: an unreceipted remainder is not payable;
@@ -1668,9 +1797,23 @@ paths:
       tags: [Payments]
       summary: Propose a payment arrangement for a booking
       description: |
-        Shipper (or admin) proposes method and amounts. Creates arrangement in
-        `proposed` status. Does not confirm payment, protection, or booking.
-        MVP: records only — no live provider charge/hold calls.
+        Shipper member (or admin) proposes method and amounts. Creates arrangement in
+        `proposed` status. Proposing does **not** count as a party confirmation; both
+        parties must still call `confirmPaymentArrangement`. Does not confirm payment,
+        protection, or the booking.
+
+        `totalAmount` must equal the booking's agreed amount and currency (409
+        `ARRANGEMENT_AMOUNT_MISMATCH`). Only one non-terminal arrangement (`proposed` or
+        `confirmed`) is allowed per booking (409 `ARRANGEMENT_ALREADY_ACTIVE`); to change
+        terms, withdraw or reject, then propose again.
+
+        Launch-enabled methods are `cash` and `direct_transfer` only. Other methods
+        return 409 `METHOD_NOT_AVAILABLE`. For `cash` and `direct_transfer`,
+        `protectionStatus` is `none`, `releaseStatus` is `not_applicable`, and
+        `paymentProtected` is false (read-only). MVP: records only — no live provider
+        charge/hold calls. Truber never lends funds. Idempotency-Key is strongly
+        recommended; a reused key with a non-equivalent body returns 409
+        `IDEMPOTENCY_KEY_REUSED`.
       security:
         - bearerAuth: []
       parameters:
@@ -1727,22 +1870,37 @@ paths:
     post:
       operationId: confirmPaymentArrangement
       tags: [Payments]
-      summary: Server-side confirm a payment arrangement (admin/ops for MVP)
+      summary: Confirm a payment arrangement (two-party for cash and direct_transfer)
       description: |
-        Confirms the arrangement after Truber has verified the plan. **MVP: admin/ops only.**
-        Clients cannot self-confirm payment or protection.
+        Records one party's confirmation of a `proposed` arrangement. Does not confirm
+        the booking. There is no `acknowledgeNotProtected` field; not-protected wording
+        lives in the Terms (user decision U6, 2026-11-17).
 
-        Method preconditions (409 otherwise):
+        **`cash` and `direct_transfer` (launch methods):** a member of the booking's
+        shipper company and a member of the booking's transporter company must each
+        confirm. The first confirmation leaves `arrangementStatus=proposed` and fills
+        that party's confirmation object. The second confirmation sets
+        `arrangementStatus=confirmed`, `confirmedAt`, and `confirmedByUserId` (the
+        second confirmer). A second call by the same party is idempotent (200, no
+        change). Admin cannot confirm these methods on a party's behalf (403). A
+        caller who is not a member of either booking company gets 404.
+        `paymentProtected` stays false; `protectionStatus` stays `none`.
+
+        **Other methods:** remain admin/ops only and are **disabled at launch**
+        (409 `METHOD_NOT_AVAILABLE`). When later enabled, preconditions (409 otherwise):
         - `deposit_balance`: a deposit **receipt** must already be recorded
           (`POST .../deposit-receipt`) — provisional policy §4.
         - `corporate_credit`: shipper company credit account must be `approved` and an
           **atomic** capacity reservation for `totalAmount` must succeed (QA-011).
         - `escrow`: `protectionStatus=protected` with independent-provider evidence
           (attachable here by admin only).
-        - `cash`: `protectionStatus` remains `none`.
         - `prepay`: arrangement plan verified; transaction records remain separate.
 
-        On success: `arrangementStatus=confirmed`. Does not confirm the booking.
+        409 `ARRANGEMENT_NOT_CONFIRMABLE` if the arrangement is already `confirmed`,
+        `rejected`, or `cancelled`. Idempotency-Key is strongly recommended; a reused
+        key with a non-equivalent body returns 409 `IDEMPOTENCY_KEY_REUSED`.
+        On success after both parties (or a later-enabled admin confirm):
+        `arrangementStatus=confirmed`. Does not confirm the booking.
       security:
         - bearerAuth: []
       parameters:
@@ -1756,7 +1914,96 @@ paths:
               $ref: '#/components/schemas/ConfirmPaymentArrangementRequest'
       responses:
         '200':
-          description: Arrangement confirmed
+          description: |
+            Arrangement updated. `arrangementStatus` is `confirmed` only after both
+            parties have confirmed (cash / direct_transfer) or after the admin confirm
+            (other methods, when enabled).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentArrangement'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /payment-arrangements/{arrangementId}/withdraw:
+    post:
+      operationId: withdrawPaymentArrangement
+      tags: [Payments]
+      summary: Withdraw a proposed payment arrangement
+      description: |
+        A member of the booking's shipper or transporter company withdraws a
+        `proposed` arrangement (including after one party has confirmed). Sets
+        `arrangementStatus=cancelled`, `withdrawnAt`, and `withdrawnByUserId`.
+        409 `ARRANGEMENT_ALREADY_CONFIRMED` (or `ARRANGEMENT_NOT_WITHDRAWABLE` if
+        already `rejected` or `cancelled`) once the arrangement is terminal.
+        Idempotency-Key is required. A reused key with a non-equivalent body
+        returns 409 `IDEMPOTENCY_KEY_REUSED`. A non-member gets 404.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ArrangementId'
+        - $ref: '#/components/parameters/IdempotencyKeyRequired'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WithdrawPaymentArrangementRequest'
+      responses:
+        '200':
+          description: Arrangement withdrawn (`cancelled`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentArrangement'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /payment-arrangements/{arrangementId}/reject:
+    post:
+      operationId: rejectPaymentArrangement
+      tags: [Payments]
+      summary: Reject a proposed payment arrangement
+      description: |
+        The counterparty (a member of the booking company that did **not** propose
+        the arrangement) rejects a `proposed` arrangement. Sets
+        `arrangementStatus=rejected`. The proposer withdraws rather than rejects.
+        409 `ARRANGEMENT_ALREADY_CONFIRMED` (or `ARRANGEMENT_NOT_REJECTABLE` if
+        already `rejected` or `cancelled`) once the arrangement is terminal.
+        Idempotency-Key is required. A reused key with a non-equivalent body
+        returns 409 `IDEMPOTENCY_KEY_REUSED`. A non-member, or the proposing
+        company calling reject, gets 403 or 404 as appropriate (existence is not
+        revealed to a non-member: 404).
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ArrangementId'
+        - $ref: '#/components/parameters/IdempotencyKeyRequired'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RejectPaymentArrangementRequest'
+      responses:
+        '200':
+          description: Arrangement rejected
           content:
             application/json:
               schema:
@@ -1784,7 +2031,7 @@ paths:
 
         Never available to shipper/transporter as a self-asserted protection claim.
         Does not integrate live Paynow/EcoCash/InnBucks APIs in MVP — stores references
-        and notes only. Cash arrangements reject this call (400/409).
+        and notes only. `cash` and `direct_transfer` arrangements reject this call (400/409).
       security:
         - bearerAuth: []
       parameters:
@@ -1911,10 +2158,11 @@ paths:
 
         Commission was already recognised at trip completion. For methods where trip funds
         were held and this release deducts commission from those funds, this record settles
-        the open commission receivable (`settled_on_release`). For `cash`, this record must
-        **not** create a transporter payout due for the fare (Truber never held the money)
-        and must **not** settle the commission receivable — cash commission stays `open`
-        until `recordCommissionCollection`. Corporate-credit payout remains blocked until
+        the open commission receivable (`settled_on_release`). For `cash` and
+        `direct_transfer`, this record must **not** create a transporter payout due for
+        the fare (Truber never held the money) and must **not** settle the commission
+        receivable — commission stays `open` until a recorded collection or a confirmed
+        settlement. Corporate-credit payout remains blocked until
         the shipper payment is recorded (no Truber float). For `deposit_balance`, do not
         treat an unreceipted balance remainder as payable and do not include it in a
         transporter payout; only receipted amounts may be released. Paying an unreceipted
@@ -2952,19 +3200,32 @@ paths:
       summary: Record collection of outstanding commission (records only)
       description: |
         Admin/ops records that a transporter paid (or partially paid) outstanding
-        commission owing, typically for cash trips where Truber never held the fare
-        (user-approved 2026-11-09 — collect later). **Recording a collection is not
-        moving funds.** No live provider API and no automatic debit.
+        commission owing, typically for cash or `direct_transfer` trips where Truber
+        never held the fare (user-approved 2026-11-09 — collect later). **Recording a
+        collection is not moving funds.** No live provider API and no automatic debit.
 
         `amount` must be strictly positive and in one currency. Applied only to `open`
         receivables in that currency (never `held`), oldest-first, updating each
         receivable's `collectedAmount` and `remainingAmount`. When a receivable's
-        `remainingAmount` reaches zero, its status becomes `collected`.
-        **Overpayment (user decision 2026-11-11):** an `amount` greater than what is owed in
-        that currency is accepted. The excess is recorded as `creditedAmount` and held as
-        commission credit against future commission (`CommissionAccount.creditByCurrency`);
-        it is never paid out in cash. After this call, if
-        `outstandingByCurrency` is empty, `createQuotation`, `acceptQuotation`, and
+        `remainingAmount` reaches zero, its status becomes `collected`. Credit already
+        on the account is applied first when the U1 flag is on (it defaults on).
+
+        **`externalReference`** is required when `channel` is not `cash` (400 if missing).
+        A non-cash reference that matches a non-reversed collection or confirmed
+        settlement for the same company returns 409 `DUPLICATE_COLLECTION`. Cash
+        collections with no reference cannot be deduplicated. A reused Idempotency-Key
+        with a non-equivalent body returns 409 `IDEMPOTENCY_KEY_REUSED`.
+
+        **Overpayment (user decision 2026-11-24):** an `amount` greater than what is
+        owed in that currency (after credit netting, excluding `held`) is kept as
+        commission credit only when `acceptOverpayment` is true. Otherwise 409
+        `OVERPAYMENT_REQUIRES_CONFIRMATION` (`details.outstandingAmount` and
+        `details.excessAmount`, same currency). When accepted, the excess is recorded
+        as `creditedAmount` on `CommissionAccount.creditByCurrency`. That credit pays
+        down future commission, outstanding commission (U1, flag defaults on), and
+        commission released from a dispute (left `held`, now `open`). It is never
+        applied to `held` receivables and is never paid out in cash. After this call,
+        if `outstandingByCurrency` is empty, `createQuotation`, `acceptQuotation`, and
         `confirmBooking` are unblocked.
       security:
         - bearerAuth: []
@@ -2994,6 +3255,306 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+
+  /admin/commission-collections/{collectionId}/reverse:
+    post:
+      operationId: reverseCommissionCollection
+      tags: [Admin, Payments]
+      summary: Reverse a mistyped commission collection (admin, records only)
+      description: |
+        Admin-only reversal of a previously recorded commission collection (user
+        decision 2026-11-24). **Reversing is not moving funds.** Reason is required.
+        Idempotency-Key is required; a replay with the same key and equivalent body
+        returns the original reversal; a reused key with a non-equivalent body
+        returns 409 `IDEMPOTENCY_KEY_REUSED`.
+
+        The reversal restores `collectedAmount` / `remainingAmount` on receivables this
+        collection was applied to (oldest-first allocations, inverted) and removes any
+        `creditedAmount` this collection created from `CommissionAccount.creditByCurrency`,
+        same currency. The original `CommissionCollectionRecord` remains append-only and
+        is marked reversed (`reversedAt`, `reversedByUserId`, `reversalReason`). A second
+        reversal of an already-reversed collection is idempotent when the key matches,
+        otherwise 409 `COLLECTION_ALREADY_REVERSED`.
+
+        **If the credit this collection created has already been consumed** (applied to
+        a later receivable, including released dispute commission): proposed behaviour
+        is 409 `CREDIT_ALREADY_CONSUMED` with `details` naming the credited amount and
+        how much has been consumed. No partial reversal and no claw-back of already
+        applied credit. This is an **open question for Mark** (see
+        `reports/plans/billing-contract-v0.6.0.md`); do not treat the 409 as final
+        policy until he confirms.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CollectionId'
+        - $ref: '#/components/parameters/IdempotencyKeyRequired'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReverseCommissionCollectionRequest'
+      responses:
+        '201':
+          description: Reversal recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommissionCollectionReversalRecord'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /companies/{companyId}/commission-settlements:
+    get:
+      operationId: listCommissionSettlements
+      tags: [Companies, Payments]
+      summary: List commission settlements for a transporter company
+      description: |
+        Settlements submitted by the transporter to pay commission owing, newest first.
+        Members of that transporter company and admins only; everyone else, **including
+        shippers**, gets 404 (shippers never see commission internals).
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Settlements
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommissionSettlementListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      operationId: submitCommissionSettlement
+      tags: [Companies, Payments]
+      summary: Submit a commission settlement reference (transporter)
+      description: |
+        A transporter company member submits evidence that they have paid (or are
+        paying) outstanding commission. Status becomes `submitted`. **Outstanding does
+        not change** — clients cannot mark themselves paid. An admin must confirm
+        (`confirmCommissionSettlement`) before a `commission_collections` row is
+        applied.
+
+        `amount` must be strictly positive, in one currency, and must not exceed
+        outstanding in that currency at submit time after credit netting, excluding
+        `held` (409 `COLLECTION_EXCEEDS_OUTSTANDING` if it does, or 409
+        `NO_OUTSTANDING_COMMISSION` if nothing is owed in that currency). Channel
+        `paynow` is not available in this version (409 `CHANNEL_NOT_AVAILABLE`).
+        `externalReference` is required when `channel` is not `cash_at_office` (400
+        if missing). A non-cash reference that matches a non-reversed collection or
+        a non-cancelled, non-rejected settlement for the same company returns 409
+        `DUPLICATE_COLLECTION`. Idempotency-Key is required; a reused key with a
+        non-equivalent body returns 409 `IDEMPOTENCY_KEY_REUSED`.
+        `fundsMovementClaimedByTruber` is always false.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+        - $ref: '#/components/parameters/IdempotencyKeyRequired'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitCommissionSettlementRequest'
+      responses:
+        '201':
+          description: Settlement submitted (owing unchanged)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommissionSettlement'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /commission-settlements/{settlementId}/cancel:
+    post:
+      operationId: cancelCommissionSettlement
+      tags: [Payments]
+      summary: Cancel a submitted commission settlement
+      description: |
+        A member of the submitting transporter company cancels a settlement while it
+        is `submitted`. Status becomes `cancelled`. Outstanding is unchanged.
+        409 `SETTLEMENT_NOT_CANCELLABLE` if the status is not `submitted`.
+        Idempotency-Key is required. A reused key with a non-equivalent body returns
+        409 `IDEMPOTENCY_KEY_REUSED`. Non-members get 404.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SettlementId'
+        - $ref: '#/components/parameters/IdempotencyKeyRequired'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelCommissionSettlementRequest'
+      responses:
+        '200':
+          description: Settlement cancelled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommissionSettlement'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /admin/commission-settlements/{settlementId}/confirm:
+    post:
+      operationId: confirmCommissionSettlement
+      tags: [Admin, Payments]
+      summary: Confirm a submitted commission settlement (admin)
+      description: |
+        Admin confirms a `submitted` settlement and applies the same internal
+        collection path as `recordCommissionCollection` (oldest-first, same
+        currency, exclusive of `held`, credit netting first). A
+        `CommissionCollectionRecord` is created and linked by `settlementId`.
+        Outstanding is reduced only now. If the remaining owing in every currency
+        is then zero, `createQuotation`, `acceptQuotation`, and `confirmBooking`
+        are unblocked immediately.
+
+        Amount is capped against outstanding **at confirm time**. If owing has
+        dropped since submission (credit or another collection) and the submitted
+        amount now exceeds outstanding, the excess is kept as credit only when
+        `acceptOverpayment` is true (user decision 2026-11-24); otherwise 409
+        `OVERPAYMENT_REQUIRES_CONFIRMATION`. There is no partial confirm without
+        that flag; the admin may instead reject and the transporter resubmits.
+
+        409 `SETTLEMENT_NOT_CONFIRMABLE` if the status is not `submitted`.
+        409 `DUPLICATE_COLLECTION` if the reference now collides. 403 for a
+        non-admin. Idempotency-Key is required; a double confirm with the same
+        key is idempotent and returns the original collection; a reused key with
+        a non-equivalent body returns 409 `IDEMPOTENCY_KEY_REUSED`.
+        `fundsMovementClaimedByTruber` is always false. Channel `paynow` auto-confirm
+        via webhook is not in force in this version.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SettlementId'
+        - $ref: '#/components/parameters/IdempotencyKeyRequired'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfirmCommissionSettlementRequest'
+      responses:
+        '200':
+          description: Settlement confirmed; collection applied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfirmCommissionSettlementResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /admin/commission-settlements/{settlementId}/reject:
+    post:
+      operationId: rejectCommissionSettlement
+      tags: [Admin, Payments]
+      summary: Reject a submitted commission settlement (admin)
+      description: |
+        Admin rejects a `submitted` settlement. `reason` is required. Status becomes
+        `rejected`. Outstanding is unchanged. 409 `SETTLEMENT_NOT_REJECTABLE` if the
+        status is not `submitted`. 403 for a non-admin. Idempotency-Key is required;
+        a reused key with a non-equivalent body returns 409 `IDEMPOTENCY_KEY_REUSED`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SettlementId'
+        - $ref: '#/components/parameters/IdempotencyKeyRequired'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RejectCommissionSettlementRequest'
+      responses:
+        '200':
+          description: Settlement rejected (owing unchanged)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommissionSettlement'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /webhooks/paynow/status:
+    post:
+      operationId: paynowStatusWebhook
+      x-planned: true
+      tags: [Payments]
+      summary: Planned Paynow status webhook (not mounted; not in force)
+      description: |
+        **x-planned — not in force in v0.6.0-draft.** This path is documented so the
+        later wiring has a stable place to land. Servers MUST NOT mount it in this
+        version. It is unauthenticated and, when later brought into force, will
+        accept Paynow `resulturl` form posts, verify the SHA-512 hash, and trust a
+        status only after a matching poll of `pollUrl` against the configured host
+        (no SSRF).
+
+        Paynow is for **transporter commission settlement only** (user decision U4,
+        2026-11-11). It must not be used to collect shipper fares into a Truber
+        merchant account (that would make Truber hold third-party funds). Providers
+        stay behind an interface. No fees are invented or recorded here. No
+        credential, integration id, or merchant detail is part of this contract.
+        Ask the user for account details before any test-mode or live call.
+        Request and response bodies will be specified when the operation is brought
+        into force in a later contract version.
+      security: []
+      responses:
+        '204':
+          description: Planned accepted update (hash verified and poll confirmed). Not served in this version.
+        '400':
+          description: Planned rejection of a missing, invalid, or unverifiable payload or hash. Not served in this version.
 
   /bookings/{bookingId}/off-platform-reports:
     post:
@@ -3405,6 +3966,18 @@ components:
       required: true
       schema:
         $ref: '#/components/schemas/Uuid'
+    SettlementId:
+      name: settlementId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Uuid'
+    CollectionId:
+      name: collectionId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Uuid'
     Page:
       name: page
       in: query
@@ -3429,7 +4002,20 @@ components:
       description: |
         Optional on reads; **strongly recommended** (and may be required by server) on
         confirmation and create-once writes. Replays with the same key and equivalent body
-        return the original result without re-applying side effects.
+        return the original result without re-applying side effects. A reused key with a
+        non-equivalent body returns 409 `IDEMPOTENCY_KEY_REUSED`.
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 128
+    IdempotencyKeyRequired:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: |
+        Required on this operation. Replays with the same key and equivalent body
+        return the original result without re-applying side effects. A reused key with
+        a non-equivalent body returns 409 `IDEMPOTENCY_KEY_REUSED`.
       schema:
         type: string
         minLength: 8
@@ -3472,6 +4058,17 @@ components:
         `DISPUTE_NOT_AWAITING_RESPONSE`, `TRIP_NOT_COMPLETED`, `BOOKING_NOT_LOCKED`,
         `SETTLEMENT_AMOUNT_MISMATCH`, `NO_OFFER_TO_ACCEPT`, `TRIP_AMOUNT_MISMATCH`,
         `NET_PAYOUT_NEGATIVE`.
+        Codes added in v0.6.0-draft: `BOOKING_CONFIRM_REQUIRES_ARRANGEMENT` (required
+        `details.state`), `METHOD_NOT_AVAILABLE`, `CHANNEL_NOT_AVAILABLE`,
+        `ARRANGEMENT_AMOUNT_MISMATCH`, `ARRANGEMENT_ALREADY_ACTIVE`,
+        `ARRANGEMENT_ALREADY_CONFIRMED`, `ARRANGEMENT_NOT_CONFIRMABLE`,
+        `ARRANGEMENT_NOT_WITHDRAWABLE`, `ARRANGEMENT_NOT_REJECTABLE`,
+        `OVERPAYMENT_REQUIRES_CONFIRMATION` (required `details.outstandingAmount` and
+        `details.excessAmount`), `DUPLICATE_COLLECTION`, `IDEMPOTENCY_KEY_REUSED`,
+        `COLLECTION_EXCEEDS_OUTSTANDING`, `NO_OUTSTANDING_COMMISSION`,
+        `SETTLEMENT_NOT_CANCELLABLE`, `SETTLEMENT_NOT_CONFIRMABLE`,
+        `SETTLEMENT_NOT_REJECTABLE`, `COLLECTION_ALREADY_REVERSED`, and proposed
+        `CREDIT_ALREADY_CONSUMED` (open question — see the v0.6.0-draft change log).
       content:
         application/json:
           schema:
@@ -5107,15 +5704,25 @@ components:
         - escrow
         - deposit_balance
         - cash
+        - direct_transfer
         - corporate_credit
       description: |
-        `cash` is never payment-protected. `escrow` requires independent-provider evidence
-        for protection. Provider brand names are not claimed as integrated.
+        `cash` and `direct_transfer` are never payment-protected. `direct_transfer` is
+        a party-to-party bank EFT or mobile-money transfer (user decision U5); Truber
+        never holds the fare. `escrow` requires independent-provider evidence for
+        protection. Launch-enabled methods are `cash` and `direct_transfer` only;
+        other values are valid in the enum but return 409 `METHOD_NOT_AVAILABLE` until
+        enabled. Provider brand names are not claimed as integrated.
 
     ArrangementStatus:
       type: string
       enum: [proposed, confirmed, rejected, cancelled]
-      description: Whether Truber has confirmed the payment plan for the booking.
+      description: |
+        Payment-plan state for the booking. `proposed` covers both "awaiting both
+        parties" and "awaiting the counterparty" — those are expressed by
+        `shipperConfirmation` / `transporterConfirmation`, not by a fifth enum value.
+        `cancelled` is also the status after a withdraw. `confirmed` is terminal for
+        edits (withdraw and reject return 409).
 
     TransactionPaymentStatus:
       type: string
@@ -5131,8 +5738,9 @@ components:
         - protection_failed
         - released_from_protection
       description: |
-        Escrow/protected hold state. Always `none` for cash. `protected` requires
-        server-accepted independent-provider evidence — never client self-assertion.
+        Escrow/protected hold state. Always `none` for `cash` and `direct_transfer`.
+        `protected` requires server-accepted independent-provider evidence — never
+        client self-assertion.
 
     ReleaseStatus:
       type: string
@@ -5155,6 +5763,7 @@ components:
         - arrangementStatus
         - protectionStatus
         - releaseStatus
+        - paymentProtected
         - totalAmount
         - createdAt
         - updatedAt
@@ -5212,7 +5821,42 @@ components:
             - $ref: '#/components/schemas/DateTime'
           type: string
           nullable: true
+          description: |
+            When `arrangementStatus` became `confirmed`. For `cash` and `direct_transfer`,
+            this is the second party's confirmation time. Null while still `proposed`.
         confirmedByUserId:
+          allOf:
+            - $ref: '#/components/schemas/Uuid'
+          type: string
+          nullable: true
+          description: |
+            The user who completed confirmation. For `cash` and `direct_transfer`, the
+            second confirmer. Null while still `proposed`.
+        paymentProtected:
+          type: boolean
+          description: |
+            Read-only. Always `false` for `cash` and `direct_transfer`. True only when
+            `protectionStatus` is `protected` (independent-provider evidence accepted).
+            Clients cannot set this flag. Not-protected wording lives in the Terms (U6);
+            this field is a data flag, not a per-arrangement acknowledgement.
+        shipperConfirmation:
+          allOf:
+            - $ref: '#/components/schemas/ArrangementPartyConfirmation'
+          type: object
+          nullable: true
+          description: Shipper-side confirmation; null until a shipper member confirms.
+        transporterConfirmation:
+          allOf:
+            - $ref: '#/components/schemas/ArrangementPartyConfirmation'
+          type: object
+          nullable: true
+          description: Transporter-side confirmation; null until a transporter member confirms.
+        withdrawnAt:
+          allOf:
+            - $ref: '#/components/schemas/DateTime'
+          type: string
+          nullable: true
+        withdrawnByUserId:
           allOf:
             - $ref: '#/components/schemas/Uuid'
           type: string
@@ -5220,6 +5864,16 @@ components:
         createdAt:
           $ref: '#/components/schemas/DateTime'
         updatedAt:
+          $ref: '#/components/schemas/DateTime'
+
+    ArrangementPartyConfirmation:
+      type: object
+      additionalProperties: false
+      required: [userId, confirmedAt]
+      properties:
+        userId:
+          $ref: '#/components/schemas/Uuid'
+        confirmedAt:
           $ref: '#/components/schemas/DateTime'
 
     ProtectionEvidence:
@@ -5275,6 +5929,12 @@ components:
 
     ConfirmPaymentArrangementRequest:
       type: object
+      additionalProperties: false
+      description: |
+        Party or admin confirmation body. There is no `acknowledgeNotProtected` field
+        (removed in v0.6.0-draft; user decision U6 — wording lives in the Terms).
+        `protectionEvidence` is only meaningful for admin confirms of escrow (disabled
+        at launch).
       properties:
         notes:
           type: string
@@ -5282,7 +5942,23 @@ components:
         protectionEvidence:
           allOf:
             - $ref: '#/components/schemas/ProtectionEvidenceRequest'
-          description: Optional; admin may attach evidence in the same call for escrow.
+          description: Optional; admin may attach evidence in the same call for escrow (when enabled).
+
+    WithdrawPaymentArrangementRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        notes:
+          type: string
+          maxLength: 2000
+
+    RejectPaymentArrangementRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        notes:
+          type: string
+          maxLength: 2000
 
     ProtectionEvidenceRequest:
       type: object
@@ -5622,14 +6298,15 @@ components:
             currency:
               $ref: '#/components/schemas/CurrencyCode'
           description: |
-            `agreedAmount − commissionAmount − feesTotal`. Null for cash (no fare payout through
-            Truber) and when the result would be negative (`payoutBlockedReasons` then contains
-            `net_payout_negative`). Never negative. Same shape as `NonNegativeMoneyAmount`,
-            inlined (not `allOf` + `nullable`) so null validates under strict OpenAPI 3.0.3 tooling.
+            `agreedAmount − commissionAmount − feesTotal`. Null for `cash` and
+            `direct_transfer` (no fare payout through Truber) and when the result would be
+            negative (`payoutBlockedReasons` then contains `net_payout_negative`). Never
+            negative. Same shape as `NonNegativeMoneyAmount`, inlined (not `allOf` +
+            `nullable`) so null validates under strict OpenAPI 3.0.3 tooling.
         paymentMethod:
           type: string
           nullable: true
-          enum: [prepay, escrow, deposit_balance, cash, corporate_credit, null]
+          enum: [prepay, escrow, deposit_balance, cash, direct_transfer, corporate_credit, null]
           description: |
             Method of the confirmed arrangement; null when none is confirmed. Same values as
             `PaymentMethod`, inlined so null validates under strict OpenAPI 3.0.3 tooling.
@@ -5641,11 +6318,12 @@ components:
         paymentProtected:
           type: boolean
           description: |
-            True only when the confirmed arrangement has `protectionStatus=protected`.
-            Always false for cash.
+            Read-only. True only when the confirmed arrangement has
+            `protectionStatus=protected`. Always false for `cash` and `direct_transfer`,
+            and false when no arrangement is confirmed.
         farePayoutDueThroughTruber:
           type: boolean
-          description: False for cash and when no arrangement is confirmed.
+          description: False for `cash` and `direct_transfer`, and when no arrangement is confirmed.
         releaseStatus:
           $ref: '#/components/schemas/ReleaseStatus'
         payoutBlockedReasons:
@@ -5701,6 +6379,34 @@ components:
         details:
           $ref: '#/components/schemas/CommissionOutstandingDetails'
 
+    SubmissionBlockerVerificationRequired:
+      type: object
+      additionalProperties: false
+      description: |
+        v0.6.0-draft (G3). Preview-side warning that the verification gate would refuse
+        `createQuotation`. That operation still returns 403 when the transporter company
+        is not `verified` or the calling user's `accountStatus` is not `active`. The
+        preview does not take a `truckId`, so truck verification is not included here.
+        No `message`. Computed only for the request's `transporterCompanyId` and the
+        calling user.
+      required: [code, details]
+      properties:
+        code:
+          type: string
+          enum: [VERIFICATION_REQUIRED]
+        details:
+          type: object
+          additionalProperties: false
+          required: [reasons]
+          properties:
+            reasons:
+              type: array
+              minItems: 1
+              uniqueItems: true
+              items:
+                type: string
+                enum: [company_not_verified, account_not_active]
+
     PayoutPreviewRequest:
       type: object
       additionalProperties: false
@@ -5726,7 +6432,11 @@ components:
 
     PayoutPreview:
       type: object
-      description: v0.5.0. Server-computed, nothing stored.
+      additionalProperties: false
+      description: |
+        v0.6.0-draft. Server-computed, nothing stored. All listed properties are always
+        present. `paymentMethod`, `farePayoutDueThroughTruber`, and
+        `paymentProtectedPossible` are null when the request omitted `paymentMethod`.
       required:
         - agreedAmount
         - commissionRateBps
@@ -5736,6 +6446,7 @@ components:
         - netPayoutBeforeUnknownFees
         - feeStatus
         - unknownFees
+        - paymentMethod
         - farePayoutDueThroughTruber
         - paymentProtectedPossible
         - submissionBlockers
@@ -5749,7 +6460,7 @@ components:
           $ref: '#/components/schemas/NonNegativeMoneyAmount'
         knownFees:
           type: array
-          description: Fees with a confirmed figure. Empty in v0.5.0 (no contracted provider fee).
+          description: Fees with a confirmed figure. Empty in v0.6.0-draft (no contracted provider fee; fees are not invented).
           items:
             type: object
             required: [feeType, amount]
@@ -5774,8 +6485,8 @@ components:
           description: |
             `unknown`: at least one fee may apply with no confirmed figure (see `unknownFees`).
             `known`: every applicable fee is in `knownFees`.
-            `not_applicable`: cash; Truber processes no payment, so no processing fee is
-            deducted through Truber.
+            `not_applicable`: `cash` or `direct_transfer`; Truber processes no payment, so
+            no processing fee is deducted through Truber.
         unknownFees:
           type: array
           description: Non-empty exactly when `feeStatus` is `unknown`.
@@ -5784,33 +6495,44 @@ components:
         paymentMethod:
           type: string
           nullable: true
-          enum: [prepay, escrow, deposit_balance, cash, corporate_credit, null]
+          enum: [prepay, escrow, deposit_balance, cash, direct_transfer, corporate_credit, null]
           description: |
             Echo of the request `paymentMethod`; null when none was given. Same values as
             `PaymentMethod`, inlined so null validates under strict OpenAPI 3.0.3 tooling.
         farePayoutDueThroughTruber:
           type: boolean
-          description: False for cash (Truber never holds the fare).
+          nullable: true
+          description: |
+            False for `cash` and `direct_transfer` (Truber never holds the fare). True for
+            the other methods. Null when `paymentMethod` is null.
         paymentProtectedPossible:
           type: boolean
-          description: False for cash (never protected). True otherwise; actual protection needs provider evidence.
+          nullable: true
+          description: |
+            False for `cash` and `direct_transfer` (never protected). True for the other
+            methods; actual protection still needs provider evidence. Null when
+            `paymentMethod` is null.
         submissionBlockers:
           type: array
           description: |
             Why `createQuotation` would be refused right now for the request's
             `transporterCompanyId` (and the calling user). Computed for that one company
             only; another company's bans or receivables never appear. Empty when nothing
-            blocks. Informational only; the server re-checks on submission. When both apply,
-            `ACCOUNT_BANNED` is listed first (same order as the 409 gates). Each item matches
-            exactly one branch, selected by `code` (discriminator).
+            blocks. Informational only; the server re-checks on submission. When more than
+            one applies, the order is `ACCOUNT_BANNED`, then `VERIFICATION_REQUIRED`, then
+            `COMMISSION_OUTSTANDING`. Each item matches exactly one branch, selected by
+            `code` (discriminator). Preview behaviour when known fees would make net
+            negative is an open question (G4) and is not represented here.
           items:
             oneOf:
               - $ref: '#/components/schemas/SubmissionBlockerAccountBanned'
+              - $ref: '#/components/schemas/SubmissionBlockerVerificationRequired'
               - $ref: '#/components/schemas/SubmissionBlockerCommissionOutstanding'
             discriminator:
               propertyName: code
               mapping:
                 ACCOUNT_BANNED: '#/components/schemas/SubmissionBlockerAccountBanned'
+                VERIFICATION_REQUIRED: '#/components/schemas/SubmissionBlockerVerificationRequired'
                 COMMISSION_OUTSTANDING: '#/components/schemas/SubmissionBlockerCommissionOutstanding'
 
     ProofOfDelivery:
@@ -6456,8 +7178,11 @@ components:
         Transporter commission balances (records only). `outstandingByCurrency` is open
         owing and is what the commission gate checks. `heldByCurrency` (dispute open) is
         **excluded from `outstandingByCurrency` and from the commission gate**: held
-        commission does not block work (user decision 2026-11-11). `creditByCurrency` is
-        commission credit; credit is applied to future commission and, where server policy allows, to outstanding commission. Credit is never paid out in cash.
+        commission does not block work (user decision 2026-11-11, U7). `creditByCurrency`
+        is commission credit. Credit is applied to future commission and to commission
+        already owed (user decision U1, 2026-11-11; the server flag defaults on),
+        including commission released from a dispute (left `held` and now `open`).
+        Credit is never applied to `held` receivables and is never paid out in cash.
       required: [companyId, outstandingByCurrency, heldByCurrency, creditByCurrency, receivables]
       properties:
         companyId:
@@ -6495,14 +7220,17 @@ components:
         creditByCurrency:
           type: array
           description: |
-            v0.5.0. Unused commission credit on the transporter's Truber balance, one entry
+            Unused commission credit on the transporter's Truber balance, one entry
             per currency with a positive balance. Created when an adjustment or a before-lock
-            void reduces commission that was already paid, or when a recorded commission
-            collection exceeds what was owed. Same currency only, oldest credit first:
-            credit is applied to future commission and, where server policy allows, to outstanding commission. Never applied to `held` receivables. Credit stays on
-            the company's balance if the transporter stops using Truber and later returns.
-            It is **never refunded in cash**, never paid out, and is not money held by
-            Truber. Empty when there is none.
+            void reduces commission that was already paid, or when an admin-accepted
+            overpayment is recorded (`acceptOverpayment: true`). Same currency only,
+            oldest credit first: credit is applied to future commission and to commission
+            already owed (user decision U1; flag defaults on), including commission
+            released from a dispute (left `held`, now `open`). Never applied to `held`
+            receivables. Credit stays on the company's balance if the transporter stops
+            using Truber and later returns. No expiry is built; do not claim that credit
+            never expires (user decision U2). It is **never refunded in cash**, never paid
+            out, and is not money held by Truber. Empty when there is none.
           items:
             $ref: '#/components/schemas/PositiveMoneyAmount'
         receivables:
@@ -6833,22 +7561,44 @@ components:
 
     RecordCommissionCollectionRequest:
       type: object
+      additionalProperties: false
       description: |
         Records a collection against open commission owing in the given currency.
         Not a live charge. Amount must be positive (QA-007). Applied only to open
-        receivables in that currency, oldest-first. Any amount above what is owed becomes
-        commission credit (`CommissionCollectionRecord.creditedAmount`), never paid out in
-        cash. Mixed-currency collections are rejected.
+        receivables in that currency, oldest-first. Mixed-currency collections are
+        rejected. `externalReference` is required when `channel` is not `cash`.
+        An amount above what is owed is accepted only with `acceptOverpayment: true`
+        (409 `OVERPAYMENT_REQUIRES_CONFIRMATION` otherwise). Accepted excess becomes
+        commission credit, never paid out in cash, and also pays down released dispute
+        commission (open receivables that left `held`).
       required: [amount]
       properties:
         amount:
           $ref: '#/components/schemas/PositiveMoneyAmount'
+        channel:
+          $ref: '#/components/schemas/CommissionCollectionChannel'
+        acceptOverpayment:
+          type: boolean
+          description: |
+            Admin confirmation that any excess over outstanding in this currency should
+            be kept as commission credit. Required to be true when `amount` exceeds
+            outstanding; ignored (no credit) when it does not. Default false when omitted.
         externalReference:
           type: string
+          minLength: 1
           maxLength: 200
         notes:
           type: string
           maxLength: 2000
+
+    CommissionCollectionChannel:
+      type: string
+      enum: [cash, bank_transfer, mobile_money]
+      description: |
+        How the collection was received. When omitted on `recordCommissionCollection`,
+        treated as `cash`. `externalReference` is required for `bank_transfer` and
+        `mobile_money`. Channel `paynow` is not part of this enum until the planned
+        webhook is in force.
 
     CommissionCollectionRecord:
       type: object
@@ -6890,9 +7640,25 @@ components:
           allOf:
             - $ref: '#/components/schemas/NonNegativeMoneyAmount'
           description: |
-            v0.5.0. Part of `amount` above what was owed in that currency (minor units, same
-            currency; `0` when none). Held as commission credit against future commission;
-            never paid out in cash.
+            Part of `amount` above what was owed in that currency (minor units, same
+            currency; `0` when none). Present only when the admin passed
+            `acceptOverpayment: true`. Held as commission credit against future
+            commission, outstanding commission (U1, flag defaults on), and commission
+            released from a dispute; never paid out in cash.
+        channel:
+          allOf:
+            - $ref: '#/components/schemas/CommissionCollectionChannel'
+          type: string
+          nullable: true
+          description: Null on records created before this field existed.
+        settlementId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Set when this collection was created by `confirmCommissionSettlement`.
+        acceptOverpayment:
+          type: boolean
+          description: Whether the admin confirmed keeping an excess as credit for this record.
         externalReference:
           type: string
           nullable: true
@@ -6909,4 +7675,251 @@ components:
           $ref: '#/components/schemas/DateTime'
         recordedByUserId:
           $ref: '#/components/schemas/Uuid'
+        reversedAt:
+          allOf:
+            - $ref: '#/components/schemas/DateTime'
+          type: string
+          nullable: true
+          description: Set when `reverseCommissionCollection` has been applied; null otherwise.
+        reversedByUserId:
+          allOf:
+            - $ref: '#/components/schemas/Uuid'
+          type: string
+          nullable: true
+        reversalReason:
+          type: string
+          nullable: true
+          maxLength: 2000
+
+    ReverseCommissionCollectionRequest:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          description: Why this collection is being reversed (required).
+        notes:
+          type: string
+          maxLength: 2000
+
+    CommissionCollectionReversalRecord:
+      type: object
+      additionalProperties: false
+      description: |
+        Audit record of an admin collection reversal. Append-only. Does not move funds.
+      required:
+        - id
+        - collectionId
+        - companyId
+        - reversedAmount
+        - reversedCreditAmount
+        - reason
+        - fundsMovementClaimedByTruber
+        - reversedAt
+        - reversedByUserId
+        - collection
+      properties:
+        id:
+          $ref: '#/components/schemas/Uuid'
+        collectionId:
+          $ref: '#/components/schemas/Uuid'
+        companyId:
+          $ref: '#/components/schemas/Uuid'
+        reversedAmount:
+          $ref: '#/components/schemas/PositiveMoneyAmount'
+        reversedCreditAmount:
+          allOf:
+            - $ref: '#/components/schemas/NonNegativeMoneyAmount'
+          description: Credit created by the original collection that was removed (`0` if none).
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        notes:
+          type: string
+          nullable: true
+          maxLength: 2000
+        fundsMovementClaimedByTruber:
+          type: boolean
+          enum: [false]
+        reversedAt:
+          $ref: '#/components/schemas/DateTime'
+        reversedByUserId:
+          $ref: '#/components/schemas/Uuid'
+        collection:
+          $ref: '#/components/schemas/CommissionCollectionRecord'
+
+    CommissionSettlementChannel:
+      type: string
+      enum: [bank_transfer, mobile_money, cash_at_office, paynow]
+      description: |
+        How the transporter claims to have paid. `paynow` is reserved and returns 409
+        `CHANNEL_NOT_AVAILABLE` until the planned webhook is in force. `externalReference`
+        is required except for `cash_at_office`.
+
+    CommissionSettlementStatus:
+      type: string
+      enum: [submitted, confirmed, rejected, cancelled, pending_provider]
+      description: |
+        `submitted`: awaiting admin confirm or reject; owing unchanged.
+        `confirmed`: admin applied a collection.
+        `rejected` / `cancelled`: terminal, owing unchanged.
+        `pending_provider`: reserved for a later Paynow initiation; not created in this
+        version.
+
+    CommissionSettlement:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - companyId
+        - amount
+        - channel
+        - status
+        - fundsMovementClaimedByTruber
+        - submittedAt
+        - submittedByUserId
+      properties:
+        id:
+          $ref: '#/components/schemas/Uuid'
+        companyId:
+          $ref: '#/components/schemas/Uuid'
+        amount:
+          $ref: '#/components/schemas/PositiveMoneyAmount'
+        channel:
+          $ref: '#/components/schemas/CommissionSettlementChannel'
+        status:
+          $ref: '#/components/schemas/CommissionSettlementStatus'
+        externalReference:
+          type: string
+          nullable: true
+          maxLength: 200
+        notes:
+          type: string
+          nullable: true
+          maxLength: 2000
+        fundsMovementClaimedByTruber:
+          type: boolean
+          enum: [false]
+        submittedAt:
+          $ref: '#/components/schemas/DateTime'
+        submittedByUserId:
+          $ref: '#/components/schemas/Uuid'
+        collectionId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Set when status is `confirmed`; the applied `CommissionCollectionRecord`.
+        confirmedAt:
+          allOf:
+            - $ref: '#/components/schemas/DateTime'
+          type: string
+          nullable: true
+        confirmedByUserId:
+          allOf:
+            - $ref: '#/components/schemas/Uuid'
+          type: string
+          nullable: true
+        rejectedAt:
+          allOf:
+            - $ref: '#/components/schemas/DateTime'
+          type: string
+          nullable: true
+        rejectedByUserId:
+          allOf:
+            - $ref: '#/components/schemas/Uuid'
+          type: string
+          nullable: true
+        rejectionReason:
+          type: string
+          nullable: true
+          maxLength: 2000
+        cancelledAt:
+          allOf:
+            - $ref: '#/components/schemas/DateTime'
+          type: string
+          nullable: true
+        cancelledByUserId:
+          allOf:
+            - $ref: '#/components/schemas/Uuid'
+          type: string
+          nullable: true
+
+    CommissionSettlementListResponse:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/CommissionSettlement'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    SubmitCommissionSettlementRequest:
+      type: object
+      additionalProperties: false
+      required: [amount, channel]
+      properties:
+        amount:
+          $ref: '#/components/schemas/PositiveMoneyAmount'
+        channel:
+          $ref: '#/components/schemas/CommissionSettlementChannel'
+        externalReference:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: Required when `channel` is not `cash_at_office`.
+        notes:
+          type: string
+          maxLength: 2000
+
+    CancelCommissionSettlementRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        notes:
+          type: string
+          maxLength: 2000
+
+    ConfirmCommissionSettlementRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        acceptOverpayment:
+          type: boolean
+          description: |
+            Admin confirmation that any excess over outstanding at confirm time should
+            be kept as commission credit. Required to be true when the submitted amount
+            now exceeds outstanding; default false when omitted.
+        notes:
+          type: string
+          maxLength: 2000
+
+    ConfirmCommissionSettlementResponse:
+      type: object
+      additionalProperties: false
+      required: [settlement, collection]
+      properties:
+        settlement:
+          $ref: '#/components/schemas/CommissionSettlement'
+        collection:
+          $ref: '#/components/schemas/CommissionCollectionRecord'
+
+    RejectCommissionSettlementRequest:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        notes:
+          type: string
+          maxLength: 2000
 
