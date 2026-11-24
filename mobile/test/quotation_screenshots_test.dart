@@ -80,38 +80,58 @@ TextTheme _faces(TextTheme theme) => theme.copyWith(
       labelSmall: _face(theme.labelSmall, FontWeight.w700),
     );
 
-ThemeData _theme() {
-  final base = TruberAppTheme.light();
-  const face = TextStyle(fontFamily: 'Roboto', color: Colors.black);
+ThemeData _theme([Brightness brightness = Brightness.light]) {
+  final dark = brightness == Brightness.dark;
+  final base = dark ? TruberAppTheme.dark() : TruberAppTheme.light();
+  final face = TextStyle(
+    fontFamily: 'Roboto',
+    color: dark ? Colors.white : Colors.black,
+  );
   return base.copyWith(
     textTheme: _faces(base.textTheme),
     primaryTextTheme: _faces(base.primaryTextTheme),
     appBarTheme: base.appBarTheme.copyWith(
-      titleTextStyle:
-          face.copyWith(fontSize: 22, fontWeight: FontWeight.w700),
+      titleTextStyle: face.copyWith(fontSize: 22, fontWeight: FontWeight.w700),
     ),
     dialogTheme: DialogTheme(
       titleTextStyle: face.copyWith(fontSize: 20, fontWeight: FontWeight.w700),
       contentTextStyle:
           face.copyWith(fontSize: 16, fontWeight: FontWeight.w400),
     ),
+    outlinedButtonTheme: OutlinedButtonThemeData(
+      style: (base.outlinedButtonTheme.style ?? const ButtonStyle()).copyWith(
+        textStyle: const WidgetStatePropertyAll(
+          TextStyle(
+            fontFamily: 'Roboto',
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    ),
     textButtonTheme: TextButtonThemeData(
       style: TextButton.styleFrom(
-        foregroundColor: const Color(0xFF0035FE),
+        foregroundColor:
+            dark ? const Color(0xFF99AEFF) : const Color(0xFF0035FE),
         textStyle: face.copyWith(fontSize: 14, fontWeight: FontWeight.w700),
       ),
     ),
   );
 }
 
-Future<void> _pump(WidgetTester tester, SessionController session, Widget home) {
+Future<void> _pump(
+  WidgetTester tester,
+  SessionController session,
+  Widget home, {
+  Brightness brightness = Brightness.light,
+}) {
   return tester.pumpWidget(RepaintBoundary(
     key: const Key('shot'),
     child: ChangeNotifierProvider.value(
       value: session,
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
-        theme: _theme(),
+        theme: _theme(brightness),
         home: home,
       ),
     ),
@@ -170,5 +190,26 @@ void main() {
     expect(find.byKey(const Key('withdraw_confirm_dialog')), findsOneWidget);
     await expectLater(find.byKey(const Key('shot')),
         matchesGoldenFile('goldens/transporter_withdraw_dialog.png'));
+    await tester.tap(find.byKey(const Key('withdraw_confirm_cancel')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    await _pump(
+      tester,
+      transporter,
+      TransporterQuotesScreen(load: seedLoads().first),
+      brightness: Brightness.dark,
+    );
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('Withdraw quotation'), findsWidgets);
+    await expectLater(find.byKey(const Key('shot')),
+        matchesGoldenFile('goldens/transporter_quotes_withdraw_dark.png'));
+
+    await tester.tap(find.byKey(const Key('withdraw_quote_${MockIds.quote1}')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byKey(const Key('withdraw_confirm_dialog')), findsOneWidget);
+    await expectLater(find.byKey(const Key('shot')),
+        matchesGoldenFile('goldens/transporter_withdraw_dialog_dark.png'));
   }, skip: !const bool.fromEnvironment('QUOTATION_SHOTS'));
 }
