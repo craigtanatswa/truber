@@ -111,7 +111,7 @@ void main() {
   test('money templates use US\$ format and – deductions', () {
     expect(TruberCopy.payoutDeductionFor(r'US$50.00'), '\u2013 US\$50.00');
     expect(TruberCopy.payoutQuoteHintFor(r'US$902.50'),
-        'You’ll receive US\$902.50 after commission and fees.');
+        'You’ll earn US\$902.50 after Truber’s commission.');
   });
 
   test('auth.almost_in matches Design (curly)', () {
