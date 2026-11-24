@@ -4,13 +4,11 @@
 //   flutter test tool/launch_shots_test.dart \
 //     --dart-define=SUPPORT_EMAIL=support@truber.example
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:truber_app/copy/strings.dart';
 import 'package:truber_app/data/mock/mock_auth_repository.dart';
 import 'package:truber_app/data/mock/mock_booking_repository.dart';
@@ -123,10 +121,7 @@ Future<void> _save(WidgetTester tester, String name) async {
 }
 
 void main() {
-  setUpAll(() async {
-    SharedPreferences.setMockInitialValues({});
-    await _loadFonts();
-  });
+  setUpAll(_loadFonts);
 
   testWidgets('launch review screenshots', (tester) async {
     await tester.binding.setSurfaceSize(const Size(390, 844));
@@ -225,7 +220,7 @@ void main() {
     expect(find.text(TruberCopy.banBannerTitle), findsOneWidget);
     await _save(tester, 'ban_email_support');
 
-    final payout = TransporterPayout(
+    const payout = TransporterPayout(
       bookingId: 'b1',
       routeLabel: 'Harare → Bulawayo',
       method: PaymentMethod.cash,
@@ -233,7 +228,7 @@ void main() {
       completionStatus: CompletionStatus.completed,
       releaseStatus: ReleaseStatus.notApplicable,
       bookingCommissionRateBps: 500,
-      release: const PaymentReleaseRecord(
+      release: PaymentReleaseRecord(
         id: 'r1',
         arrangementId: 'a1',
         tripAmount: MoneyAmount(amountMinor: 95000, currency: 'USD'),
@@ -247,7 +242,7 @@ void main() {
       final s = _session();
       await s.login('transporter@truber.zw', 'demopass');
       await tester.pumpWidget(_host(
-        TransporterBookingScreen(payout: payout),
+        const TransporterBookingScreen(payout: payout),
         session: s,
         dark: dark,
       ));
