@@ -9,6 +9,9 @@ import 'package:truber_app/data/mock/mock_payment_repository.dart';
 import 'package:truber_app/data/mock/mock_quotation_repository.dart';
 import 'package:truber_app/data/mock/mock_stores.dart';
 import 'package:truber_app/state/session.dart';
+import 'package:truber_app/ui/theme/truber_app_theme.dart';
+import 'package:truber_app/ui/widgets/route_title.dart';
+import 'package:truber_design/truber_design.dart';
 
 SessionController _session() {
   MockStores.instance.quotations.clear();
@@ -51,7 +54,10 @@ void main() {
     expect(find.byKey(const Key('nav_shipper_home')), findsOneWidget);
     expect(find.byKey(const Key('nav_shipper_loads')), findsOneWidget);
     expect(find.byKey(const Key('nav_shipper_post')), findsOneWidget);
-    expect(find.text('Harare → Bulawayo'), findsWidgets);
+    expect(find.text('Harare'), findsWidgets);
+    expect(find.text('Bulawayo'), findsWidgets);
+    expect(find.textContaining('→'), findsNothing);
+    expect(find.byIcon(Icons.arrow_forward), findsWidgets);
   });
 
   testWidgets('login as transporter shows transporter nav', (tester) async {
@@ -68,5 +74,22 @@ void main() {
     await _login(tester, 'admin@truber.zw');
     expect(find.byKey(const Key('nav_admin_home')), findsOneWidget);
     expect(find.text(TruberCopy.adminPlaceholder), findsOneWidget);
+  });
+
+  testWidgets('rendered route uses an icon, not a → glyph', (tester) async {
+    await tester.pumpWidget(MaterialApp(
+      theme: TruberAppTheme.light(),
+      home: const Scaffold(
+        body: RouteTitle(from: 'Harare', to: 'Bulawayo'),
+      ),
+    ));
+    expect(find.textContaining('→'), findsNothing);
+    final icon = tester.widget<Icon>(find.byIcon(Icons.arrow_forward));
+    expect(icon.size, 16);
+    expect(icon.color, TruberColors.textSecondary);
+    expect(
+      tester.getSemantics(find.byType(RouteTitle)).label,
+      'Harare to Bulawayo',
+    );
   });
 }

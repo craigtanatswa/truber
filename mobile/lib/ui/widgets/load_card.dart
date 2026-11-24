@@ -3,6 +3,7 @@ import 'package:truber_design/truber_design.dart';
 
 import '../../copy/strings.dart';
 import '../format/dates.dart';
+import 'route_title.dart';
 
 import '../../models/load.dart';
 
@@ -33,8 +34,9 @@ class LoadCard extends StatelessWidget {
               Row(
                 children: [
                   Expanded(
-                    child: Text(
-                      load.routeLabel,
+                    child: RouteTitle(
+                      from: load.pickupAddress,
+                      to: load.destinationAddress,
                       style: theme.textTheme.titleLarge,
                     ),
                   ),

@@ -4,6 +4,7 @@ import 'package:truber_design/truber_design.dart';
 import '../../copy/strings.dart';
 import '../../models/money.dart';
 import '../../models/payout.dart';
+import 'route_title.dart';
 
 String _value(MoneyAmount m) => TruberCopy.payoutNetValueFor(m.display);
 String _deduction(MoneyAmount m) => TruberCopy.payoutDeductionFor(m.display);
@@ -180,6 +181,19 @@ class _Row extends StatelessWidget {
 }
 
 /// Card for one booking on the transporter home: route + payout summary.
+class _RouteLine extends StatelessWidget {
+  const _RouteLine({required this.label, this.style});
+  final String label;
+  final TextStyle? style;
+
+  @override
+  Widget build(BuildContext context) {
+    final parts = RouteTitle.split(label);
+    if (parts == null) return Text(label, style: style);
+    return RouteTitle(from: parts.from, to: parts.to, style: style);
+  }
+}
+
 class PayoutCard extends StatelessWidget {
   const PayoutCard({super.key, required this.payout, this.onTap});
   final TransporterPayout payout;
@@ -196,8 +210,10 @@ class PayoutCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(payout.routeLabel,
-                  style: Theme.of(context).textTheme.titleSmall),
+              _RouteLine(
+                label: payout.routeLabel,
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
               const SizedBox(height: TruberSpacing.sm),
               PayoutSummary(payout: payout),
             ],
