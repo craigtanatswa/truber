@@ -160,9 +160,15 @@ void main() {
     await _pump(
         tester, transporter, TransporterQuotesScreen(load: seedLoads().first));
     await tester.pump(const Duration(milliseconds: 100));
-    expect(find.byKey(const Key('withdraw_quote_${MockIds.quote1}')),
-        findsOneWidget);
+    expect(find.text('Withdraw quotation'), findsWidgets);
     await expectLater(find.byKey(const Key('shot')),
         matchesGoldenFile('goldens/transporter_quotes_withdraw.png'));
+
+    await tester.tap(find.byKey(const Key('withdraw_quote_${MockIds.quote1}')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byKey(const Key('withdraw_confirm_dialog')), findsOneWidget);
+    await expectLater(find.byKey(const Key('shot')),
+        matchesGoldenFile('goldens/transporter_withdraw_dialog.png'));
   }, skip: !const bool.fromEnvironment('QUOTATION_SHOTS'));
 }

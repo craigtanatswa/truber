@@ -20,6 +20,7 @@ import 'package:truber_app/ui/screens/transporter/my_quotes_screen.dart';
 import 'package:truber_app/ui/screens/transporter/submit_quote_screen.dart';
 import 'package:truber_app/ui/theme/truber_app_theme.dart';
 import 'package:truber_app/ui/widgets/quote_payout_hint.dart';
+import 'package:truber_design/truber_design.dart';
 
 SessionController _session() {
   final loads = MockLoadRepository();
@@ -175,6 +176,8 @@ void main() {
     _expectNoPayoutCopy(tester);
     await tester.tap(find.byKey(const Key('restore_not_selected')));
     await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(find.text(TruberCopy.quoteRestored), findsOneWidget);
     expect(
       store.quotations.firstWhere((q) => q.id == MockIds.quote2).status,
       QuotationStatus.submitted,
@@ -247,6 +250,32 @@ void main() {
 
     await tester.tap(find.byKey(const Key('withdraw_quote_${MockIds.quote1}')));
     await tester.pumpAndSettle();
+    expect(find.byKey(const Key('withdraw_confirm_dialog')), findsOneWidget);
+    expect(find.text(TruberCopy.quoteWithdrawConfirmTitle), findsOneWidget);
+    expect(find.text(TruberCopy.quoteWithdrawConfirmBody), findsOneWidget);
+    final confirm = tester.widget<ElevatedButton>(
+        find.byKey(const Key('withdraw_confirm')));
+    expect(
+      confirm.style?.backgroundColor?.resolve(const <WidgetState>{}),
+      TruberColors.error,
+    );
+
+    await tester.tap(find.byKey(const Key('withdraw_confirm_cancel')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('withdraw_confirm_dialog')), findsNothing);
+    expect(find.text(TruberCopy.quoteWithdrawn), findsNothing);
+    expect(
+      MockStores.instance.quotations
+          .firstWhere((q) => q.id == MockIds.quote1)
+          .status,
+      QuotationStatus.submitted,
+    );
+
+    await tester.tap(find.byKey(const Key('withdraw_quote_${MockIds.quote1}')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('withdraw_confirm')));
+    await tester.pumpAndSettle();
+    expect(find.text(TruberCopy.quoteWithdrawn), findsOneWidget);
     expect(find.text(TruberCopy.statusQuotationWithdrawn), findsOneWidget);
     expect(
       MockStores.instance.quotations

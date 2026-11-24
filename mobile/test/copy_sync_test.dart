@@ -168,6 +168,22 @@ void main() {
     expect(TruberCopy.payDepositBalanceHelp, contains('\u2019'));
   });
 
+  test('quote withdraw and restore copy matches Design verbatim', () {
+    final md = File('../design/copy/microcopy.md').readAsStringSync();
+    const rows = {
+      'quote.withdraw_cta': TruberCopy.quoteWithdrawCta,
+      'quote.withdraw_confirm_title': TruberCopy.quoteWithdrawConfirmTitle,
+      'quote.withdraw_confirm_body': TruberCopy.quoteWithdrawConfirmBody,
+      'quote.withdrawn': TruberCopy.quoteWithdrawn,
+      'quote.restore_cta': TruberCopy.quoteRestoreCta,
+      'quote.restored': TruberCopy.quoteRestored,
+    };
+    for (final e in rows.entries) {
+      expect(md, contains('| `${e.key}` | ${e.value} |'), reason: e.key);
+    }
+    expect(TruberCopy.quoteWithdrawConfirmBody, contains('\u2019'));
+  });
+
   test('settings.theme_* (Appearance + pre-sign-in toggle) match Design', () {
     final md = File('../design/copy/microcopy.md').readAsStringSync();
     const rows = {
