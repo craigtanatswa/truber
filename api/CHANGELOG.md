@@ -3,7 +3,7 @@
 ## 0.6.0-draft — 2026-11-24 (Africa/Harare)
 
 **Draft only. Not published. Not authoritative.** SHA-256
-`44c9e1c0a1ad35f1f48a9b1d4926afa8670191bb80326a7a5d2abfd69a63eee0`.
+`d4a848fa1fd674681c02f93d49c697aeb9e37fd7889ecbd5a1610eb37e531d5e` (after Mark's 24 Nov calls; first draft was `44c9e1c0…eee0` at `5833865`).
 Full change list and open questions: `reports/plans/billing-contract-v0.6.0.md`.
 Publishing needs the user's explicit yes. Mark pushes; no merge from this draft.
 
@@ -19,11 +19,18 @@ Publishing needs the user's explicit yes. Mark pushes; no merge from this draft.
   and `IDEMPOTENCY_KEY_REUSED`; overpayment kept as credit only with admin
   `acceptOverpayment` (else 409 `OVERPAYMENT_REQUIRES_CONFIRMATION`, user 24 Nov);
   admin `reverseCommissionCollection`. Credit also pays down released dispute
-  commission. Proposed 409 `CREDIT_ALREADY_CONSUMED` if that credit was already
-  used (open question for Mark).
+  commission. 409 `CREDIT_ALREADY_CONSUMED` if that credit was already used
+  (Mark, 24 Nov, final: no partial reversal, no claw-back; separate adjustment).
 - **Payout preview:** G3 `VERIFICATION_REQUIRED` blocker; G5 `additionalProperties:
-  false`; nullable booleans when `paymentMethod` is omitted. G4 (negative net once
-  known fees exist) is an open question; no fees invented.
+  false`; nullable booleans when `paymentMethod` is omitted. G4 (Mark, 24 Nov):
+  preview 200 with net clamped to 0 and `netPayoutNegative`; `createQuotation` 409
+  `NET_PAYOUT_NEGATIVE`. `createQuotation` / `postLoad` 403 pinned
+  `VERIFICATION_REQUIRED`. No fees invented. Overpayment cap is an open question
+  for the user; none invented.
+- **Mark 24 Nov (final):** 409 `CREDIT_ALREADY_CONSUMED` on reversal if credit was
+  already used (no partial, no claw-back; separate adjustment). Arrangement status
+  stays `proposed` until both confirm. Idempotency-Key stays optional on existing
+  arrangement create/confirm; required on new collection and reversal ops.
 
 
 ## 0.5.0 — 2026-11-11 (Africa/Harare)

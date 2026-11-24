@@ -1,11 +1,11 @@
 # Billing contract v0.6.0-draft — change log vs published v0.5.0
 
-Written 2026-11-24 17:15 Africa/Harare (UTC+2). Status: **DRAFT, not published, not authoritative.** Contract only; no implementation in this revision. Jensen does not push; Mark pushes and reviews. Publishing and merging need the user's explicit yes.
+Written 2026-11-24 17:15 Africa/Harare (UTC+2); updated 2026-11-24 17:20 Africa/Harare after Mark's calls on the first draft (`5833865`, which he pushed). Status: **DRAFT, not published, not authoritative.** Contract only; no implementation in this revision. Jensen does not push; Mark pushes and reviews. Publishing and merging need the user's explicit yes.
 
 - **Branch:** `jensen/contract-v0.6.0` (worktree `/home/box/truber/repos/jensen-v060`), based on `33a11fe` (published v0.5.0 + R1 receipt-ref normalisation). The main `jensen-billing` worktree was not used (preview rebase lives there).
 - **File:** `api/openapi.yaml`, `info.version: 0.6.0-draft`, OpenAPI 3.0.3, integer minor units.
-- **SHA-256:** `44c9e1c0a1ad35f1f48a9b1d4926afa8670191bb80326a7a5d2abfd69a63eee0`
-- **Base:** published v0.5.0 SHA-256 `8839f1d4afebb3ceda9683d4c83604866ed80c31d094be31afb415fc08460b4a`
+- **SHA-256:** `d4a848fa1fd674681c02f93d49c697aeb9e37fd7889ecbd5a1610eb37e531d5e`
+- **Base:** published v0.5.0 SHA-256 `8839f1d4afebb3ceda9683d4c83604866ed80c31d094be31afb415fc08460b4a`. First draft commit `583386555df442be800b5bed2d496806578d6193`.
 - **Lint:** `@redocly/cli` (recommended config) — valid, 0 errors, 0 warnings.
 - **Counts:** 68 path items, 84 operations (v0.5.0: 60 / 75). Nothing removed.
 
@@ -15,6 +15,7 @@ Written 2026-11-24 17:15 Africa/Harare (UTC+2). Status: **DRAFT, not published, 
 - 11 Nov 2026 (via Charlie/Mark): launch with recorded cash or transfer, not protected; shippers never see the payout breakdown; U1 credit may offset already-owing commission (flag defaults on); U2 credit is kept if a transporter returns, no expiry is built and none is claimed; U3 was "overpayment becomes credit" — **superseded on 24 Nov**; U4 Paynow is for commission settlement only; U5 transfer means EFT plus mobile money; U7 held commission does not block work.
 - 17 Nov 2026 (U6, via Charlie): not-protected wording lives in the Terms (Design holds them until counsel's text arrives). No per-arrangement tick-box. `acknowledgeNotProtected` is not in this contract.
 - 24 Nov 2026 (via Charlie): an overpayment is kept as credit only when an admin explicitly confirms it; add an admin-only way to reverse a mistyped collection.
+- 24 Nov 2026 (Mark's calls on the first draft, after he pushed `5833865`): items 1, 2, 4, 5 and 6 below are decided; item 3 remains an open question for the user.
 
 ## Changes vs 0.5.0
 
@@ -23,7 +24,7 @@ Written 2026-11-24 17:15 Africa/Harare (UTC+2). Status: **DRAFT, not published, 
 - `PaymentMethod` adds `direct_transfer` (party-to-party EFT or mobile money). Launch-enabled methods are `cash` and `direct_transfer` only. Other enum values remain valid but return 409 `METHOD_NOT_AVAILABLE` until enabled.
 - `confirmPaymentArrangement` is two-party for `cash` and `direct_transfer`: a shipper member and a transporter member each confirm. Proposing is not a confirmation. The first confirm leaves status `proposed`; the second sets `confirmed`. A repeat confirm by the same party is idempotent. Admin cannot confirm these methods on a party's behalf (403). Other methods stay admin-only and are disabled at launch.
 - No `acknowledgeNotProtected` field on `ConfirmPaymentArrangementRequest` (U6). Description points at the Terms.
-- `PaymentArrangement` adds required read-only `paymentProtected` (always `false` for cash and `direct_transfer`), nullable `shipperConfirmation` / `transporterConfirmation` (`ArrangementPartyConfirmation`), and `withdrawnAt` / `withdrawnByUserId`. Existing `ArrangementStatus` enum is unchanged: "awaiting counterparty" is expressed by the confirmation fields, not a fifth status.
+- `PaymentArrangement` adds required read-only `paymentProtected` (always `false` for cash and `direct_transfer`), nullable `shipperConfirmation` / `transporterConfirmation` (`ArrangementPartyConfirmation`), and `withdrawnAt` / `withdrawnByUserId`. Existing `ArrangementStatus` enum is unchanged: status stays `proposed` until both parties confirm (Mark, 24 Nov: no new state). "Awaiting counterparty" is expressed by the confirmation fields, not a fifth status.
 - New ops: `POST /payment-arrangements/{arrangementId}/withdraw` (`withdrawPaymentArrangement`) and `POST /payment-arrangements/{arrangementId}/reject` (`rejectPaymentArrangement`). Idempotency-Key required. 409 once `confirmed` (`ARRANGEMENT_ALREADY_CONFIRMED`) or otherwise terminal (`ARRANGEMENT_NOT_WITHDRAWABLE` / `ARRANGEMENT_NOT_REJECTABLE`). Withdraw maps to `cancelled`; reject maps to `rejected`. The proposer withdraws; the counterparty rejects.
 - `createPaymentArrangement`: `totalAmount` must equal the booking agreed amount and currency (409 `ARRANGEMENT_AMOUNT_MISMATCH`); only one non-terminal arrangement per booking (409 `ARRANGEMENT_ALREADY_ACTIVE`).
 - `ProtectionStatus` / protection-evidence / release recording: `cash` and `direct_transfer` stay `none` / `not_applicable`; evidence and fare payouts through Truber are rejected the same way as cash. Truber never holds the fare and never settles commission on release for these methods.
@@ -50,16 +51,16 @@ Written 2026-11-24 17:15 Africa/Harare (UTC+2). Status: **DRAFT, not published, 
 
 - `RecordCommissionCollectionRequest` adds optional `channel` (defaults to `cash` if omitted) and `acceptOverpayment` (default false). `externalReference` is required when `channel` is not `cash` (400 if missing). Same rule on settlements except for `cash_at_office`.
 - 409 `DUPLICATE_COLLECTION` when a non-cash `externalReference` matches a non-reversed collection or a live (not cancelled/rejected) settlement for the same company. Cash collections with no reference cannot be deduplicated.
-- 409 `IDEMPOTENCY_KEY_REUSED` when an Idempotency-Key is reused with a non-equivalent body. New write ops require the header (`IdempotencyKeyRequired`). Existing arrangement create/confirm keep the optional header, with the same reused-key code documented.
+- 409 `IDEMPOTENCY_KEY_REUSED` when an Idempotency-Key is reused with a non-equivalent body. **Idempotency-Key stays optional** on the existing `createPaymentArrangement`, `confirmPaymentArrangement`, and `recordCommissionCollection` (Mark, 24 Nov: a breaking change in a minor version is not allowed). It is **required** on the new collection and reversal writes (`confirmCommissionSettlement`, `reverseCommissionCollection`) and on the other new settlement and arrangement withdraw/reject ops that use `IdempotencyKeyRequired`.
 - **Overpayment (24 Nov):** an amount above outstanding (after credit netting, excluding `held`) is kept as credit only when an admin sets `acceptOverpayment: true` on `recordCommissionCollection` or `confirmCommissionSettlement`. Otherwise 409 `OVERPAYMENT_REQUIRES_CONFIRMATION` with `details.outstandingAmount` and `details.excessAmount`. This supersedes the v0.5.0 rule that any excess was accepted automatically.
 - Overpayment credit pays down future commission, outstanding commission (U1, flag defaults on), and **commission released from a dispute** (left `held` and now `open`). Never applied to `held` receivables. Never paid out in cash.
 - New admin op `POST /admin/commission-collections/{collectionId}/reverse` (`reverseCommissionCollection`): reason required, idempotent, append-only audit (`CommissionCollectionReversalRecord`). Reverses applied receivable amounts and any credit that collection created. Already-reversed: 409 `COLLECTION_ALREADY_REVERSED` (or idempotent replay). Does not move funds.
-- If that credit has already been consumed: **proposed** 409 `CREDIT_ALREADY_CONSUMED` — see open questions.
+- If that credit has already been consumed: **409 `CREDIT_ALREADY_CONSUMED`** (Mark, 24 Nov, final). No partial reversal and no claw-back. The admin corrects it with a separate adjustment (`recordBookingAdjustment`).
 
 ### Payout preview (G3 / G4 / G5)
 
-- G3: `submissionBlockers` gains `SubmissionBlockerVerificationRequired` (`code: VERIFICATION_REQUIRED`, `details.reasons`: `company_not_verified` and/or `account_not_active`). Order when several apply: `ACCOUNT_BANNED`, `VERIFICATION_REQUIRED`, `COMMISSION_OUTSTANDING`. Preview has no `truckId`, so truck verification is not included. `createQuotation` itself was not edited (outside billing paths); it still says "403/409" with verify-needed semantics.
-- G4: **not decided.** The preview lists no 409. Known fees are still empty (no contracted provider fee; fees are not invented), so net is ≥ 0 by construction in this draft. See open questions.
+- G3: `submissionBlockers` gains `SubmissionBlockerVerificationRequired` (`code: VERIFICATION_REQUIRED`, `details.reasons`: `company_not_verified` and/or `account_not_active`). Order when several apply: `ACCOUNT_BANNED`, `VERIFICATION_REQUIRED`, `COMMISSION_OUTSTANDING`. Preview has no `truckId`, so truck verification is not included. `createQuotation` and `postLoad` now return pinned 403 `VerificationRequiredError` (`code: VERIFICATION_REQUIRED`); `createQuotation` may also include `truck_not_verified` when a `truckId` was supplied (Mark, 24 Nov: pin it on `createQuotation`, same as loads).
+- G4 (Mark, 24 Nov): the payout preview returns **200** with `netPayoutBeforeUnknownFees` clamped to 0 and `netPayoutNegative: true` (false otherwise) so the transporter sees why. `createQuotation` rejects a negative net with **409 `NET_PAYOUT_NEGATIVE`**. Known fees are still empty in this draft (no contracted provider fee; fees are not invented), so the preview flag is false by construction today.
 - G5: `PayoutPreview` has `additionalProperties: false`. `paymentMethod` is now required on the response (null when omitted on the request).
 - `farePayoutDueThroughTruber` and `paymentProtectedPossible` are nullable and are **null** when `paymentMethod` is omitted (replaces the v0.5.0 / G2 interim of both false). For `cash` and `direct_transfer` both are false and `feeStatus` is `not_applicable`. Examples added: `methodOmitted`, `verificationRequired`.
 
@@ -94,17 +95,22 @@ Written 2026-11-24 17:15 Africa/Harare (UTC+2). Status: **DRAFT, not published, 
 | `NO_OUTSTANDING_COMMISSION` | 409 | Settlement submit when nothing is owed in that currency |
 | `SETTLEMENT_NOT_CANCELLABLE` / `_NOT_CONFIRMABLE` / `_NOT_REJECTABLE` | 409 | Wrong settlement status |
 | `COLLECTION_ALREADY_REVERSED` | 409 | Reverse of an already-reversed collection (non-idempotent retry) |
-| `CREDIT_ALREADY_CONSUMED` | 409 | **Proposed** — see open question 1 |
-| `VERIFICATION_REQUIRED` | preview blocker (createQuotation still 403) | Unverified company or inactive account |
+| `CREDIT_ALREADY_CONSUMED` | 409 | Reversal refused; credit already applied. No partial reversal, no claw-back; admin uses a separate adjustment (Mark, 24 Nov, final) |
+| `VERIFICATION_REQUIRED` | 403 (`postLoad`, `createQuotation`); preview blocker | Unverified company, inactive account, and/or unverified truck on `createQuotation` |
+| `NET_PAYOUT_NEGATIVE` | 409 on `createQuotation` only | Known fees would make net negative. Preview of the same amount is 200 with `netPayoutNegative: true` |
 
-## Open questions (for Mark)
+## Mark's calls (24 Nov 2026, after he pushed `5833865`)
 
-1. **Credit already consumed on collection reversal (policy).** Proposed: 409 `CREDIT_ALREADY_CONSUMED` with `details` naming the original `creditedAmount` and how much has already been applied to later receivables (including released dispute commission). No partial reversal and no claw-back of already-applied credit. Alternatives: reverse only the unconsumed remainder; or claw back by reopening or increasing those receivables. I am not inventing a final rule — this needs Mark's call (and, if he wants, the user's).
-2. **G4 — negative net on payout preview once known fees exist.** Options already on the table: 409 `NET_PAYOUT_NEGATIVE`, or 200 with a clamped/null net plus a flag (as `getBookingPayoutBreakdown` does). Not decided. This draft does not list a 409 on the preview and still has no known fees.
-3. **Is there an upper bound on an admin-accepted overpayment?** The 24 Nov decision requires admin confirmation but does not cap the excess. I did not invent a cap.
-4. **Arrangement status enum.** This draft keeps `proposed` until both parties confirm (recommended; no enum churn for Mobile). Mark may still prefer an explicit `awaiting_counterparty` value.
-5. **`createQuotation` 403 body.** The preview blocker uses `VERIFICATION_REQUIRED`. Published v0.5.0 `createQuotation` still says "403/409" with "verify-needed semantics" and does not pin that code. Aligning the quotations operation is outside this billing-only draft; Mark should say whether v0.6.0 should also pin it on `createQuotation`.
-6. **Existing arrangement create/confirm Idempotency-Key.** Still optional (v0.5.0). New writes require it. Should the existing arrangement writes become required in the same version?
+1. **Credit already consumed on collection reversal — decided, final.** 409 `CREDIT_ALREADY_CONSUMED`. No partial reversal and no claw-back. The admin corrects it with a separate adjustment.
+2. **G4 negative net — decided.** Payout preview returns 200 with net clamped to 0 and `netPayoutNegative: true` (false otherwise). `createQuotation` rejects a negative net with 409 `NET_PAYOUT_NEGATIVE`.
+3. See the open question for the user below.
+4. **Arrangement status — decided.** Stays `proposed` until both parties confirm. No new state.
+5. **`createQuotation` 403 — decided.** Pin `VERIFICATION_REQUIRED`, same as loads (`postLoad` is pinned the same way).
+6. **Idempotency-Key — decided.** Stays optional on the existing arrangement create and confirm (and on existing `recordCommissionCollection`). Required on the new collection and reversal ops. A breaking change in a minor version is not allowed.
+
+## Open question (for the user)
+
+3. **Is there an upper bound on an admin-accepted overpayment?** The 24 Nov decision requires admin confirmation but does not cap the excess. No cap is invented in this contract. This is the only remaining open question, and it is for the user (via Charlie/Mark), not for Mark.
 
 ## Out of scope / not in this draft
 
