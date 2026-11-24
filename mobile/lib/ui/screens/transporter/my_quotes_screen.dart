@@ -165,7 +165,7 @@ class _TransporterQuotesScreenState extends State<TransporterQuotesScreen> {
                               ],
                               if (q.status == QuotationStatus.submitted) ...[
                                 const SizedBox(height: TruberSpacing.md),
-                                ElevatedButton(
+                                OutlinedButton(
                                   key: Key('withdraw_quote_${q.id}'),
                                   onPressed:
                                       _busy ? null : () => _withdraw(q),

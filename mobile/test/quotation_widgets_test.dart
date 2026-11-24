@@ -239,8 +239,9 @@ void main() {
         _host(s, TransporterQuotesScreen(load: seedLoads().first)));
     await tester.pumpAndSettle();
     expect(find.text(TruberCopy.navQuotes), findsOneWidget);
-    expect(find.byKey(const Key('withdraw_quote_${MockIds.quote1}')),
-        findsOneWidget);
+    final withdraw = find.byKey(const Key('withdraw_quote_${MockIds.quote1}'));
+    expect(tester.widget(withdraw), isA<OutlinedButton>());
+    expect(tester.getSize(withdraw).height, TruberTouch.minButtonSize.height);
     expect(find.byKey(const Key('withdraw_quote_${MockIds.quote2}')),
         findsOneWidget);
     expect(find.text('Kariba Freight'), findsNothing);
