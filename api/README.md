@@ -2,7 +2,7 @@
 
 **Installed file:** [`openapi.yaml`](./openapi.yaml)
 **Version:** 0.6.0-draft (**draft, not published, not authoritative**)
-**SHA-256:** `d4a848fa1fd674681c02f93d49c697aeb9e37fd7889ecbd5a1610eb37e531d5e`
+**SHA-256:** `4874a3f736e8fac2ec4ab5fa6f46c9d04658a7988b9d6ec5065d6010228dc17d`
 
 Draft on branch `jensen/contract-v0.6.0`, based on published v0.5.0
 (`8839f1d4afebb3ceda9683d4c83604866ed80c31d094be31afb415fc08460b4a`).

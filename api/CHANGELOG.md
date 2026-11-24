@@ -3,7 +3,7 @@
 ## 0.6.0-draft — 2026-11-24 (Africa/Harare)
 
 **Draft only. Not published. Not authoritative.** SHA-256
-`d4a848fa1fd674681c02f93d49c697aeb9e37fd7889ecbd5a1610eb37e531d5e` (after Mark's 24 Nov calls; first draft was `44c9e1c0…eee0` at `5833865`).
+`4874a3f736e8fac2ec4ab5fa6f46c9d04658a7988b9d6ec5065d6010228dc17d` (after Mark's 24 Nov calls; first draft was `44c9e1c0…eee0` at `5833865`).
 Full change list and open questions: `reports/plans/billing-contract-v0.6.0.md`.
 Publishing needs the user's explicit yes. Mark pushes; no merge from this draft.
 
@@ -31,6 +31,11 @@ Publishing needs the user's explicit yes. Mark pushes; no merge from this draft.
   already used (no partial, no claw-back; separate adjustment). Arrangement status
   stays `proposed` until both confirm. Idempotency-Key stays optional on existing
   arrangement create/confirm; required on new collection and reversal ops.
+- **Mark 24 Nov (follow-up after `28a6cfc`):** 403 `VERIFICATION_REQUIRED` on
+  `postLoad` and `createQuotation` shares `VerificationRequiredDetails`
+  (`reasons` required, plus `accountStatus` and `companyVerificationStatus`
+  from the existing enums). Mark will add reasons to the code additively.
+  The `postLoad` pin is kept.
 
 
 ## 0.5.0 — 2026-11-11 (Africa/Harare)

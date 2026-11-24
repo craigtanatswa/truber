@@ -1030,8 +1030,10 @@ paths:
         Makes the load visible for transporter quotations.
         **Verification gate (QA-006):** shipper company `verificationStatus` must be `verified`
         and calling user's `accountStatus` must be `active`; otherwise **403**
-        `VerificationRequiredError` (`code: VERIFICATION_REQUIRED`, required
-        `details.reasons`: `company_not_verified` and/or `account_not_active`).
+        `VerificationRequiredError` (`code: VERIFICATION_REQUIRED`; `details` is
+        `VerificationRequiredDetails` with required `reasons`, `accountStatus`, and
+        `companyVerificationStatus`). `postLoad` reasons in this version are
+        `company_not_verified` and/or `account_not_active`.
         **Off-platform ban gate (user-approved 2026-11-10):** if the calling user or the load's shipper company has an active
         off-platform ban (`startsAt <= now < endsAt`, not lifted), return **409**
         `AccountBannedError` (`code: ACCOUNT_BANNED`, required `details.bannedUntil`).
@@ -1136,9 +1138,11 @@ paths:
         company per load (409 on duplicate — amendments via withdraw+resubmit still open).
         **Verification gate (QA-006):** transporter company must be `verified`, caller account
         `active`, and if `truckId` is supplied that truck must be `verified`; otherwise
-        **403** `VerificationRequiredError` (`code: VERIFICATION_REQUIRED`, required
-        `details.reasons`: `company_not_verified`, `account_not_active`, and/or
-        `truck_not_verified`). Same pinned code as `postLoad`.
+        **403** `VerificationRequiredError` (`code: VERIFICATION_REQUIRED`; `details`
+        is the same `VerificationRequiredDetails` as `postLoad`, with required
+        `reasons`, `accountStatus`, and `companyVerificationStatus`). Reasons in this
+        version are `company_not_verified`, `account_not_active`, and/or
+        `truck_not_verified`. Same pinned code as `postLoad`.
         Quotation `amount` must be strictly positive (QA-007).
         **Negative net (G4, Mark 2026-11-24):** if `amount − commission (half-up 5%) −
         known fees` would be negative, return **409** `NET_PAYOUT_NEGATIVE`
@@ -1370,6 +1374,8 @@ paths:
                       - code: VERIFICATION_REQUIRED
                         details:
                           reasons: [company_not_verified]
+                          accountStatus: active
+                          companyVerificationStatus: unverified
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -4086,7 +4092,9 @@ components:
       description: |
         403 on a verification-gated write (`postLoad`, `createQuotation`). A failed
         verification gate (QA-006) MUST use `VerificationRequiredError`
-        (`code: VERIFICATION_REQUIRED`, required `details.reasons`). Other permission
+        (`code: VERIFICATION_REQUIRED`; `details` is `VerificationRequiredDetails`
+        with required `reasons`, `accountStatus`, and `companyVerificationStatus`).
+        Other permission
         failures (for example `ROLE_NOT_PERMITTED`) use `OtherForbiddenError` (generic
         `Error` shape with any code except `VERIFICATION_REQUIRED`).
       content:
@@ -4418,23 +4426,43 @@ components:
           enum:
             - Verification is required before this action.
         details:
-          type: object
-          additionalProperties: false
-          required: [reasons]
-          properties:
-            reasons:
-              type: array
-              minItems: 1
-              uniqueItems: true
-              items:
-                type: string
-                enum: [company_not_verified, account_not_active, truck_not_verified]
-              description: |
-                Why the gate failed. `truck_not_verified` applies only when
-                `createQuotation` was called with a `truckId`. `postLoad` uses only
-                `company_not_verified` and/or `account_not_active`.
+          $ref: '#/components/schemas/VerificationRequiredDetails'
         requestId:
           type: string
+
+    VerificationRequiredReason:
+      type: string
+      minLength: 1
+      description: |
+        Why the verification gate failed. Values defined in this version:
+        `company_not_verified`, `account_not_active`, `truck_not_verified`.
+        `truck_not_verified` applies only when `createQuotation` was called with a
+        `truckId`; `postLoad` does not use it. Further values may be added
+        additively (Mark); clients MUST ignore unknown reason strings.
+
+    VerificationRequiredDetails:
+      type: object
+      additionalProperties: false
+      description: |
+        Shared `details` for 403 `VerificationRequiredError` on `postLoad` and
+        `createQuotation` (and for the preview `SubmissionBlockerVerificationRequired`,
+        so one parser reads both). `reasons` is required. `accountStatus` is the
+        calling user's status (`AccountStatus`). `companyVerificationStatus` is the
+        relevant company's `VerificationStatus` (the load's shipper company on
+        `postLoad`; the transporter company on `createQuotation` and the payout
+        preview).
+      required: [reasons, accountStatus, companyVerificationStatus]
+      properties:
+        reasons:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/VerificationRequiredReason'
+        accountStatus:
+          $ref: '#/components/schemas/AccountStatus'
+        companyVerificationStatus:
+          $ref: '#/components/schemas/VerificationStatus'
 
     OtherForbiddenError:
       description: |
@@ -6509,17 +6537,7 @@ components:
           type: string
           enum: [VERIFICATION_REQUIRED]
         details:
-          type: object
-          additionalProperties: false
-          required: [reasons]
-          properties:
-            reasons:
-              type: array
-              minItems: 1
-              uniqueItems: true
-              items:
-                type: string
-                enum: [company_not_verified, account_not_active]
+          $ref: '#/components/schemas/VerificationRequiredDetails'
 
     PayoutPreviewRequest:
       type: object
