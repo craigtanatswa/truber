@@ -8,9 +8,6 @@ import 'package:truber_app/config/flags.dart';
 import 'package:truber_app/copy/strings.dart';
 import 'package:truber_app/data/live/api_client.dart';
 import 'package:truber_app/data/live/live_repositories.dart';
-import 'package:truber_app/data/live/unavailable_repositories.dart';
-import 'package:truber_app/models/money.dart';
-import 'package:truber_app/models/quotation.dart';
 import 'package:truber_app/data/mock/mock_auth_repository.dart';
 import 'package:truber_app/data/mock/mock_booking_repository.dart';
 import 'package:truber_app/data/mock/mock_load_repository.dart';
@@ -291,21 +288,6 @@ void main() {
           matches(RegExp(
               r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')));
     });
-  });
-
-  test('live quotations fail visibly instead of faking success', () async {
-    final repo = UnavailableQuotationRepository();
-    final e = await repo
-        .submit(
-            'live-load',
-            CreateQuotationRequest(
-              transporterCompanyId: 'c-tr',
-              amount: const MoneyAmount(amountMinor: 1, currency: 'USD'),
-              validUntil: DateTime(2026, 12, 1),
-            ))
-        .then<Object?>((_) => null, onError: (Object e) => e);
-    expect(e, isA<ApiException>());
-    expect(mapErrorMessage(e!), TruberCopy.errorServer);
   });
 
   group('session', () {

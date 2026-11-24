@@ -19,6 +19,7 @@ import 'data/mock/mock_company_repository.dart';
 import 'data/mock/mock_offplatform_repository.dart';
 import 'data/live/live_offplatform_repository.dart';
 import 'data/live/live_payout_repository.dart';
+import 'data/live/live_quotation_repository.dart';
 import 'data/mock/mock_quotation_repository.dart';
 import 'data/mock/mock_seed.dart';
 import 'models/booking.dart';
@@ -71,8 +72,8 @@ SessionController createDefaultSession() {
   );
 }
 
-/// Live: auth, companies and loads over HTTP (OpenAPI v0.5.0). Quotations,
-/// bookings and payment arrangements are not served by the test backend yet:
+/// Live: auth, companies, loads and quotations over HTTP (OpenAPI v0.5.0).
+/// Bookings and payment arrangements are not served by the test backend yet:
 /// they fail visibly (error.server) rather than faking success on mocks.
 SessionController createLiveSession(
   String baseUrl, {
@@ -91,7 +92,7 @@ SessionController createLiveSession(
     auth: LiveAuthRepository(api),
     companies: LiveCompanyRepository(api),
     loads: loads,
-    quotations: UnavailableQuotationRepository(),
+    quotations: LiveQuotationRepository(api),
     bookings: UnavailableBookingRepository(),
     payments: UnavailablePaymentRepository(),
     payouts: LivePayoutRepository(),

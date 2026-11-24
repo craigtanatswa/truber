@@ -160,6 +160,12 @@ Deprecated / do not use for login (OTP is verification-only):
 | `quote.submit_title` | Submit quotation |
 | `quote.submit_cta` | Send quotation |
 | `quote.sent` | Quotation sent to the shipper. |
+| `quote.withdraw_cta` | Withdraw quotation |
+| `quote.withdraw_confirm_title` | Withdraw this quotation? |
+| `quote.withdraw_confirm_body` | The shipper won’t be able to accept it. |
+| `quote.withdrawn` | Quotation withdrawn |
+| `quote.restore_cta` | Reopen other quotations |
+| `quote.restored` | Other quotations reopened |
 
 ## Booking confirmation
 
