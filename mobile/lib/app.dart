@@ -47,7 +47,7 @@ _DemoRoute? _parseDemo() {
   if (!kIsWeb) return null;
   final hash = Uri.base.fragment;
   final m = RegExp(
-    r'demo/(login|register|reset-confirm|reset|otp|banned-shipper|banned-transporter-user|banned-transporter|shipper|transporter|admin)(?:/(post|search|quotes|payment-odd|payment|booking|account))?',
+    r'demo/(login|register|reset-confirm|reset|otp|banned-shipper|banned-transporter-user|banned-transporter|shipper|transporter|admin)(?:/(post|search|quotes|payment-odd|payment|booking|booking-transfer|account))?',
   ).firstMatch(hash);
   if (m == null) return null;
   return _DemoRoute(m.group(1)!, tab: m.group(2));
@@ -236,7 +236,8 @@ class _ShipperDemoState extends State<_ShipperDemo> {
         (tab == 'quotes' ||
             tab == 'payment' ||
             tab == 'payment-odd' ||
-            tab == 'booking')) {
+            tab == 'booking' ||
+            tab == 'booking-transfer')) {
       _flow = _openFlow(tab!);
     }
   }
@@ -281,13 +282,15 @@ class _ShipperDemoState extends State<_ShipperDemo> {
       );
     }
 
-    // Seed a confirmed cash arrangement. Launch methods have no acknowledgement.
+    // Seed a confirmed launch arrangement. No acknowledgement gates booking.
     final existingArr = await session.payments.latestForBooking(booking.id);
     if (existingArr == null) {
       await session.payments.propose(
         booking.id,
         CreatePaymentArrangementRequest(
-          method: PaymentMethod.cash,
+          method: tab == 'booking-transfer'
+              ? PaymentMethod.directTransfer
+              : PaymentMethod.cash,
           totalAmount: booking.agreedAmount,
         ),
       );
@@ -311,7 +314,8 @@ class _ShipperDemoState extends State<_ShipperDemo> {
     if (widget.tab == 'quotes' ||
         widget.tab == 'payment' ||
         widget.tab == 'payment-odd' ||
-        widget.tab == 'booking') {
+        widget.tab == 'booking' ||
+        widget.tab == 'booking-transfer') {
       return FutureBuilder<Widget>(
         future: _flow,
         builder: (context, snap) {
