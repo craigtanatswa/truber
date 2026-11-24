@@ -68,6 +68,9 @@ class _QuotationsScreenState extends State<QuotationsScreen> {
     }
     if (!mounted) return;
     setState(() => _busy = false);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text(TruberCopy.quoteRestored)),
+    );
     _reload();
   }
 

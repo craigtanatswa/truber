@@ -61,6 +61,26 @@ abstract final class TruberAppTheme {
     minimumSize: WidgetStatePropertyAll(Size.fromHeight(fullWidthCtaHeight)),
   );
 
+  /// Destructive confirm. Same geometry as the primary button, filled with
+  /// Design's error / onError pair (light `#B42318` on white, dark
+  /// `#F04438` on black).
+  static ButtonStyle destructive(Brightness brightness, TextTheme text) {
+    final dark = brightness == Brightness.dark;
+    final palette = TruberPrimaryButtonPalette.of(brightness);
+    final fill = dark ? TruberColors.errorDark : TruberColors.error;
+    final onFill = dark ? TruberColors.black : TruberColors.white;
+    final pressed = Color.alphaBlend(const Color(0x1F000000), fill);
+    return primaryStyle(palette, text).copyWith(
+      backgroundColor: WidgetStateProperty.resolveWith((s) {
+        if (s.contains(WidgetState.disabled)) return palette.disabledFill;
+        if (s.contains(WidgetState.pressed)) return pressed;
+        return fill;
+      }),
+      foregroundColor: WidgetStateProperty.resolveWith((s) =>
+          s.contains(WidgetState.disabled) ? palette.disabledLabel : onFill),
+    );
+  }
+
   /// Focus ring: 2px, offset 2px outside the edge. With width 2,
   /// strokeAlign 3 places the stroke 2–4px outside the button.
   static BorderSide focusRing(TruberPrimaryButtonPalette p) =>

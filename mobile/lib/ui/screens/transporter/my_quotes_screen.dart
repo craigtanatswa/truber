@@ -54,6 +54,31 @@ class _TransporterQuotesScreenState extends State<TransporterQuotesScreen> {
   }
 
   Future<void> _withdraw(Quotation quote) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        key: const Key('withdraw_confirm_dialog'),
+        title: const Text(TruberCopy.quoteWithdrawConfirmTitle),
+        content: const Text(TruberCopy.quoteWithdrawConfirmBody),
+        actions: [
+          TextButton(
+            key: const Key('withdraw_confirm_cancel'),
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text(TruberCopy.ctaCancel),
+          ),
+          ElevatedButton(
+            key: const Key('withdraw_confirm'),
+            style: TruberAppTheme.destructive(
+              Theme.of(dialogContext).brightness,
+              Theme.of(dialogContext).textTheme,
+            ),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text(TruberCopy.quoteWithdrawCta),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
     setState(() => _busy = true);
     try {
       await context.read<SessionController>().quotations.withdraw(quote.id);
@@ -65,6 +90,9 @@ class _TransporterQuotesScreenState extends State<TransporterQuotesScreen> {
     }
     if (!mounted) return;
     setState(() => _busy = false);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text(TruberCopy.quoteWithdrawn)),
+    );
     _reload();
   }
 
