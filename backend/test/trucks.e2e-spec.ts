@@ -192,6 +192,7 @@ describe('trucks API', () => {
     const company = await createCompany(app, transporter.token, 'transporter', 'Invalid Plates');
 
     const cases: Array<{ registrationNumber: string; expectField: boolean }> = [
+      { registrationNumber: '', expectField: false },
       { registrationNumber: ' .-_ ', expectField: true },
       { registrationNumber: '\u200b\u200b', expectField: true },
       { registrationNumber: 'АВС123', expectField: true },
@@ -420,6 +421,18 @@ describe('trucks API', () => {
       const ignored = expectContract(
         'listTrucks',
         await http(app, 'get', `/trucks?availableOn=${availableOn}`, { token: transporter.token }),
+        200,
+      );
+      expect(ignored.body.meta).toEqual(withoutAvailableOn.body.meta);
+      expect(ignored.body.data.map((truck: { id: string }) => truck.id)).toEqual(
+        withoutAvailableOn.body.data.map((truck: { id: string }) => truck.id),
+      );
+    }
+    const availableOnQueries = ['availableOn=a&availableOn=b', 'availableOn='];
+    for (const availableOnQuery of availableOnQueries) {
+      const ignored = expectContract(
+        'listTrucks',
+        await http(app, 'get', `/trucks?${availableOnQuery}`, { token: transporter.token }),
         200,
       );
       expect(ignored.body.meta).toEqual(withoutAvailableOn.body.meta);

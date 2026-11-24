@@ -1,4 +1,4 @@
-import { IsIn, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength, ValidateIf } from 'class-validator';
+import { Allow, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength, ValidateIf } from 'class-validator';
 import { PageQueryDto } from '../companies/companies.dto';
 import { TRUCK_TYPES, TruckType, VerificationStatus } from '../domain';
 
@@ -19,8 +19,8 @@ export class ListTrucksQueryDto extends PageQueryDto {
 
   // availableOn is accepted and ignored per contract v0.5.0; scheduled for removal in API v0.5.1.
   @IsOptional()
-  @IsString()
-  availableOn?: string;
+  @Allow()
+  availableOn?: unknown;
 }
 
 export class CreateTruckDto {
