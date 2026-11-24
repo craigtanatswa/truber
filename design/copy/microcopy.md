@@ -21,7 +21,7 @@ Charlie provisional (pending user confirm): MVP login is email + password. OTP i
 | `auth.driver_signin_help` | Already driving for a transporter? Log in with the email your company registered. They add you to trips. |
 | `auth.driver_login_hint` | Drivers log in with the email your transporter registered. |
 | `auth.account_title` | Your account |
-| `auth.account_help` | Create your login. You’ll verify your phone next. |
+| `auth.account_help` | Create your login with your email and a password. |
 | `auth.full_name` | Full name |
 | `auth.full_name_hint` | e.g. Tendai Moyo |
 | `auth.email` | Email |
@@ -39,6 +39,7 @@ Charlie provisional (pending user confirm): MVP login is email + password. OTP i
 | `auth.phone_prefix` | +263 |
 | `auth.phone_country_help` | We’ll send a one-time code to verify this number. Zimbabwe numbers start with +263. |
 | `auth.phone_leading_zero` | Enter without the leading 0 if you prefer — both work. |
+| `auth.phone_contact_help` | So the other company on a booking can call you. Zimbabwe numbers start with +263. |
 | `auth.send_code` | Send code |
 | `auth.resend_code` | Resend code |
 | `auth.login_cta` | Log in |
@@ -76,7 +77,7 @@ Charlie provisional (pending user confirm): MVP login is email + password. OTP i
 | `auth.city_optional` | Primary city (optional) |
 | `auth.city_hint` | e.g. Harare |
 | `auth.verify_title` | Verify your account |
-| `auth.verify_trust` | Verified accounts build trust. Shippers and transporters with checked documents get more bookings and better rates. |
+| `auth.verify_trust` | Only verified companies can post loads or send quotations. Our team checks each document. |
 | `auth.verify_help_shipper` | Add a link to your national ID or passport, and to your company registration if you ship as a business. |
 | `auth.verify_help_transporter` | Add links to your company registration, operator licence and insurance. Our team reviews each one. |
 | `verify.doc_link_label` | Add a link to the document |
@@ -104,6 +105,8 @@ Charlie provisional (pending user confirm): MVP login is email + password. OTP i
 | `auth.offline_title` | You’re offline |
 | `auth.offline_reg_body` | Check your connection and retry. Codes can’t be sent without a network. |
 | `auth.offline_login_body` | Check your connection and retry. You need a network to sign in. |
+
+Sign-up at launch (user decision, 24 Nov 2026 CAT, via Charlie): email and password only, with no phone code and no admin phone check. Flow: role, then `auth.account_title` (name, email, password, `auth.terms_notice` under `auth.register_cta`), then organisation profile, then verification links. Hidden at launch, strings unchanged: `auth.phone_country_help`, `auth.send_code`, `auth.resend_code`, every `auth.otp_*` key and `verify.demo_hint`. If the app still asks for a mobile number as a contact detail, use `auth.phone_label`, `auth.phone_hint`, `auth.phone_prefix` and `auth.phone_contact_help`, never a code. No driver records at launch, so `auth.driver_signin`, `auth.driver_signin_help` and `auth.driver_login_hint` are hidden too.
 
 Deprecated / do not use for login (OTP is verification-only):
 | Key | Note |
