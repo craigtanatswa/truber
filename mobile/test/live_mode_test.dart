@@ -130,7 +130,7 @@ void main() {
         return _json(_user('shipper'));
       });
       final api = ApiClient(baseUrl: _base, httpClient: client);
-      api.saveTokens(_tokens('stale'));
+      await api.saveTokens(_tokens('stale'));
       final results =
           await Future.wait([api.get('/auth/me'), api.get('/auth/me')]);
       expect(results, hasLength(2));
@@ -147,7 +147,7 @@ void main() {
       });
       final api = ApiClient(baseUrl: _base, httpClient: client)
         ..onSessionExpired = () => expired++;
-      api.saveTokens(_tokens('a1'));
+      await api.saveTokens(_tokens('a1'));
       await expectLater(api.get('/loads'), throwsA(isA<ApiException>()));
       expect(api.tokens.hasSession, isFalse);
       expect(expired, 1);
@@ -224,7 +224,7 @@ void main() {
               },
             });
           }));
-      api.saveTokens(_tokens('a1'));
+      await api.saveTokens(_tokens('a1'));
       final loads = await LiveLoadRepository(api).search(
         pickup: 'Harare',
         truckType: TruckType.sideLoader,
@@ -259,7 +259,7 @@ void main() {
                         req.url.path.endsWith('/post') ? 'posted' : 'draft'),
                 201);
           }));
-      api.saveTokens(_tokens('a1'));
+      await api.saveTokens(_tokens('a1'));
       final repo = LiveLoadRepository(api);
       await repo.create(CreateLoadRequest(
         companyId: 'c-ship',

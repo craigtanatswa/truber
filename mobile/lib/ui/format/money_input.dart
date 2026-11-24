@@ -1,5 +1,5 @@
 /// Parses a typed money amount (major units, e.g. US$) into integer minor
-/// units without floating point (OpenAPI v0.4.0 MoneyAmount: "Never
+/// units without floating point (OpenAPI v0.5.0 MoneyAmount: "Never
 /// floating-point"; PositiveMoneyAmount.amountMinor minimum 1).
 ///
 /// Accepts `950`, `950.5`, `950.50`, `1,000.00`, `12,345.67`, optional

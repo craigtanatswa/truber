@@ -6,6 +6,6 @@ abstract class PayoutRepository {
   Future<List<TransporterPayout>> forTransporterCompany(String companyId);
 
   /// Server-computed net for a proposed quote amount, or null when the API
-  /// has no such field (OpenAPI v0.4.0 has none — the hint is then hidden).
+  /// has no such field (OpenAPI v0.5.0 has none — the hint is then hidden).
   Future<MoneyAmount?> quoteNetPreview(String loadId, MoneyAmount amount);
 }

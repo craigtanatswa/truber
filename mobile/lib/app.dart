@@ -1,10 +1,13 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'ui/theme/truber_app_theme.dart';
 import 'package:provider/provider.dart';
 
 import 'config/flags.dart';
 import 'data/live/api_client.dart';
+import 'data/live/refresh_token_vault.dart';
+import 'data/live/refresh_token_vault_factory.dart';
 import 'data/live/live_repositories.dart';
 import 'data/live/unavailable_repositories.dart';
 import 'data/mock/mock_auth_repository.dart';
@@ -68,11 +71,21 @@ SessionController createDefaultSession() {
   );
 }
 
-/// Live: auth, companies and loads over HTTP (OpenAPI v0.4.0). Quotations,
+/// Live: auth, companies and loads over HTTP (OpenAPI v0.5.0). Quotations,
 /// bookings and payment arrangements are not served by the test backend yet:
 /// they fail visibly (error.server) rather than faking success on mocks.
-SessionController createLiveSession(String baseUrl) {
-  final api = ApiClient(baseUrl: baseUrl);
+SessionController createLiveSession(
+  String baseUrl, {
+  http.Client? httpClient,
+  RefreshTokenVault? refreshTokens,
+  DateTime Function()? clock,
+}) {
+  final api = ApiClient(
+    baseUrl: baseUrl,
+    httpClient: httpClient,
+    refreshTokens: refreshTokens ?? createPlatformRefreshTokenVault(),
+    clock: clock,
+  );
   final loads = LiveLoadRepository(api);
   final session = SessionController(
     auth: LiveAuthRepository(api),

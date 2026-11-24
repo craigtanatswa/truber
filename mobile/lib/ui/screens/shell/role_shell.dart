@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 
 import '../../../models/user.dart';
 import '../../../state/session.dart';
+import '../auth/session_restore_retry.dart';
+import '../auth/session_splash.dart';
 import '../auth/welcome_screen.dart';
 import 'admin_shell.dart';
 import 'shipper_shell.dart';
@@ -15,8 +17,14 @@ class RoleShell extends StatelessWidget {
   Widget build(BuildContext context) {
     final session = context.watch<SessionController>();
     if (session.bootstrapping) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
+      return const SessionSplash();
+    }
+    if (session.restorePending) {
+      return SessionRestoreRetry(
+        message: session.error ?? '',
+        onRetry: () {
+          session.bootstrap();
+        },
       );
     }
     final user = session.user;

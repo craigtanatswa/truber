@@ -2,7 +2,7 @@ import 'booking.dart';
 import 'money.dart';
 import 'payment.dart';
 
-/// OpenAPI v0.4.0 `PaymentReleaseRecord` (fields used by the transporter view).
+/// OpenAPI v0.5.0 `PaymentReleaseRecord` (fields used by the transporter view).
 /// All amounts are server-computed; the app never derives them.
 class PaymentReleaseRecord {
   const PaymentReleaseRecord({

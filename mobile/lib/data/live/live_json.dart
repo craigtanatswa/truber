@@ -3,7 +3,7 @@ import '../../models/load.dart';
 import '../../models/money.dart';
 import '../../models/user.dart';
 
-/// JSON <-> model mapping for OpenAPI v0.4.0 schemas. Unknown enum values map
+/// JSON <-> model mapping for OpenAPI v0.5.0 schemas. Unknown enum values map
 /// to the most conservative app value instead of throwing.
 
 String _camel(String snake) => snake.replaceAllMapped(

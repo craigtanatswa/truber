@@ -9,7 +9,7 @@ import 'api_client.dart';
 /// Live-mode stand-ins for flows the test backend does not serve yet
 /// (quotations, bookings, payment arrangements). They fail visibly instead of
 /// faking success against live load IDs. Replace with HTTP clients when the
-/// backend implements these OpenAPI v0.4.0 paths.
+/// backend implements these OpenAPI v0.5.0 paths.
 ApiException _unavailable() =>
     ApiException(501, 'NOT_AVAILABLE_IN_TEST_BACKEND');
 
