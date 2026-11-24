@@ -18,8 +18,8 @@ Charlie provisional (pending user confirm): MVP login is email + password. OTP i
 | `auth.role_transporter_help` | Find loads, quote, and get paid |
 | `auth.role_admin` | Admin |
 | `auth.driver_signin` | Drivers: log in with email |
-| `auth.driver_signin_help` | Already driving for a transporter? Log in with email — your company adds you to trips. Phone-only driver sign-in may come later. |
-| `auth.driver_login_hint` | Drivers log in with the email your transporter registered. Phone-only sign-in may come later. |
+| `auth.driver_signin_help` | Already driving for a transporter? Log in with the email your company registered. They add you to trips. |
+| `auth.driver_login_hint` | Drivers log in with the email your transporter registered. |
 | `auth.account_title` | Your account |
 | `auth.account_help` | Create your login. You’ll verify your phone next. |
 | `auth.full_name` | Full name |
@@ -51,6 +51,7 @@ Charlie provisional (pending user confirm): MVP login is email + password. OTP i
 | `auth.reset_send` | Send reset link |
 | `auth.reset_sent_title` | Check your email |
 | `auth.reset_sent_body` | If an account exists for that address, we’ve sent a reset link. It may take a minute to arrive. |
+| `auth.terms_notice` | By creating an account, you agree to Truber’s Terms and Conditions and Privacy Policy. |
 | `auth.reset_sent_help` | Didn’t get it? Check spam, or try again in a few minutes. |
 | `auth.reset_back_login` | Back to log in |
 | `auth.register_cta` | Create account |
@@ -76,8 +77,11 @@ Charlie provisional (pending user confirm): MVP login is email + password. OTP i
 | `auth.city_hint` | e.g. Harare |
 | `auth.verify_title` | Verify your account |
 | `auth.verify_trust` | Verified accounts build trust. Shippers and transporters with checked documents get more bookings and better rates. |
-| `auth.verify_help_shipper` | Upload a national ID or passport, and company registration if you ship as a business. |
-| `auth.verify_help_transporter` | Upload company registration, operator licence, and insurance. Clear photos or PDFs work best. |
+| `auth.verify_help_shipper` | Add a link to your national ID or passport, and to your company registration if you ship as a business. |
+| `auth.verify_help_transporter` | Add links to your company registration, operator licence and insurance. Our team reviews each one. |
+| `verify.doc_link_label` | Add a link to the document |
+| `verify.doc_link_hint` | Paste a link to a file we can open. Our team reviews it. |
+| `verify.doc_link_error` | Enter a full link, starting with https:// |
 | `auth.verify_doc_id` | National ID or passport |
 | `auth.verify_doc_company_reg` | Company registration |
 | `auth.verify_doc_operator` | Operator licence |
@@ -125,7 +129,8 @@ Deprecated / do not use for login (OTP is verification-only):
 |-----|--------|
 | `shipper.home_title` | Your loads |
 | `transporter.home_title` | Find loads |
-| `admin.placeholder` | Admin tools coming soon |
+| `admin.home_title` | Admin |
+| `admin.home_body` | You’re signed in with an admin account. |
 
 ## Post load
 
@@ -160,6 +165,12 @@ Deprecated / do not use for login (OTP is verification-only):
 | `quote.submit_title` | Submit quotation |
 | `quote.submit_cta` | Send quotation |
 | `quote.sent` | Quotation sent to the shipper. |
+| `quote.withdraw_cta` | Withdraw quotation |
+| `quote.withdraw_confirm_title` | Withdraw this quotation? |
+| `quote.withdraw_confirm_body` | The shipper won’t be able to accept it. |
+| `quote.withdrawn` | Quotation withdrawn |
+| `quote.restore_cta` | Reopen other quotations |
+| `quote.restored` | Other quotations reopened |
 
 ## Booking confirmation
 
@@ -195,15 +206,26 @@ Deprecated / do not use for login (OTP is verification-only):
 | `pay.choose_cta` | Use this payment method |
 | `pay.propose_cta` | Propose payment terms |
 | `pay.cash` | Cash |
-| `pay.cash_help` | Cash is not protected. Agree terms directly with the transporter. |
+| `pay.cash_help` | Pay the transporter directly. Agree the amount and timing with them. |
 | `pay.cash_ack` | I understand cash is not protected on Truber. |
 | `pay.protected_badge` | Payment protected |
 | `pay.cash_badge` | Not protected |
-| `pay.commission_note` | Truber commission (5%) is deducted from the transporter’s payout on completed trips. Processing charges are shown separately where they apply. |
+| `pay.bank_transfer` | Bank or mobile money transfer |
+| `pay.bank_transfer_help` | Pay the transporter directly. Agree the amount and account or mobile money details with them. |
+| `pay.bank_transfer_ack` | I understand bank transfer is not protected on Truber. |
+| `pay.bank_transfer_badge` | Not protected |
+| `pay.commission_note` | Truber charges transporters 5% commission on completed trips. We invoice it separately. |
 | `pay.status_secured` | Payment secured |
 | `pay.status_pending` | Awaiting payment confirmation |
 | `pay.status_released` | Payment released |
-| `pay.status_cash_recorded` | Cash arrangement recorded (not protected) |
+| `pay.status_cash_recorded` | Cash arrangement recorded |
+| `pay.status_bank_transfer_recorded` | Transfer arrangement recorded |
+
+Launch visibility (item 12, 11 Nov 2026 CAT): live builds offer only **Cash** and **Bank transfer** (API `direct_transfer`). Both are paid directly between shipper and transporter, recorded on Truber and **Not protected**; Truber holds no funds. Prepay, deposit and balance, Protected payment and corporate credit are hidden at launch. Their strings above (`pay.prepay*`, `pay.deposit_*`, `pay.balance_label`, `pay.split_hint`, `pay.protected*`, `pay.corporate_credit*`, `pay.credit_terms_label`, `pay.status_secured`, `pay.status_released`) stay in the catalog word for word, but none may render in a live build. Never name Paynow or any other provider. Full row list: `reports/plans/design-item12-copy-replacements.md`.
+
+Launch (Mark, 17 Nov 2026 CAT): documents and proof of delivery are links only, with no file upload, camera or storage UI. Verification is company and truck level only, so there are no driver profiles or driver ID screens. Shippers can’t browse trucks; a quote can name a truck (plate, type, capacity). Sign-up is phone OTP; any fallback copy is UNAPPROVED until the user decides.
+
+Payment protection wording (user decision, 17 Nov 2026 CAT, via Charlie): the app does not repeat “not protected” on every trip. It is stated once in the Terms and Conditions (see `design/copy/terms-payments-draft.md`). At launch: no per-trip acknowledgement or confirmation screen, so `pay.cash_ack` and `pay.bank_transfer_ack` are hidden and nothing gates booking on them. `pay.cash_badge`, `pay.bank_transfer_badge` and `status.protection.none` are hidden too. Strings stay in the catalog. Registration shows `auth.terms_notice` once, under the create-account button, with Terms and Privacy as links (only once counsel’s pages are live). That single acceptance covers payment protection.
 
 ## Delivery tracking
 
@@ -215,11 +237,13 @@ Deprecated / do not use for login (OTP is verification-only):
 | `track.collected` | Goods collected |
 | `track.in_transit` | In transit |
 | `track.delivered` | Delivered |
-| `track.upload_pod` | Upload proof of delivery |
-| `track.pod_help` | Add signed delivery note, photos, and recipient confirmation. |
+| `track.upload_pod` | Add proof of delivery |
+| `track.pod_help` | Add a link to the signed delivery note or photos. |
 | `track.shipper_confirm` | Confirm delivery |
-| `track.shipper_confirm_help` | Confirming releases payment per your arrangement. |
+| `track.shipper_confirm_help` | Confirm when the load has arrived. This marks the booking as complete. |
 | `track.driver_update` | Update status |
+
+Tracking means trip status only. No GPS, map, location, ETA or “live tracking” wording on any screen.
 
 ## Ratings
 
@@ -311,6 +335,8 @@ Status chip colours: pending/awaiting = warning; confirmed/in progress = cobalt;
 | `status.protection.protected` | Payment protected | cobalt |
 | `status.protection.protectionFailed` | Protection failed. Contact support. | error |
 | `status.protection.releasedFromProtection` | Payment released | success (status only) |
+
+Launch: only `status.protection.none` (Not protected) and `status.protection.pendingEvidence` can appear, because cash and bank transfer are never protected. `protected`, `protectionFailed` and `releasedFromProtection` are hidden at launch and their strings are unchanged. If `protectionFailed` is ever shown, its action is the Email support control (`ban.cta_help` pattern), never a hard-coded contact.
 
 ### Validation
 
@@ -413,23 +439,25 @@ Values come from the backend. Never hard-code rates.
 
 | Key | Copy |
 |---|---|
-| `payout.net_label` | You receive |
+| `payout.net_label` | After commission |
 | `payout.net_value` | {amount} (US$1,000.00 format, same as the rest of the app) |
 | `payout.breakdown_toggle` | See breakdown |
 | `payout.agreed_price` | Agreed price |
 | `payout.commission` | Truber commission ({commission_pct}%) |
 | `payout.fees` | Payment fees |
-| `payout.net_total` | You receive |
+| `payout.net_total` | After commission |
 | `payout.helper_protected` | Released once delivery is confirmed and Truber approves the payout. |
 | `payout.status_awaiting_delivery` | Waiting for delivery to be confirmed |
 | `payout.status_awaiting_release` | Delivery confirmed. Waiting for Truber to approve your payout. |
 | `payout.status_on_hold_dispute` | On hold while a dispute is open |
-| `payout.status_awaiting_shipper_payment` | Waiting for the shipper’s payment |
+| `payout.status_awaiting_shipper_payment` | Waiting for the shipper to pay you |
 | `payout.status_released` | Payout approved |
 | `payout.status_release_failed` | Payout couldn’t be released. We’re looking into it and will update you here. |
-| `payout.helper_cash` | Cash payment. Not protected by Truber. |
-| `payout.quote_hint` | You’ll receive {amount} after commission and fees. |
+| `payout.helper_cash` | Cash payment, made directly by the shipper. |
+| `payout.quote_hint` | You’ll earn {amount} after Truber’s commission. |
 | `payout.fees_none` | No fees |
+
+Launch (user decisions via Charlie, 17 Nov 2026 CAT): no money passes through Truber; commission is invoiced to the transporter. Shipper screens show no payout lines and no `pay.commission_note`. Transporters see `payout.agreed_price`, `payout.commission`, `payout.net_label`/`net_value`, `payout.breakdown_toggle`, `payout.status_awaiting_delivery`, `payout.status_awaiting_shipper_payment`, `payout.status_on_hold_dispute`, `payout.helper_cash`, `payout.quote_hint` and `pay.commission_note`. Hidden at launch, strings unchanged: `payout.helper_protected`, `payout.status_awaiting_release`, `payout.status_released`, `payout.status_release_failed`, `payout.fees`, `payout.fees_none`. Mobile money counts as a transfer (`direct_transfer`). Never name Paynow in shipper-facing copy.
 
 Rules: format all money as US$1,000.00 everywhere. Show deductions as – US$50.00. Use curly apostrophes (’) everywhere. Never say "paid" or "sent" for a released payout: the record means it was approved, not that money moved. Hide the fees row when it's zero, or show `payout.fees_none`. "You receive" is always the bold line.
 
@@ -441,7 +469,11 @@ A ban blocks new work only. Login and records stay available. Never show the rea
 | `ban.banner_title` | Your account can’t take on new work right now |
 | `ban.banner_body` | We found that a deal was arranged outside Truber. You can’t post loads, send quotes or confirm bookings until {date}. Your existing bookings and records are still available. |
 | `ban.banner_company_body` | Your company can’t take on new work until {date} because a deal was arranged outside Truber. Your existing bookings and records are still available. |
-| `ban.cta_help` | Contact support |
+| `ban.cta_help` | Email support |
+| `support.email_subject` | Truber support: {company} |
+
+`ban.cta_help` opens `mailto:{SUPPORT_EMAIL}` with `support.email_subject` prefilled. `SUPPORT_EMAIL` is one config value, address to follow.
+
 | `ban.blocked_action_toast` | Not available until {date} |
 | `ban.counterparty_blocked` | This company can’t take on new work right now. Choose another quote or truck. |
 
@@ -450,7 +482,7 @@ A ban blocks new work only. Login and records stay available. Never show the rea
 |---|---|
 | `offplatform.entry` | Report dealing outside Truber |
 | `offplatform.title` | Report dealing outside Truber |
-| `offplatform.intro` | Tell us if someone asked to pay, or be paid, outside Truber for this booking. Payments made outside Truber are not protected. |
+| `offplatform.intro` | Tell us if someone asked to arrange this job outside Truber instead of booking it here. |
 | `offplatform.party_label` | Who was involved? |
 | `offplatform.party_shipper` | The shipper |
 | `offplatform.party_transporter` | The transporter |
@@ -467,7 +499,7 @@ A ban blocks new work only. Login and records stay available. Never show the rea
 | `offplatform.status_not_confirmed` | Not confirmed |
 
 Chip tokens: Under review uses warning on warningSoft (dark: warningDark on warningSoftDark). Confirmed uses error on errorSoft (dark: errorDark on errorSoftDark). Not confirmed uses textSecondary on surfaceSunken (dark: textSecondaryDark on surfaceMutedDark). Never use success or green.
-| `offplatform.nudge` | Keep payments on Truber. Payments made outside Truber are not protected. |
+| `offplatform.nudge` | Keep your bookings on Truber so you both have a record of the job. |
 
 Admin labels: Finding (Confirmed / Not confirmed), Reason, Ban ends, Lift ban, Lift reason. Confirming applies a 14-day ban to each responsible party.
 
@@ -475,4 +507,4 @@ Admin labels: Finding (Confirmed / Not confirmed), Reason, Ban ends, Lift ban, L
 | Key | Copy |
 |---|---|
 | `error.amount_invalid` | Enter an amount of at least US$0.01, with no more than 2 decimal places. |
-| `transporter.home_hint` | Quote on loads that match your trucks. Only Protected payment is covered. Cash is not protected. |
+| `transporter.home_hint` | Quote on loads that match your trucks. You agree payment directly with the shipper. |
