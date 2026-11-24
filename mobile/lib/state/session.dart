@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../auth/document_link.dart';
 import '../config/flags.dart';
 import '../copy/strings.dart';
 
@@ -330,7 +331,7 @@ class SessionController extends ChangeNotifier {
     for (final link in links) {
       final uri = link.uri.trim();
       if (uri.isEmpty) continue;
-      if (!uri.startsWith('https://')) {
+      if (!isHttpsDocumentLink(uri)) {
         error = TruberCopy.docLinkError;
         notifyListeners();
         return false;

@@ -5,6 +5,7 @@ import '../../widgets/truber_brand_logo.dart';
 import 'package:provider/provider.dart';
 import 'package:truber_design/truber_design.dart';
 
+import '../../../auth/document_link.dart';
 import '../../../auth/register_fields.dart';
 import '../../../config/flags.dart';
 import '../../../copy/strings.dart';
@@ -151,7 +152,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     final links = _links();
     for (final link in links) {
       final uri = link.uri.trim();
-      if (uri.isNotEmpty && !uri.startsWith('https://')) {
+      if (uri.isNotEmpty && !isHttpsDocumentLink(uri)) {
         setState(() => _linkError = TruberCopy.docLinkError);
         return;
       }
